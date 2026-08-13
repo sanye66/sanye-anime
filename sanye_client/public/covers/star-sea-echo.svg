@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 600" role="img" aria-labelledby="title desc">
+  <title id="title">星海回声封面</title>
+  <desc id="desc">流星划过蓝紫色晚霞与海面，远处有一座红色广播塔。</desc>
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111d58"/><stop offset=".55" stop-color="#6d5d9c"/><stop offset="1" stop-color="#f19782"/></linearGradient><linearGradient id="sea" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1b376e"/><stop offset="1" stop-color="#0b1737"/></linearGradient></defs>
+  <rect width="420" height="600" fill="url(#sky)"/><circle cx="302" cy="348" r="76" fill="#ffd7a0" opacity=".35"/><circle cx="302" cy="348" r="35" fill="#ffe0ac" opacity=".92"/>
+  <path d="M-20 136C80 82 144 130 234 93s154-7 222-55v56c-99 46-168 16-253 62S75 157-20 204Z" fill="#273a80" opacity=".75"/><path d="M-15 231c100-48 168 8 258-30s124-19 194-55v50c-74 37-119 25-194 59s-162-18-258 28Z" fill="#d184a2" opacity=".56"/>
+  <path d="M-20 430c91-49 150-9 238-36 91-28 132 9 222-24v250H-20Z" fill="url(#sea)"/><path d="M-5 465c90-32 142-8 228-25 87-17 123 14 205-17" fill="none" stroke="#8fb2c9" stroke-width="4" opacity=".45"/><path d="M72 125 323 282" stroke="#f5b7e5" stroke-width="9" opacity=".2"/><path d="M72 125 323 282" stroke="#ffd4ef" stroke-width="3"/><circle cx="323" cy="282" r="7" fill="#fff6dc"/>
+  <path d="M292 377v101M292 377h28v101" stroke="#4a2b55" stroke-width="10"/><path d="M287 378h38" stroke="#f09b79" stroke-width="8"/><circle cx="306" cy="365" r="13" fill="#f5b092"/><path d="M293 359c5-17 28-18 33 0l-8 9h-25Z" fill="#24234e"/>
+  <text x="30" y="535" fill="#fff4de" font-family="sans-serif" font-size="25">星海回声</text><text x="31" y="562" fill="#f8c6ae" font-family="sans-serif" font-size="12" letter-spacing="3">来自远方的信号</text>
+</svg>

@@ -1,0 +1,16 @@
+-- PostgreSQL 菜单和按钮 SQL
+WITH parent_menu AS (
+    INSERT INTO sanye_sys_menu (menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+    VALUES ('${functionName}', '${parentMenuId}', '1', '${businessName}', '${moduleName}/${businessName}/index', 1, 0, 'C', '0', '0', '${permissionPrefix}:list', '#', 'admin', CURRENT_TIMESTAMP, '', null, '${functionName}菜单')
+    RETURNING menu_id
+)
+INSERT INTO sanye_sys_menu (menu_name, parent_id, order_num, path, component, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+SELECT '${functionName}查询', menu_id, '1', '#', '', 1, 0, 'F', '0', '0', '${permissionPrefix}:query', '#', 'admin', CURRENT_TIMESTAMP, '', null, '' FROM parent_menu
+UNION ALL
+SELECT '${functionName}新增', menu_id, '2', '#', '', 1, 0, 'F', '0', '0', '${permissionPrefix}:add', '#', 'admin', CURRENT_TIMESTAMP, '', null, '' FROM parent_menu
+UNION ALL
+SELECT '${functionName}修改', menu_id, '3', '#', '', 1, 0, 'F', '0', '0', '${permissionPrefix}:edit', '#', 'admin', CURRENT_TIMESTAMP, '', null, '' FROM parent_menu
+UNION ALL
+SELECT '${functionName}删除', menu_id, '4', '#', '', 1, 0, 'F', '0', '0', '${permissionPrefix}:remove', '#', 'admin', CURRENT_TIMESTAMP, '', null, '' FROM parent_menu
+UNION ALL
+SELECT '${functionName}导出', menu_id, '5', '#', '', 1, 0, 'F', '0', '0', '${permissionPrefix}:export', '#', 'admin', CURRENT_TIMESTAMP, '', null, '' FROM parent_menu;

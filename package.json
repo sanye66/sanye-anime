@@ -1,0 +1,15 @@
+{
+  "name": "sanye_anime_workspace",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22 <27",
+    "pnpm": ">=10 <11"
+  },
+  "scripts": {
+    "dev:client": "pnpm --filter @sanye/sanye_client dev",
+    "dev:admin": "pnpm --filter @sanye/sanye_admin dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
