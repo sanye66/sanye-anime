@@ -2,10 +2,10 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.31 |
+| 文档版本 | v0.32 |
 | 文档状态 | 正式编码前置门禁与工程待办清单 |
 | 适用范围 | 产品原型与文档、`sanye_client`、`sanye_admin`、`sanye_admin_server`、`sanye_server` 及部署交付工作 |
-| 更新时间 | 2026-08-25 |
+| 更新时间 | 2026-08-26 |
 
 本清单承接 [开发计划](./development-plan.md) 的正式编码前置门禁，以及 [差距登记表](./gap-register.md) 中与管理后端接入、真实运行验收、桌宠交付和企业级交付相关的未完成事项。产品功能和用户体验要求仍以 `product/` 目录为准，本清单只跟踪产品工作的完成状态，不新增产品需求，也不作为 API 设计文档。
 
@@ -67,7 +67,7 @@ P1 用于补齐单人开发项目的可重复部署、故障恢复、持续交�
 | 编号 | 待办事项 | 当前状态 | 具体工作 | 验收标准 | 依赖条件 | 预计工作量 |
 | --- | --- | --- | --- | --- | --- | ---: |
 | TODO-011 | 建立 Docker Compose 基础设施联动验证 | 已完成（本地验证） | `compose.yaml` 已修复 Redis 健康检查密码注入，并为 `full` profile 增加自包含 MySQL、XXL-JOB 初始化表、MinIO `9001`、RabbitMQ `15672`、Nacos Console `8080/`、Kibana `5601` 和 XXL-JOB 根路径 `18080/` 管理入口及健康检查；通过 DaoCloud/dockerproxy 国内镜像完成拉取；最小环境与 `full` profile 共 10 个容器全部 healthy；每个对外暴露的中间件只映射一个宿主机端口，MinIO、RabbitMQ、Nacos、Kibana、XXL-JOB 管理入口均可访问；保留数据卷重启后健康状态和 XXL-JOB 初始化数据不变 | 新机器可以按文档启动最小环境；健康检查结果可判断服务是否可用；服务重启后数据卷仍然有效 | Docker 环境 | 2 天 |
-| TODO-012 | 建立 CI/CD 自动检查和构建流程 | 已完成 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) 四作业（前端/后端/依赖扫描/密钥扫描）+ 本地全量验证（见 T-B-02 记录）；镜像构建与注册推送待部署环境 | 提交和合并请求可以自动执行检查；失败检查阻止进入测试或发布分支；构建产物和版本信息可追溯 | TODO-005、TODO-007、TODO-011 | 2 天 |
+| TODO-012 | 建立 CI/CD 自动检查和构建流程 | 已完成 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) 六作业（文档、前端、双后端、浏览器安全回归、依赖扫描、密钥扫描）；管理后端不再跳过测试，客户端公开导入降级策略保持不变；镜像构建与注册推送待部署环境 | 提交和合并请求可以自动执行检查；失败检查阻止进入测试或发布分支；构建产物和版本信息可追溯 | TODO-005、TODO-007、TODO-011 | 2 天 |
 | TODO-013 | 建立 PostgreSQL 和 MinIO 备份恢复流程 | 进行中（导入和对象校验完成，恢复演练待环境） | [backup-local.ps1](../sanye_deploy/backup-local.ps1)（pg_dump 自定义格式、时间戳、保留最近 N 份、恢复说明）已实测生成 dump；MinIO 21 个对象和 21 条文件元数据已由 import-middleware-data.ps1 校验；对象存储备份恢复演练仍待独立环境 | 在干净测试环境完成一次数据恢复；恢复后的核心数据、文件元数据和对象可校验；记录 RPO、RTO 和演练结果 | TODO-011、TODO-010 | 1.5 天 |
 | TODO-014 | 建立可观测性和故障处理手册 | 已完成（本地部分） | prometheus 指标端点（网关+8 业务服务）、告警规则 [prometheus-rules.yml](../sanye_deploy/monitoring/prometheus-rules.yml)（服务/连接池/AI/线程池/搜索/JVM）、故障手册 [ops-runbook.md](./ops-runbook.md)（8 类故障）；Grafana/Alertmanager 采集栈归部署环境 | 能发现登录失败、数据库连接异常、队列堆积、任务失败、AI 调用异常和存储故障；每类 P0 故障都有处理入口 | TODO-005、TODO-011 | 1.5 天 |
 | TODO-015 | 建立发布、回滚和发布证据流程 | 已完成（本地演练） | 发布检查清单、数据库变更检查、备份确认、回滚方案与已知问题登记落地于 [release-readiness.md](./release-readiness.md)；正式灰度/回滚演练待发布环境 | 仅按文档即可完成一次测试发布和回滚；版本、配置、迁移、备份、验证结果和已知问题均有记录 | TODO-012、TODO-013、TODO-014 | 1 天 |
@@ -270,3 +270,4 @@ PRE-TODO-001 客户端与官网原型评审
 | 2026-08-24 | v0.29 | 清理 E2E 临时数据后同步当前基线：全量 Playwright 540/540、独立按钮体检 425/425（完整套件内 420/420） | `pnpm e2e:all`、`node e2e/e2e-buttons.mjs`、`pnpm docs:check` |
 | 2026-08-24 | v0.30 | 登记清晰度专项 3/3、真实 HLS 专项 34/34、全量 Playwright 548/548 和套件内按钮 428/428；独立按钮 425/425 作为已完成稳定报告保留 | `pnpm e2e:media-quality`、`e2e/e2e-media-player-live.mjs`、`pnpm e2e:all` |
 | 2026-08-25 | v0.31 | 修正剧场版多条播放地址的集数误导，电影改为正片和语言/线路选择 | `animeDetailView.vue`、电影线路专项 2/2 |
+| 2026-08-26 | v0.32 | CI 增加管理后端权限契约测试与三项自包含浏览器回归，依赖升级后启用高危漏洞零容忍扫描；保留客户端公开导入降级策略 | `.github/workflows/ci.yml`、`AdminControllerSecurityTest`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |

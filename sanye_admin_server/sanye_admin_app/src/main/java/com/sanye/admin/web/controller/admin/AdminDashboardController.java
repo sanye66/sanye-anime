@@ -3,6 +3,7 @@ package com.sanye.admin.web.controller.admin;
 import com.sanye.admin.common.core.domain.AjaxResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,6 +49,7 @@ public class AdminDashboardController {
 
     /** 返回带 5 秒本地缓存的仪表盘统计快照。 */
     @GetMapping("/stats")
+    @PreAuthorize("isAuthenticated()")
     public AjaxResult stats() {
         long now = System.currentTimeMillis();
         Map<String, Object> data = cachedStats;

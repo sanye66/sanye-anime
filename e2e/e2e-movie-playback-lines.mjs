@@ -10,6 +10,18 @@ function response(data) {
 }
 
 try {
+  await page.route('**/api/v1/monitor/frontend-errors', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: response(null),
+  }))
+  await page.route('**/api/v1/users/me/history/127', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: response(null),
+  }))
+  await page.route('**/api/v1/users/me/favorites/127/status', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: response({ favorite: false }),
+  }))
   await page.route('**/api/v1/anime/127/episodes', (route) => route.fulfill({
     contentType: 'application/json',
     body: response([

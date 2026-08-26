@@ -45,6 +45,18 @@ const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 
 try {
+  await page.route('**/api/v1/monitor/frontend-errors', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: null, requestId: 'season-order-e2e' }),
+  }))
+  await page.route('**/admin-profile/**', (route) => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>',
+  }))
+  await page.route('**/covers/**', (route) => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="3"/>',
+  }))
   await page.route('**/api/v1/anime?**', (route) => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(pageResponse(scrambledAnime)),

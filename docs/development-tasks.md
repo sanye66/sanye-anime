@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.3 |
-| 文档状态 | 基线，P0 任务清单已拆分并持续记录实现与验收证据；搜索与导入性能优化已完成代码验证，真实来源耗时待环境复测 |
+| 文档版本 | v2.4 |
+| 文档状态 | 基线，P0 任务清单已拆分并持续记录实现与验收证据；CI 与依赖安全门禁已完成代码验证，外部发布事项保持待环境 |
 | 关联任务 | PRE-TODO-007（拆分开发任务并估时） |
 | 关联文档 | [开发计划](./development-plan.md)、[详细技术设计](./technical-design.md)、[MVP 冻结清单](../product/mvp-freeze.md)、[开发待办事项](./development-todo.md) |
-| 更新时间 | 2026-08-25 |
+| 更新时间 | 2026-08-26 |
 
 ## 1. 拆分规则
 
@@ -196,7 +196,7 @@ T-G-05 -> T-G-06 -> T-H-01
 | 任务 | 状态 | 证据 | 完成日期 |
 | --- | --- | --- | --- |
 | T-B-01 仓库与分支规范 | 已完成 | AGENTS.md 分支/提交/合并规范落地；任务分支 `feature-T-B-01` 创建 | 2026-08-18 |
-| T-B-02 自动检查门禁 | 已完成 | [.github/workflows/ci.yml](../.github/workflows/ci.yml)（前端、后端、依赖扫描、密钥扫描四作业）；本地验证：YAML 校验、`pnpm typecheck`、`pnpm build`、`mvn -f sanye_server/pom.xml test`、`mvn -f sanye_admin_server/pom.xml package -DskipTests=true`、密钥模式扫描全部通过 | 2026-08-18 |
+| T-B-02 自动检查门禁 | 已完成 | [.github/workflows/ci.yml](../.github/workflows/ci.yml) 六作业（文档、前端、双后端、浏览器安全回归、依赖扫描、密钥扫描）；本地验证：`pnpm typecheck`、`pnpm build`、`mvn -f sanye_server/pom.xml test`、`mvn -f sanye_admin_server/pom.xml test`、`pnpm e2e:ci`、`pnpm docs:check`、`pnpm audit --audit-level high` 全部通过 | 2026-08-26 |
 | T-B-03 本地基础设施 Compose | 已完成（本地验证） | `compose.yaml` 已补齐 Redis 密码健康检查、MinIO `9001`、RabbitMQ `15672`、Nacos Console `8080/`、Kibana `5601` 和 XXL-JOB 根路径 `18080/` 管理入口，以及各服务健康检查和 XXL-JOB MySQL 8.4.5 + 3.1.0 初始化表；通过 DaoCloud/dockerproxy 国内镜像完成拉取；最小环境与 `full` profile 共 10 个容器全部 healthy，每个对外暴露的中间件只映射一个宿主机端口，五个管理入口和其他服务端口返回 200，保留数据卷重启后状态和初始化数据有效 | 2026-08-21 |
 | T-B-05 多服务工程骨架与网关 | 已完成 | `sanye_server` 重构为聚合父工程 + 11 个模块（`sanye-server-core`、`sanye-server-web`、`sanye-server-gateway` + 8 个业务服务）；每个服务独立 main/配置/端口，网关含路由与请求 ID 过滤器；`mvn -f sanye_server/pom.xml test` 全部模块构建成功（core 6 用例 + web 契约 3 用例通过） | 2026-08-18 |
 | T-B-07 服务间调用基线 | 已完成 | 新增 OpenFeign 基线（`FeignSupportConfig` 开启 Feign、默认 `Retryer.NEVER_RETRY`）、请求头透传（X-Request-Id/X-User-Id/X-Device-Id/X-Caller-Name）、错误解码映射（401/403/404/429/5xx → 业务错误码）、默认连接/读超时（feign-defaults.yml 由 8 个服务导入）；`mvn test` 全模块通过（web 7 用例含 Feign 4 用例）；跨服务冒烟已执行并持续覆盖（AI 推荐回源、favorite 回源、dashboard 聚合、legal 代理，冒烟新增“跨服务 X-Request-Id 透传回显”达 77/77） | 2026-08-20 |
@@ -251,7 +251,7 @@ T-G-05 -> T-G-06 -> T-H-01
 | AI 供应商接入（硅基流动 OpenAI 兼容模式） | 进行中（真实模型受外部额度阻塞） | 使用本机用户级环境变量配置 `AI_PROVIDER=openai`、`AI_BASE_URL=https://api.siliconflow.cn/v1/`、`AI_MODEL=Qwen/Qwen2.5-7B-Instruct`（温度 0.7），密钥仅注入 `AI_API_KEY`，仓库与日志零落盘；重启 ai-chat 后 `GET /api/v1/ai/model-info` 返回 provider/model 正确；真实模型请求返回 HTTP 402（账号余额/额度不足），系统按设计落 `message.failed`/`4001`，自动化回答链路使用 `AI_PROVIDER=dev` 完成确定性验证；GAP-006 保持 `in-progress`，RAG 因 ES 未启动按设计降级为空检索，不阻塞回答 | 2026-08-21 |
 | 内部收尾（T-B-07 收口 / 过期记录清理 / run-local 修复） | 已完成 | run-local.ps1 探测与初始化 psql 全部加 `-w` 免交互并预置 PGPASSWORD（冷启动不再卡死，实测 1.3 秒跑完）；冒烟新增“跨服务 X-Request-Id 透传回显”达 77/77（T-B-07 收口为已完成）；development-tasks.md 中 T-B-04（部分）、T-F-04（提前执行）两条过期记录更新为已完成（由后续记录取代） | 2026-08-20 |
 | 仪表盘统计与接口体检收口 | 已完成 | 修复 AI 用量趋势查询的 PostgreSQL `day` 别名冲突；文件元数据体检携带所有者令牌并同步 `api-contract.md`；部署 PowerShell 脚本统一 UTF-8 BOM。全模块 `mvn test`、三端类型检查/构建、冒烟 77/77、接口体检 60/60 通过 | 2026-08-20 |
-| 桌宠阶段启动（PET-TODO-001 至 006） | 进行中（核心代码已完成，系统发布验收待环境） | 新增 [sanye_pet](../sanye_pet) 应用（`@sanye/sanye_pet`，Electron 33 + Vite + Vue 3 + TS，加入 pnpm workspace）：透明无背景原创角色与互动按钮、五种角色状态、单击/双击/右键/拖动/托盘交互、客户端启动自动拉起与单实例复用、异步客户端唤起、失败反馈、大小/透明度/动效/气泡/提醒/安静时段/开机启动设置与持久化均已实现；实测 typecheck/build 通过；PET-TODO-002 的正式授权、PET-TODO-003/007 的多屏缩放锁屏和性能观察、PET-TODO-008 的安装签名与升级回滚仍待环境 | 2026-08-21 |
+| 桌宠阶段启动（PET-TODO-001 至 006） | 进行中（核心代码已完成，系统发布验收待环境） | 新增 [sanye_pet](../sanye_pet) 应用（`@sanye/sanye_pet`，Electron 44.0.0 + Vite 6.4.3 + Vue 3.5.13 + TypeScript 5.7.3，加入 pnpm workspace）：透明无背景原创角色与互动按钮、五种角色状态、单击/双击/右键/拖动/托盘交互、客户端启动自动拉起与单实例复用、异步客户端唤起、失败反馈、大小/透明度/动效/气泡/提醒/安静时段/开机启动设置与持久化均已实现；本轮依赖安全升级后 typecheck/build 通过；PET-TODO-002 的正式授权、PET-TODO-003/007 的多屏缩放锁屏和性能观察、PET-TODO-008 的安装签名与升级回滚仍待环境 | 2026-08-26 |
 | 全接口吞吐/QPS 基准与性能优化（T-G-05 补项） | 已完成（真实模型 AI SSE 待额度恢复） | 新增全接口基准 [benchmark-all.mjs](../sanye_deploy/benchmark-all.mjs)（24 端点 × 并发 20 × 100 请求，含网关错误路径与管理端，AI SSE 以落库状态校验）；基线发现并修复：①管理端仪表盘统计串行聚合慢（QPS 133/p95 275ms）→ 5 秒本地 TTL 缓存 + 双检锁（优化后 QPS 1661/p95 31ms，12.5×）；②anime 服务 HikariCP 20 并发打满（total=10 active=10 waiting=7，3s 超时 500）→ 8 个业务服务连接池 10→20、connection-timeout 3s→10s、PG max_connections 100→200；优化后 23/24 端点 QPS 700~3200、p95 ≤107ms、错误率 0%，首页缓存命中率 95%（380/400）；报告 [performance-test-report.md](./performance-test-report.md)；优化后逻辑验证：冒烟 77/77、E2E 31/31（AI 生成断言在 dev-mock 下执行）；**真实模型阻塞：硅基流动账户余额/额度不足（HTTP 402）**，生成失败由系统正确落 FAILED，额度恢复后复测 AI SSE；已知项：admin 登录 QPS~70 属 BCrypt+审计正常成本、单机偶发长尾建议压测机验证 | 2026-08-21 |
 | T-B-04 PostgreSQL 迁移与种子基线（作品目录持久化） | 已完成 | 新增 `AnimeCatalogStore` 接口（内存 `InMemoryAnimeCatalogStore` / PG `JdbcAnimeCatalogStore` 双实现，`sanye.catalog.store=pg|memory` 默认 pg）；V3 迁移扩展 `sanye_anime`（score/update_text/tags_json/characters_json + id 序列 + 15 部种子，全幂等）+ V4 修复历史环境序列（V3 早期版本种子前 setval 导致序列停在 1）；`AnimeCatalogService` / `AnimeManageService` / `WeeklyScheduleService` / 公开精选改经 store（关键词搜索用 `summaryById` 避免 N+1）；重启后作品、简介、标签、角色、排期与发布状态全部保留（实测：创建 id=16 发布 → 重启 → 公开 16 与管理状态保留）；单测新增 13 项（store 接口 default 4 + JDBC mock 9）；全模块 `mvn test` 通过（anime 覆盖率门禁达标）、冒烟 73/73、E2E 31/31、三端构建通过；正式连接配置（5432 实例口令）仍待环境，本地联调使用 5433 | 2026-08-19 |
 | T-B-04（部分）PostgreSQL 迁移与种子基线 | 已完成（由 T-B-04 正式记录取代） | 早期空库迁移验证记录；后续 T-B-04 已完成 PG 持久化、种子与重启保留实测，本行仅保留历史证据；正式连接配置（5432 实例口令）仍待环境 | 2026-08-20 |
@@ -478,3 +478,4 @@ T-G-05 -> T-G-06 -> T-H-01
 | 2026-08-25 | v2.1 | 将动漫系列与季度顺序收口为统一目录元数据，片库和搜索共用排序规则并增加乱序接口专项回归 | `animeCatalog.ts`、`e2e/e2e-season-order.mjs`、客户端 typecheck/build |
 | 2026-08-25 | v2.2 | 将剧场版的多条媒体记录改为语言或播放线路展示，消除第一集、第二集错误语义 | `animeDetailView.vue`、`e2e/e2e-movie-playback-lines.mjs` |
 | 2026-08-25 | v2.3 | 登记搜索目录回源与外部缓存、V9 导入查重索引、8 路受控抓取和剧集批量写入；真实来源耗时保留为待环境复测 | search 12/12、anime 76/76、客户端 typecheck/build、`pnpm docs:check` |
+| 2026-08-26 | v2.4 | 固定桌宠和前端工具链安全版本，登记 CI 管理后端测试、浏览器回归与依赖审计门禁 | `pnpm typecheck`、`pnpm build`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |

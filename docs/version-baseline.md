@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.4 |
+| 文档版本 | v0.5 |
 | 文档状态 | Baseline，项目初始化时执行兼容性验证 |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
-| 更新时间 | 2026-08-21 |
+| 更新时间 | 2026-08-26 |
 
 ## 1. 版本选择结论
 
@@ -146,20 +146,22 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | RuoYi 前端 Node.js | 22 LTS | pinned | 管理平台构建环境 |
 | Node.js | 22 LTS | pinned | Vue 客户端和 RuoYi 管理平台统一运行时 |
 | pnpm | 10.15.0 | pinned | 前端依赖安装和锁文件统一 |
-| Vue | 3.5.x | baseline | PC Web 客户端建议基线 |
-| TypeScript | 5.7.x | baseline | PC Web 客户端类型系统 |
-| Vite | 6.x | baseline | PC Web 客户端构建工具 |
-| Playwright | 1.x（待定） | review | E2E 测试工具，Node 22 环境，版本验证后锁定 |
+| Vue | 3.5.13 | pinned/baseline | 三个前端工程统一版本 |
+| TypeScript | 5.7.3 | pinned/baseline | 三个前端工程统一类型系统 |
+| Vite | 6.4.3 | pinned/baseline | 三个前端工程统一构建工具 |
+| Element Plus | 2.14.5 | pinned/baseline | `sanye_admin` 管理前端组件库 |
+| Electron | 44.0.0 | pinned/review | `sanye_pet` 桌宠壳层；构建已验证，Windows 系统兼容与安装发布待环境 |
+| Playwright | 1.62.1 | pinned/baseline | E2E 测试工具，Node 22 环境 |
 
 ### 5.1 PC 客户端形态
 
-在没有另行确认前，PC 客户端默认按 PC Web 形态开发：
+`sanye_client` 保持 PC Web 形态：
 
 ```text
-Vue 3.5.x + TypeScript 5.7.x + Vite 6.x + Node.js 22 LTS
+Vue 3.5.13 + TypeScript 5.7.3 + Vite 6.4.3 + Node.js 22 LTS
 ```
 
-如果后续确定使用桌面客户端，再单独增加 Electron 版本，不在当前版本基线中提前引入桌面壳层。
+`sanye_pet` 是独立 Electron 桌宠，不改变 `sanye_client` 的 PC Web 产品形态。Electron 44.0.0 已通过类型检查和生产构建；多屏、缩放、锁屏唤醒、安装签名、升级和回滚仍按待环境处理。
 
 ### 5.2 RuoYi 兼容边界
 
@@ -215,7 +217,7 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 
 - [x] `sanye_admin_server` 已建立独立 Maven 根工程和 6 个功能模块。
 - [x] Java 包名统一为 `com.sanye.admin`，启动类为 `SanyeAdminServerApplication`。
-- [x] 使用 JDK 21 执行 `mvn clean package -DskipTests=true` 构建成功。
+- [x] 使用 JDK 21 执行 `mvn -f sanye_admin_server/pom.xml test`，管理后端编译与权限契约测试通过。
 - [x] PostgreSQL 初始化脚本、Quartz 初始化脚本和环境变量配置已建立。
 - [x] PostgreSQL、Redis、本地 CAS Mock、真实管理登录和权限链路已完成本地联调。
 - [x] `sanye_admin` 前端主要 P0 页面已绑定真实管理接口。
@@ -227,8 +229,9 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 - [ ] PostgreSQL 16、Redis 7.4、RabbitMQ 4.1、Elasticsearch 8.17、MinIO 固定镜像可以通过 Docker 启动。
 - [ ] XXL-JOB 3.1.0 Admin 和执行器可以完成一次任务执行。
 - [ ] RuoYi-Vue 3.9.x 可以独立启动并完成权限登录。
-- [ ] PC Web 客户端可以使用 Node.js 22、pnpm 10.15.0、Vue 3.5、TypeScript 5.7 和 Vite 6 构建。
-- [ ] 所有镜像和依赖没有使用浮动版本。
+- [x] 三个前端工程可以使用 pnpm 10.15.0、Vue 3.5.13、TypeScript 5.7.3 和 Vite 6.4.3 完成类型检查与生产构建。
+- [x] `sanye_pet` 使用 Electron 44.0.0 完成类型检查与生产构建；系统兼容和安装发布仍待环境。
+- [x] 前端直接依赖均固定版本，`pnpm audit --audit-level high` 无已知漏洞。
 - [ ] 版本升级和回滚记录模板已经建立。
 
 ## 9. 保留的外部验证项
@@ -264,3 +267,10 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 
 新增文档维护规则：契约类文档（接口/数据/安全/环境）变更必须同步
 [document-review.md](./document-review.md) 评审记录，并更新 docs/README.md 索引。
+
+## 更新记录
+
+| 日期 | 版本 | 变更 | 依据 |
+| --- | --- | --- | --- |
+| 2026-08-21 | v0.4 | 同步当前服务端、基础设施和管理平台版本基线 | 本地联调与文档评审 |
+| 2026-08-26 | v0.5 | 固定 Vite、Element Plus、Electron 和 Playwright 当前安全版本，明确 PC Web 与独立桌宠边界 | 三端 `package.json`、`pnpm-lock.yaml`、`pnpm typecheck`、`pnpm build`、`pnpm audit --audit-level high` |

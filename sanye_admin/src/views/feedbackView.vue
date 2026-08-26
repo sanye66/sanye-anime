@@ -74,7 +74,7 @@ function exportRows() {
   if (!rows.value.length) return
   const headers = ['反馈', '用户', '类型', '优先级', '时间', '状态']
   const values = rows.value.map((row) => [row.title, row.user, row.type, row.priority, row.time, row.status])
-  const escapeCell = (value: string) => `"${value.replaceAll('"', '""')}"`
+  const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`
   const csv = [headers, ...values].map((line) => line.map(escapeCell).join(',')).join('\r\n')
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)

@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v4.7 |
-| 文档状态 | 复查完成：搜索目录回源、外部候选缓存、导入查重索引、8 路受控读取与批量写库等当前基线已同步 |
+| 文档版本 | v4.8 |
+| 文档状态 | 复查完成：CI、管理端权限契约、浏览器安全回归与依赖安全门禁已同步 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`）与交互原型 |
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
-| 评审日期 | 2026-08-25 |
+| 评审日期 | 2026-08-26 |
 
 ## 1. 评审范围
 
@@ -426,6 +426,16 @@
 | 选集抓取与写库 | 固定 8 路线程池一次提交全部选集，剧集快照批量写入 | `MediaImportService`、`JdbcAnimeMediaStore`、anime 76/76 |
 | 外部耗时 | 代码与单元测试已完成；本轮真实来源请求被站点防火墙拦截，真实耗时为待环境复测 | `Invoke-WebRequest` 防火墙响应，不登记为性能通过 |
 
+## 17. CI 与依赖安全门禁复查（2026-08-26）
+
+| 检查项 | 结论 | 证据 |
+| --- | --- | --- |
+| 导入降级策略 | 保留；审核链路失败时，客户端仍可调用公开 `/anime/import-url` 完成降级导入 | `importRequestView.vue`、`anime.ts`、`AnimeController` |
+| 管理后端门禁 | CI 由跳过测试改为执行 `mvn test`；管理代理端点增加方法级权限契约，仪表盘要求已登录 | `.github/workflows/ci.yml`、`AdminControllerSecurityTest` |
+| 浏览器回归 | CI 构建客户端并执行季度排序、电影线路和清晰度三个自包含 Playwright 脚本 | `e2e/run-ci.mjs`、`pnpm e2e:ci` |
+| 依赖安全 | Vite 6.4.3、Electron 44.0.0、Element Plus 2.14.5 已升级并固定；high/critical 漏洞由 `pnpm audit --audit-level high` 阻断 | `version-baseline.md`、三端 `package.json`、`pnpm-lock.yaml`、`.github/workflows/ci.yml` |
+| 外部边界 | 分支保护、镜像发布、生产凭据与正式环境部署不在本次代码验证范围，状态不变 | `ci-cd.md`、`gap-register.md` v0.18 |
+
 ## 更新记录
 
 | 日期 | 版本 | 变更 | 依据 |
@@ -481,3 +491,4 @@
 | 2026-08-25 | v4.5 | 修正外部候选存在时的空状态误提示；复查播放页 `imgUrl` 当前作品封面、2 集导入和真实导入耗时，并同步媒体设计文档版本 | `searchView.vue`、动漫服务直连 URL 导入实测、客户端 typecheck、`pnpm docs:check` |
 | 2026-08-25 | v4.6 | 将外部候选“直接观看”改为站内 `/watch/external` 只读预览，复用 ArtPlayer/HLS 播放器；同步预览接口契约、导入说明和媒体设计，并确认 76 项动漫测试通过 | `AnimeController`、`AnimeUrlPreviewResult`、`searchView.vue`、站内 Playwright 回归、动漫模块 surefire 报告、`pnpm docs:check` |
 | 2026-08-25 | v4.7 | 复查搜索与导入性能优化，登记目录回源、外部缓存与请求合并、V9 查重索引、8 路受控抓取和剧集批量写入 | search 12/12、anime 76/76、客户端 typecheck/build、`pnpm docs:check` |
+| 2026-08-26 | v4.8 | 复查 CI、管理端权限契约、浏览器安全回归和依赖漏洞门禁；确认公开导入降级策略保持不变 | `.github/workflows/ci.yml`、`AdminControllerSecurityTest`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |

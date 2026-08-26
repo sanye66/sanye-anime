@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
-| 更新时间 | 2026-08-19 |
+| 更新时间 | 2026-08-26 |
 
 ## 1. 流水线总览
 
@@ -17,9 +17,11 @@
 
 ```text
 ┌─ frontend（前端类型与构建）
-├─ backend（后端编译与测试）
+├─ backend（业务后端与管理后端编译测试）
+├─ browser-security（自包含浏览器安全回归）
 ├─ dependency-scan（依赖漏洞）
 ├─ secret-scan（密钥扫描）
+├─ docs（文档一致性检查）
 └─ 任一失败 → PR 标记失败、阻断进入 test/release
 ```
 
@@ -37,20 +39,32 @@
 - 环境：ubuntu-latest，Temurin JDK 21，Maven 缓存。
 - 步骤：
   - `mvn -B -f sanye_server/pom.xml test`：全模块编译 + 单测 + JaCoCo 覆盖率门禁（6 模块阈值，见 testing-strategy）。
-  - `mvn -B -f sanye_admin_server/pom.xml package -DskipTests=true`：RuoYi 管理后端构建。
+  - `mvn -B -f sanye_admin_server/pom.xml test`：RuoYi 管理后端编译与测试，包含管理代理端点方法级权限契约。
 - 门禁：编译/测试/覆盖率任一失败即阻断。
 
-### 2.3 dependency-scan：依赖漏洞扫描
+### 2.3 browser-security：浏览器安全回归
 
-- `pnpm audit`：前端依赖漏洞（severity high/critical 阻断，按策略可豁免并登记）。
+- 环境：ubuntu-latest、Node 22、pnpm 10.15.0、Chromium。
+- 步骤：冻结锁文件安装依赖，构建 `sanye_client`，启动本地 Vite preview，再执行季度排序、电影播放线路和清晰度选择三个自包含 Playwright 脚本。
+- 命令：`pnpm e2e:ci`。
+- 门禁：任一断言失败、预览服务启动失败或脚本异常退出即阻断。
+
+### 2.4 dependency-scan：依赖漏洞扫描
+
+- `pnpm audit --audit-level high`：前端依赖漏洞（high/critical 阻断，不使用未登记豁免）。
 - Trivy 文件系统扫描：后端与前端依赖、SBOM。
 - 结果纳入 PR 检查。
 
-### 2.4 secret-scan：密钥扫描
+### 2.5 secret-scan：密钥扫描
 
 - Gitleaks：含提交历史（`git log` 全量扫描）。
 - 命中密钥/口令/Token 即阻断；误报豁免需登记说明。
 - 与 [security-design.md](./security-design.md) §6 密钥策略一致。
+
+### 2.6 docs：文档一致性检查
+
+- 命令：`node sanye_deploy/check-docs.mjs`，本地等价入口为 `pnpm docs:check`。
+- 门禁：Markdown 链接、当前事实或命令基线漂移即阻断。
 
 ## 3. 门禁与分支策略
 
@@ -85,7 +99,10 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
 mvn -B -f sanye_server/pom.xml test
-mvn -B -f sanye_admin_server/pom.xml package -DskipTests=true
+mvn -B -f sanye_admin_server/pom.xml test
+pnpm e2e:ci
+pnpm audit --audit-level high
+pnpm docs:check
 ```
 
 ## 6. 待完善（外部环境）
@@ -99,3 +116,4 @@ mvn -B -f sanye_admin_server/pom.xml package -DskipTests=true
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-19 | v1.0 | 建立 CI/CD 基线：流水线、任务、门禁、产物、本地等价命令 | 企业级文档完善 |
+| 2026-08-26 | v1.1 | 管理后端改为执行测试；新增三项自包含 Playwright 浏览器回归，并同步文档与高危依赖门禁 | `.github/workflows/ci.yml`、`pnpm e2e:ci`、管理端权限契约测试 |

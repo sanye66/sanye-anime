@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
-| 更新时间 | 2026-08-19 |
+| 更新时间 | 2026-08-26 |
 
 ## 1. 门禁总览
 
@@ -18,7 +18,7 @@
 | --- | --- | --- | --- |
 | 编码前 | 新阶段/新板块启动 | 需求→设计→任务已登记；外部门禁明确 | 禁止进入编码 |
 | 提交 | 每次 git commit | 提交信息规范、单任务、无密钥/构建产物 | 禁止提交 |
-| CI | push/PR（feature-*、dev、test、release） | typecheck、build、mvn test、依赖/密钥扫描 0 失败 | 阻止进入 test/release |
+| CI | push/PR（feature-*、dev、test、release） | typecheck、build、双后端 mvn test、浏览器回归、文档/依赖/密钥扫描 0 失败 | 阻止进入 test/release |
 | 合并 | 合并到 dev | 只含当前任务范围；测试与文档已更新；配置/迁移同步 | 禁止合并 |
 | 发布 | 打 release | 发布检查清单全过、回滚就绪 | 禁止上线 |
 
@@ -52,8 +52,10 @@
 | 前端类型 | pnpm typecheck | 阻断 |
 | 前端构建 | pnpm build | 阻断 |
 | 后端编译测试 | mvn -B -f sanye_server/pom.xml test（含 JaCoCo） | 阻断 |
-| 管理端构建 | mvn -B -f sanye_admin_server/pom.xml package | 阻断 |
-| 依赖漏洞 | pnpm audit + Trivy | 高危阻断 |
+| 管理后端编译测试 | mvn -B -f sanye_admin_server/pom.xml test（含权限契约） | 阻断 |
+| 浏览器安全回归 | pnpm e2e:ci（季度排序、电影线路、清晰度） | 阻断 |
+| 文档一致性 | pnpm docs:check | 阻断 |
+| 依赖漏洞 | pnpm audit --audit-level high + Trivy | 高危阻断 |
 | 密钥扫描 | Gitleaks（含历史） | 命中即阻断 |
 
 ## 5. 合并门禁（合并到 dev 自查）
@@ -83,3 +85,4 @@
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-19 | v1.0 | 建立质量门禁基线：五道门禁、检查清单、执行记录 | 企业级文档完善 |
+| 2026-08-26 | v1.1 | CI 增加管理后端测试、浏览器安全回归和文档一致性检查，依赖审计明确 high/critical 阻断 | `.github/workflows/ci.yml`、`pnpm e2e:ci`、管理端权限契约测试 |

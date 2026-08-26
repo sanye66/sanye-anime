@@ -19,6 +19,7 @@
     "e2e:verify": "pnpm --filter @sanye/sanye_e2e test:verify",
     "e2e:media-cache": "pnpm --filter @sanye/sanye_e2e test:media-cache",
     "e2e:media-quality": "pnpm --filter @sanye/sanye_e2e test:media-quality",
+    "e2e:ci": "pnpm --filter @sanye/sanye_client build && pnpm --filter @sanye/sanye_e2e test:ci",
     "e2e:all": "pnpm --filter @sanye/sanye_e2e test:all"
   },
   "pnpm": {

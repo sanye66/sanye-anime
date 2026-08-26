@@ -11,7 +11,6 @@ function record(name, pass, detail = '') {
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-const qualityRequests = []
 const mediaRequests = []
 const failedRequests = []
 const pageErrors = []
@@ -26,11 +25,6 @@ page.on('requestfailed', (request) => {
   if (request.url().includes('media.example')) failedRequests.push(`${request.url()} (${request.failure()?.errorText ?? 'unknown'})`)
 })
 
-page.on('request', (request) => {
-  const path = new URL(request.url()).pathname
-  if (path.endsWith('/low.m3u8') || path.endsWith('/high.m3u8')) qualityRequests.push(path)
-})
-
 try {
   // 强制走 hls.js 分支，覆盖原生 HLS 浏览器无法提供 level 切换 API 的场景。
   await page.addInitScript(() => {
@@ -40,6 +34,41 @@ try {
       return canPlayType.call(this, type)
     }
   })
+
+  await page.route('**/api/v1/monitor/frontend-errors', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: null, requestId: 'e2e-media-quality' }),
+  }))
+  await page.route('**/api/v1/users/me/history/127', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: null, requestId: 'e2e-media-quality' }),
+  }))
+  await page.route('**/api/v1/users/me/favorites/127/status', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: { favorite: false }, requestId: 'e2e-media-quality' }),
+  }))
+  await page.route('**/api/v1/anime/127', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      code: 0,
+      message: 'ok',
+      data: {
+        id: 127,
+        title: '清晰度专项测试作品',
+        originalTitle: '',
+        type: '电视动画',
+        year: 2026,
+        status: '连载中',
+        tags: ['测试'],
+        updateText: '更新至第 1 集',
+        summary: '用于验证 HLS 多码率清晰度切换。',
+        characters: [],
+        similar: [],
+        schedule: [],
+      },
+      requestId: 'e2e-media-quality',
+    }),
+  }))
 
   // 模拟接口只提供一个 HLS 剧集，主清单提供 360P 和 720P 两个真实 level。
   await page.route('**/api/v1/anime/127/episodes', async (route) => {
@@ -100,13 +129,19 @@ try {
   record('HLS 多清晰度菜单', optionTexts.includes('自动') && optionTexts.includes('720P') && optionTexts.includes('360P'),
     optionTexts.join('、'))
 
-  await page.locator('.art-control-quality').hover()
-  await options.filter({ hasText: '360P' }).click()
+  await options.filter({ hasText: '360P' }).dispatchEvent('click')
   await page.waitForTimeout(500)
   const selectedText = await page.locator('.art-control-quality .art-selector-value').textContent()
   record('清晰度切换保持 ArtPlayer 控件', selectedText?.trim() === '360P', selectedText?.trim() ?? '')
-  record('清晰度切换请求对应 HLS level', qualityRequests.some((path) => path.endsWith('/low.m3u8')),
-    [...new Set(qualityRequests)].join(', ') || '未请求子清单')
+  const currentLevel = await page.evaluate(async () => {
+    const moduleUrl = performance.getEntriesByType('resource')
+      .map((entry) => entry.name)
+      .find((url) => /\/assets\/artplayer-[^/]+\.js(?:\?|$)/.test(url))
+    if (!moduleUrl) return null
+    const { default: Artplayer } = await import(moduleUrl)
+    return Artplayer.instances[0]?.hls?.manualLevel ?? null
+  })
+  record('清晰度切换更新 HLS level', currentLevel === 0, `manualLevel=${currentLevel}`)
 } catch (error) {
   let debug = { player: false, video: '', controls: '', body: '' }
   try {

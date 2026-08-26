@@ -52,8 +52,27 @@ jobs:
           cache: maven
       - name: sanye_server 编译与测试
         run: mvn -B -f sanye_server/pom.xml test
-      - name: sanye_admin_server 构建
-        run: mvn -B -f sanye_admin_server/pom.xml package -DskipTests=true
+      - name: sanye_admin_server 编译与测试
+        run: mvn -B -f sanye_admin_server/pom.xml test
+
+  browser-security:
+    name: 浏览器安全回归
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 安装 Chromium
+        run: pnpm --filter @sanye/sanye_e2e exec playwright install --with-deps chromium
+      - name: 执行自包含 Playwright 安全回归
+        run: pnpm e2e:ci
 
   dependency-scan:
     name: 依赖漏洞扫描

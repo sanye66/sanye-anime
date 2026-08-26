@@ -6,6 +6,7 @@
     "test:verify": "node e2e-verify.mjs",
     "test:media-cache": "node e2e-media-cache.mjs",
     "test:media-quality": "node e2e-media-quality.mjs",
+    "test:ci": "node run-ci.mjs",
     "test:all": "node run-all.mjs"
   },
   "devDependencies": {
