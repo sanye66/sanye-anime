@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v5.1 |
-| 文档状态 | 复查完成：CI Action、跨时区测试与后端高危依赖已修正，公开导入降级策略保持不变 |
+| 文档版本 | v5.2 |
+| 文档状态 | 复查完成：CI Action、跨时区测试、后端高危依赖与扫描限流已修正，公开导入降级策略保持不变 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
 | 评审日期 | 2026-08-26 |
@@ -444,6 +444,7 @@
 | Action 运行时 | GitHub 官方 Action、pnpm Action 已升级到当前受支持主版本；Trivy Action 更新为可解析的 v0.36.0，并固定 Trivy v0.74.0 | `.github/workflows/ci.yml`、GitHub Release 标签 |
 | 后端跨时区测试 | `timestamptz` 测试夹具改用明确的 `Instant`，CI 固定 UTC 执行以阻止默认时区依赖回归 | `FavoriteServiceTest`、`MAVEN_OPTS=-Duser.timezone=UTC` |
 | 后端依赖安全 | 两套后端统一升级 Spring Boot 3.5.16；Jackson 2.21.5、PostgreSQL JDBC 42.7.12 由父 POM 固定；Trivy 仅按 HIGH/CRITICAL 门槛阻断 | 两套父 `pom.xml`、`version-baseline.md`、Trivy 扫描 |
+| 扫描稳定性 | Trivy 前置执行跳过测试的 Maven 构建，将两套后端及其多模块产物安装到本地仓库并缓存，避免远端 POM 解析触发 HTTP 429；Trivy 只执行漏洞扫描，密钥检查由 Gitleaks 独立负责 | `.github/workflows/ci.yml`、GitHub Actions 远端日志 |
 | 外部边界 | 分支保护、镜像发布、生产凭据与正式环境部署状态不变 | `ci-cd.md`、`gap-register.md` |
 
 ## 更新记录
@@ -505,3 +506,4 @@
 | 2026-08-26 | v4.9 | 登记按 AlphaFactory AiCoding 实例建立的 sanye_anime Memory OS 骨架、迁移边界、检索入口和契约初稿；明确 AlphaFactory 历史、内部路径和凭据未迁移 | `AiCoding/CONTENTS.md`、`AiCoding/MIGRATION-NOTICE.md`、`AiCoding/ledger/S001-bootstrap.md` |
 | 2026-08-26 | v5.0 | 修复 CI Action 解析与 Node 运行时弃用告警，修正收藏服务测试夹具的默认时区依赖；确认公开导入降级策略未变 | `.github/workflows/ci.yml`、`FavoriteServiceTest`、`pnpm docs:check` |
 | 2026-08-26 | v5.1 | 修复远端扫描发现的后端高危依赖，统一升级 Spring Boot、Jackson 和 PostgreSQL JDBC，并将 Trivy 门槛与文档统一为 HIGH/CRITICAL | 两套父 `pom.xml`、`.github/workflows/ci.yml`、Trivy 扫描、Maven 测试 |
+| 2026-08-26 | v5.2 | 修复 Trivy 远端 POM 解析触发 Maven Central HTTP 429，增加 Maven 缓存预填并去除重复的 secret scanner | `.github/workflows/ci.yml`、GitHub Actions 远端日志、`pnpm docs:check` |

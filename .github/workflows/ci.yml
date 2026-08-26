@@ -87,10 +87,19 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
       - name: 前端依赖审计
         run: pnpm audit --audit-level high
+      - name: 预填 Maven 依赖缓存
+        run: |
+          mvn -B -ntp -DskipTests -Djacoco.skip=true -f sanye_server/pom.xml install
+          mvn -B -ntp -DskipTests -f sanye_admin_server/pom.xml install
       - name: 文件系统漏洞扫描
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -100,6 +109,7 @@ jobs:
           format: table
           exit-code: "1"
           ignore-unfixed: true
+          scanners: vuln
           severity: HIGH,CRITICAL
 
   secret-scan:
