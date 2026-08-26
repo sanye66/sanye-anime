@@ -1,0 +1,80 @@
+openapi: 3.0.3
+info:
+  title: sanye_anime Public API
+  version: 0.1.0
+  description: 当前已从 sanye_server 源码确认的最小公共接口契约。字段完整定义以 docs/api-contract.md 为准。
+servers:
+  - url: /api/v1
+paths:
+  /system/ping:
+    get:
+      summary: 系统探针
+      responses:
+        '200':
+          description: 服务可用
+  /system/capabilities:
+    get:
+      summary: 获取服务能力
+      responses:
+        '200':
+          description: 能力列表
+  /auth/cas/login:
+    get:
+      summary: 发起 CAS 登录
+      responses:
+        '302':
+          description: 重定向到 CAS
+  /auth/cas/callback:
+    get:
+      summary: CAS 回调
+      parameters:
+        - in: query
+          name: ticket
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 登录结果
+  /auth/cas/refresh:
+    post:
+      summary: 刷新会话
+      responses:
+        '200':
+          description: 刷新结果
+  /search/external:
+    get:
+      summary: 查询公开外部候选
+      parameters:
+        - in: query
+          name: keyword
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 候选列表
+  /files:
+    post:
+      summary: 上传文件
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: 文件元数据
+  /files/{id}:
+    get:
+      summary: 下载文件
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 文件内容

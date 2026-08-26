@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.6 |
+| 文档版本 | v2.7 |
 | 文档状态 | 基线，企业级文档体系总览与文档地图 |
-| 更新时间 | 2026-08-24 |
+| 更新时间 | 2026-08-26 |
 | 维护规则 | 遵循[文档变更规则](./document-change-rules.md)，新增/修订文档必须登记本文档索引并更新状态；文档间引用遵循第 3 节边界 |
 
 ## 1. 文档体系定位
@@ -95,6 +95,15 @@
 | --- | --- |
 | [README.md](../README.md) | 项目总览、快速启动、目录结构 |
 | [AGENTS.md](../AGENTS.md) | 协作规则、命名规范、提交规范（开发环境即读） |
+
+### 2.7 AI 编码记忆系统（AiCoding/，面向检索与治理）
+
+| 文档 | 定位 | 状态 |
+| --- | --- | --- |
+| [AiCoding 入口](../AiCoding/CONTENTS.md) | Memory OS 分层、会话启动顺序和当前入口 | 草案 |
+| [AiCoding 迁移说明](../AiCoding/MIGRATION-NOTICE.md) | AlphaFactory 实例到 sanye_anime 的迁移边界和敏感信息规则 | 基线 |
+| [AiCoding 检索指南](../AiCoding/index/retrieval-guide.md) | 按任务选择最小上下文 | 基线 |
+| [AiCoding 工作流策略](../AiCoding/policy/agent-workflow-policy.md) | AI 编码读取、写入、验证和提交协议 | 基线 |
 
 ## 3. 文档边界与唯一基准
 
@@ -207,3 +216,4 @@
 | 2026-08-21 | v2.1 | 增加文档变更规则、桌宠测试报告索引和 `pnpm docs:check` 自动校验 | 文档一致性收口 |
 | 2026-08-24 | v2.5 | 同步清理临时数据后的当前测试基线：独立按钮体检 425/425、全量 Playwright 540/540（套件内按钮 420/420）；历史版本数字保留在各自更新记录中 | `node e2e/e2e-buttons.mjs`、`pnpm e2e:all`、`pnpm docs:check` |
 | 2026-08-24 | v2.6 | 同步本次有效回归：全量 Playwright 548/548、套件内按钮 428/428、真实 HLS 专项 34/34、清晰度专项 3/3；独立按钮稳定报告 425/425 保留为动态基线 | `pnpm e2e:all`、`e2e/e2e-media-player-live.mjs`、`pnpm e2e:media-quality` |
+| 2026-08-26 | v2.7 | 增加 AiCoding Memory OS 入口、迁移边界、检索指南和 AI 编码工作流索引；明确其不替代 product/docs 唯一事实源 | `AiCoding/CONTENTS.md`、`AiCoding/MIGRATION-NOTICE.md` |

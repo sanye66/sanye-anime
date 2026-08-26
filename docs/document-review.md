@@ -2,9 +2,9 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v4.8 |
+| 文档版本 | v4.9 |
 | 文档状态 | 复查完成：CI、管理端权限契约、浏览器安全回归与依赖安全门禁已同步 |
-| 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`）与交互原型 |
+| 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
 | 评审日期 | 2026-08-26 |
 
@@ -492,3 +492,4 @@
 | 2026-08-25 | v4.6 | 将外部候选“直接观看”改为站内 `/watch/external` 只读预览，复用 ArtPlayer/HLS 播放器；同步预览接口契约、导入说明和媒体设计，并确认 76 项动漫测试通过 | `AnimeController`、`AnimeUrlPreviewResult`、`searchView.vue`、站内 Playwright 回归、动漫模块 surefire 报告、`pnpm docs:check` |
 | 2026-08-25 | v4.7 | 复查搜索与导入性能优化，登记目录回源、外部缓存与请求合并、V9 查重索引、8 路受控抓取和剧集批量写入 | search 12/12、anime 76/76、客户端 typecheck/build、`pnpm docs:check` |
 | 2026-08-26 | v4.8 | 复查 CI、管理端权限契约、浏览器安全回归和依赖漏洞门禁；确认公开导入降级策略保持不变 | `.github/workflows/ci.yml`、`AdminControllerSecurityTest`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |
+| 2026-08-26 | v4.9 | 登记按 AlphaFactory AiCoding 实例建立的 sanye_anime Memory OS 骨架、迁移边界、检索入口和契约初稿；明确 AlphaFactory 历史、内部路径和凭据未迁移 | `AiCoding/CONTENTS.md`、`AiCoding/MIGRATION-NOTICE.md`、`AiCoding/ledger/S001-bootstrap.md` |
