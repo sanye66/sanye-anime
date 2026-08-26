@@ -36,8 +36,12 @@
         <java.version>21</java.version>
         <jackson-bom.version>2.21.5</jackson-bom.version>
         <postgresql.version>42.7.12</postgresql.version>
-        <spring-cloud.version>2025.0.0</spring-cloud.version>
+        <spring-cloud.version>2025.0.3</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+        <netty.version>4.1.137.Final</netty.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
+        <commons-fileupload.version>1.6.0</commons-fileupload.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <jacoco.min.ratio>0</jacoco.min.ratio>
     </properties>
 
@@ -66,6 +70,16 @@
                 <groupId>com.sanye.anime</groupId>
                 <artifactId>sanye-server-web</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>commons-fileupload</groupId>
+                <artifactId>commons-fileupload</artifactId>
+                <version>${commons-fileupload.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
