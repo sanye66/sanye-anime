@@ -12,6 +12,7 @@ import org.springframework.jdbc.core.RowMapper;
 
 import java.sql.ResultSet;
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -102,7 +103,8 @@ class FavoriteServiceTest {
             RowMapper<?> mapper = inv.getArgument(1);
             ResultSet rs = mock(ResultSet.class);
             when(rs.getLong("anime_id")).thenReturn(1L);
-            when(rs.getTimestamp("created_at")).thenReturn(Timestamp.valueOf("2026-08-18 00:00:00"));
+            when(rs.getTimestamp("created_at"))
+                    .thenReturn(Timestamp.from(Instant.parse("2026-08-17T16:00:00Z")));
             return List.of(mapper.mapRow(rs, 0));
         });
         var result = service.list("device:d1", 1, 20);
@@ -119,7 +121,8 @@ class FavoriteServiceTest {
             RowMapper<?> mapper = inv.getArgument(1);
             ResultSet rs = mock(ResultSet.class);
             when(rs.getLong("anime_id")).thenReturn(1L);
-            when(rs.getTimestamp("last_view_at")).thenReturn(Timestamp.valueOf("2026-08-18 00:00:00"));
+            when(rs.getTimestamp("last_view_at"))
+                    .thenReturn(Timestamp.from(Instant.parse("2026-08-17T16:00:00Z")));
             return List.of(mapper.mapRow(rs, 0));
         });
         var result = service.history("device:d1", 1, 20);

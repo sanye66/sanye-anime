@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.1 |
+| 文档版本 | v1.2 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
@@ -29,14 +29,14 @@
 
 ### 2.1 frontend：前端类型检查与构建
 
-- 环境：ubuntu-latest，pnpm 10.15.0（actions/pnpm-action-setup@v4），Node 22（actions/setup-node@v4，pnpm 缓存）。
+- 环境：ubuntu-latest，pnpm 10.15.0（pnpm/action-setup@v6），Node 22（actions/setup-node@v7，pnpm 缓存）。
 - 步骤：`pnpm install --frozen-lockfile` → `pnpm typecheck` → `pnpm build`。
-- 覆盖：`sanye_client`、`sanye_admin`（workspace `pnpm -r`）。
+- 覆盖：`sanye_client`、`sanye_admin`、`sanye_pet`（workspace `pnpm -r`）。
 - 门禁：类型错误或构建失败即阻断。
 
 ### 2.2 backend：后端编译与测试
 
-- 环境：ubuntu-latest，Temurin JDK 21，Maven 缓存。
+- 环境：ubuntu-latest，Temurin JDK 21（actions/setup-java@v6），Maven 缓存；JVM 默认时区固定为 UTC，用于暴露依赖开发机时区的测试。
 - 步骤：
   - `mvn -B -f sanye_server/pom.xml test`：全模块编译 + 单测 + JaCoCo 覆盖率门禁（6 模块阈值，见 testing-strategy）。
   - `mvn -B -f sanye_admin_server/pom.xml test`：RuoYi 管理后端编译与测试，包含管理代理端点方法级权限契约。
@@ -52,7 +52,7 @@
 ### 2.4 dependency-scan：依赖漏洞扫描
 
 - `pnpm audit --audit-level high`：前端依赖漏洞（high/critical 阻断，不使用未登记豁免）。
-- Trivy 文件系统扫描：后端与前端依赖、SBOM。
+- Trivy v0.36.0 文件系统扫描：后端与前端依赖、SBOM。
 - 结果纳入 PR 检查。
 
 ### 2.5 secret-scan：密钥扫描
@@ -98,6 +98,7 @@ CI 各步骤本地等价命令：
 pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm build
+$env:MAVEN_OPTS = '-Duser.timezone=UTC'
 mvn -B -f sanye_server/pom.xml test
 mvn -B -f sanye_admin_server/pom.xml test
 pnpm e2e:ci
@@ -117,3 +118,4 @@ pnpm docs:check
 | --- | --- | --- | --- |
 | 2026-08-19 | v1.0 | 建立 CI/CD 基线：流水线、任务、门禁、产物、本地等价命令 | 企业级文档完善 |
 | 2026-08-26 | v1.1 | 管理后端改为执行测试；新增三项自包含 Playwright 浏览器回归，并同步文档与高危依赖门禁 | `.github/workflows/ci.yml`、`pnpm e2e:ci`、管理端权限契约测试 |
+| 2026-08-26 | v1.2 | 升级 GitHub 官方 Action 与 pnpm Action，修复 Trivy 无法解析；后端门禁固定 UTC 并修正跨时区测试夹具 | `.github/workflows/ci.yml`、`FavoriteServiceTest`、GitHub Actions 远端执行 |

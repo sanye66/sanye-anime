@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v4.9 |
-| 文档状态 | 复查完成：CI、管理端权限契约、浏览器安全回归与依赖安全门禁已同步 |
+| 文档版本 | v5.0 |
+| 文档状态 | 复查完成：CI Action 版本与跨时区后端测试已修正，公开导入降级策略保持不变 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
 | 评审日期 | 2026-08-26 |
@@ -436,6 +436,15 @@
 | 依赖安全 | Vite 6.4.3、Electron 44.0.0、Element Plus 2.14.5 已升级并固定；high/critical 漏洞由 `pnpm audit --audit-level high` 阻断 | `version-baseline.md`、三端 `package.json`、`pnpm-lock.yaml`、`.github/workflows/ci.yml` |
 | 外部边界 | 分支保护、镜像发布、生产凭据与正式环境部署不在本次代码验证范围，状态不变 | `ci-cd.md`、`gap-register.md` v0.18 |
 
+## 18. CI 跨平台稳定性复查（2026-08-26）
+
+| 检查项 | 结论 | 证据 |
+| --- | --- | --- |
+| 导入降级策略 | 保留；客户端公开 `/anime/import-url` 降级链路未修改 | `importRequestView.vue`、`anime.ts`、`AnimeController` |
+| Action 运行时 | GitHub 官方 Action、pnpm Action 已升级到当前受支持主版本；Trivy 更新为可解析的 v0.36.0 | `.github/workflows/ci.yml`、GitHub Release 标签 |
+| 后端跨时区测试 | `timestamptz` 测试夹具改用明确的 `Instant`，CI 固定 UTC 执行以阻止默认时区依赖回归 | `FavoriteServiceTest`、`MAVEN_OPTS=-Duser.timezone=UTC` |
+| 外部边界 | 分支保护、镜像发布、生产凭据与正式环境部署状态不变 | `ci-cd.md`、`gap-register.md` |
+
 ## 更新记录
 
 | 日期 | 版本 | 变更 | 依据 |
@@ -493,3 +502,4 @@
 | 2026-08-25 | v4.7 | 复查搜索与导入性能优化，登记目录回源、外部缓存与请求合并、V9 查重索引、8 路受控抓取和剧集批量写入 | search 12/12、anime 76/76、客户端 typecheck/build、`pnpm docs:check` |
 | 2026-08-26 | v4.8 | 复查 CI、管理端权限契约、浏览器安全回归和依赖漏洞门禁；确认公开导入降级策略保持不变 | `.github/workflows/ci.yml`、`AdminControllerSecurityTest`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |
 | 2026-08-26 | v4.9 | 登记按 AlphaFactory AiCoding 实例建立的 sanye_anime Memory OS 骨架、迁移边界、检索入口和契约初稿；明确 AlphaFactory 历史、内部路径和凭据未迁移 | `AiCoding/CONTENTS.md`、`AiCoding/MIGRATION-NOTICE.md`、`AiCoding/ledger/S001-bootstrap.md` |
+| 2026-08-26 | v5.0 | 修复 CI Action 解析与 Node 运行时弃用告警，修正收藏服务测试夹具的默认时区依赖；确认公开导入降级策略未变 | `.github/workflows/ci.yml`、`FavoriteServiceTest`、`pnpm docs:check` |
