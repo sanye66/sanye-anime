@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.14</version>
+        <version>3.5.16</version>
         <relativePath/>
     </parent>
 
@@ -34,6 +34,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <jackson-bom.version>2.21.5</jackson-bom.version>
+        <postgresql.version>42.7.12</postgresql.version>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
         <jacoco.min.ratio>0</jacoco.min.ratio>

@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.5 |
+| 文档版本 | v0.6 |
 | 文档状态 | Baseline，项目初始化时执行兼容性验证 |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
@@ -37,14 +37,14 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | --- | --- | --- | --- |
 | JDK | 21 LTS | baseline | 只接受 Java 21，统一时区和编码 |
 | Maven | 3.9.9 | pinned | 构建环境统一，禁止开发机自行升级 |
-| Spring Boot | 3.5.x，初始使用 3.5.0 基线 | managed | 由 Spring Cloud Alibaba 兼容线验证后再选择补丁版本 |
+| Spring Boot | 3.5.16 | managed | 保持 Boot 3.5 兼容线，安全补丁升级由两套父 POM 统一管理 |
 | Spring Cloud | 2025.0.x，初始使用 2025.0.0 | managed | 由 BOM 统一管理 |
 | Spring Cloud Alibaba | 2025.0.0.0 | baseline | 所有微服务使用同一版本 |
 | Spring Cloud Gateway | 随 Spring Cloud 2025.0.x | managed/review | MVP 网关统一入口；验证 WebFlux 网关与 Spring Boot 3.5、Nacos、Sentinel 的兼容性 |
 | OpenFeign | 随 Spring Cloud 2025.0.x | managed | 不单独指定版本 |
 | MyBatis-Plus | 3.5.x | review | 与 Spring Boot 3.5、JDK 21 做启动和事务验证 |
 | Lombok | 1.18.36+ | review | 必须验证 JDK 21 编译和 IDE 注解处理 |
-| Jackson | 随 Spring Boot 3.5.x | managed | 禁止模块自行覆盖 |
+| Jackson | 2.21.5 | managed | 父工程按安全修复版本统一覆盖 BOM，禁止业务模块单独覆盖 |
 | HikariCP | 随 Spring Boot 3.5.x | managed | 统一连接池配置 |
 | Apereo CAS Client | 待定 | review | 与 Spring Boot 3.5、JDK 21 的兼容性验证后锁定；确认 CAS 服务器版本与协议（v3 serviceValidate） |
 | LangChain4j | 1.x（待定） | review | 与 Spring Boot 3.5、JDK 21、ES Java Client 的兼容性验证后锁定；包含 spring-boot-starter 与模型适配器 |
@@ -87,7 +87,7 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | 技术 | 版本选择 | 状态 | 兼容约束 |
 | --- | --- | --- | --- |
 | PostgreSQL | 16.x | pinned | 首版不跨 PostgreSQL 大版本升级 |
-| PostgreSQL JDBC | 42.7.x | managed/review | 与 JDK 21、PostgreSQL 16 验证 |
+| PostgreSQL JDBC | 42.7.12 | managed/review | 父工程统一管理，与 JDK 21、PostgreSQL 16 验证 |
 | Redis Server | 7.4.x | pinned | 单机开发和生产集群使用同一主版本 |
 | Lettuce | 随 Spring Boot 3.5.x | managed | 不混用不同 Redis 客户端 |
 | Elasticsearch | 8.17.x | pinned | ES、Kibana 和 Java Client 使用同一小版本 |
@@ -274,3 +274,4 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 | --- | --- | --- | --- |
 | 2026-08-21 | v0.4 | 同步当前服务端、基础设施和管理平台版本基线 | 本地联调与文档评审 |
 | 2026-08-26 | v0.5 | 固定 Vite、Element Plus、Electron 和 Playwright 当前安全版本，明确 PC Web 与独立桌宠边界 | 三端 `package.json`、`pnpm-lock.yaml`、`pnpm typecheck`、`pnpm build`、`pnpm audit --audit-level high` |
+| 2026-08-26 | v0.6 | 将两套后端统一升级到 Spring Boot 3.5.16，并固定 Jackson 2.21.5、PostgreSQL JDBC 42.7.12 安全补丁 | Maven 依赖树、Trivy HIGH/CRITICAL 扫描、两套后端测试 |

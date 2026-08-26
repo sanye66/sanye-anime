@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.2 |
+| 文档版本 | v1.3 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
@@ -52,7 +52,7 @@
 ### 2.4 dependency-scan：依赖漏洞扫描
 
 - `pnpm audit --audit-level high`：前端依赖漏洞（high/critical 阻断，不使用未登记豁免）。
-- Trivy v0.36.0 文件系统扫描：后端与前端依赖、SBOM。
+- Trivy Action v0.36.0 使用 Trivy v0.74.0 执行文件系统扫描：后端与前端依赖；仅 HIGH/CRITICAL 阻断，并忽略尚无上游修复的条目。
 - 结果纳入 PR 检查。
 
 ### 2.5 secret-scan：密钥扫描
@@ -119,3 +119,4 @@ pnpm docs:check
 | 2026-08-19 | v1.0 | 建立 CI/CD 基线：流水线、任务、门禁、产物、本地等价命令 | 企业级文档完善 |
 | 2026-08-26 | v1.1 | 管理后端改为执行测试；新增三项自包含 Playwright 浏览器回归，并同步文档与高危依赖门禁 | `.github/workflows/ci.yml`、`pnpm e2e:ci`、管理端权限契约测试 |
 | 2026-08-26 | v1.2 | 升级 GitHub 官方 Action 与 pnpm Action，修复 Trivy 无法解析；后端门禁固定 UTC 并修正跨时区测试夹具 | `.github/workflows/ci.yml`、`FavoriteServiceTest`、GitHub Actions 远端执行 |
+| 2026-08-26 | v1.3 | 按 HIGH/CRITICAL 门槛修正 Trivy 扫描范围，升级后端安全补丁并固定 Trivy 引擎版本 | Maven 依赖树、Trivy v0.74.0、GitHub Actions 远端执行 |

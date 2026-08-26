@@ -96,9 +96,11 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          version: v0.74.0
           format: table
           exit-code: "1"
           ignore-unfixed: true
+          severity: HIGH,CRITICAL
 
   secret-scan:
     name: 密钥与敏感信息扫描
