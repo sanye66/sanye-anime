@@ -1,0 +1,34 @@
+# sanye_anime Docker 内部服务共享配置。
+# 这是本地开发种子，生产环境必须通过密钥管理覆盖账号、密码和令牌。
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/sanye_anime
+    username: sanye
+    password: 123456
+  data:
+    redis:
+      host: redis
+      port: 6379
+      username: sanye
+      password: 123456
+  cloud:
+    nacos:
+      server-addr: nacos:8848
+    sentinel:
+      enabled: false
+
+sanye:
+  manage:
+    allowed-caller: sanye-admin-server
+  home:
+    cache-enabled: true
+    cache-ttl-seconds: 300
+    empty-cache-ttl-seconds: 30
+  search:
+    es-host: http://elasticsearch:9200
+    index: sanye_anime
+  rag:
+    es-host: http://elasticsearch:9200
+    index: sanye_anime
+    top-k: 3
+

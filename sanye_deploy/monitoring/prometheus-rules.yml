@@ -1,0 +1,89 @@
+groups:
+  - name: sanye-availability
+    rules:
+      - alert: SanyeServiceDown
+        expr: up{job=~"sanye-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "sanye 服务不可用（{{ $labels.job }}）"
+
+  - name: sanye-database
+    rules:
+      - alert: SanyeHikariPoolPending
+        expr: hikaricp_connections_pending > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "连接池等待（{{ $labels.pool }}）"
+      - alert: SanyeHikariPoolExhausted
+        expr: hikaricp_connections_active / hikaricp_connections_max > 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "连接池使用率超过 80%（{{ $labels.pool }}）"
+
+  - name: sanye-ai
+    rules:
+      - alert: SanyeAiErrorRateHigh
+        expr: rate(sanye_ai_failed_total[5m]) / (rate(sanye_ai_completed_total[5m]) + rate(sanye_ai_failed_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI 回答失败率超过 10%"
+      - alert: SanyeAiFirstTokenSlow
+        expr: histogram_quantile(0.75, sum(rate(sanye_ai_first_token_seconds_bucket[5m])) by (le)) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 首字耗时 P75 超过 3 秒"
+
+  - name: sanye-business
+    rules:
+      - alert: SanyeHomeErrorRateHigh
+        expr: rate(sanye_home_error_total[5m]) / clamp_min(rate(sanye_home_request_total[5m]), 1) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "首页聚合错误率超过 5%"
+      - alert: SanyeThreadPoolRejected
+        expr: increase(sanye_threadpool_rejected_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI 生成任务被拒绝（{{ $labels.pool }}）"
+      - alert: SanyeThreadPoolQueueHigh
+        expr: sanye_threadpool_queue_size{pool="ai-gen"} > 50
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI 生成队列堆积超过 50"
+      - alert: SanyeSearchSlow
+        expr: histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{uri=~"/api/v1/search.*"}[5m])) by (le)) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "搜索接口 P95 超过 500ms"
+
+  - name: sanye-infrastructure
+    rules:
+      - alert: SanyeJvmHeapHigh
+        expr: sum(jvm_memory_used_bytes{area="heap"}) / sum(jvm_memory_max_bytes{area="heap"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM 堆内存超过 85%"
+      # 以下指标待对应能力接入后启用：
+      # - SanyeQuotaExhaustedSpike: sanye_quota_exhausted_total
+      # - SanyeLoginFailureRate: sanye_login_total{result="failure"}
+      # - SanyeOutboxPending: sanye_outbox_pending_total > 100

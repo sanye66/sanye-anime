@@ -1,0 +1,12 @@
+# 基础设施镜像锁定清单（T-B-03）
+# 说明：镜像标签首次启动验证后逐项登记实际摘要；生产前必须完成安全扫描。
+docker.m.daocloud.io/library/postgres:16.4-alpine
+docker.m.daocloud.io/library/redis:7.4.0
+docker.m.daocloud.io/library/rabbitmq:4.1.0-management
+docker.m.daocloud.io/elastic/elasticsearch:8.17.0
+docker.m.daocloud.io/elastic/kibana:8.17.0
+docker.m.daocloud.io/minio/minio:RELEASE.2024-06-13T22-53-53Z
+docker.m.daocloud.io/nacos/nacos-server:v3.0.3
+dockerproxy.net/bladex/sentinel-dashboard:1.8.8
+docker.m.daocloud.io/xuxueli/xxl-job-admin:3.1.0
+docker.m.daocloud.io/library/mysql:8.4.5

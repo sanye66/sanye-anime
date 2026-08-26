@@ -28,12 +28,18 @@
 .env
 .env.*
 !.env.example
+sanye_deploy/.local/
+sanye_deploy/import-anime.env
+sanye_deploy/.import-anime.env
+sanye_deploy/logs/
+sanye_deploy/backups/
 
 # Build and generated output
 target/
 dist/
 coverage/
 node_modules/
+*.tsbuildinfo
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*

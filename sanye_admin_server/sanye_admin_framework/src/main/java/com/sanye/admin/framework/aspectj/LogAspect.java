@@ -44,8 +44,12 @@ public class LogAspect
 {
     private static final Logger log = LoggerFactory.getLogger(LogAspect.class);
 
-    /** 排除敏感属性字段 */
-    public static final String[] EXCLUDE_PROPERTIES = { "password", "oldPassword", "newPassword", "confirmPassword" };
+    /** 排除敏感属性字段（凭证类：口令/令牌/密钥，记录操作日志前统一剔除） */
+    public static final String[] EXCLUDE_PROPERTIES = {
+            "password", "oldPassword", "newPassword", "confirmPassword",
+            "token", "accessToken", "refreshToken", "access_token", "refresh_token",
+            "secret", "clientSecret", "client_secret", "apiKey", "api_key", "authorization"
+    };
 
     /** 计算操作消耗时间 */
     private static final ThreadLocal<Long> TIME_THREADLOCAL = new NamedThreadLocal<Long>("Cost Time");

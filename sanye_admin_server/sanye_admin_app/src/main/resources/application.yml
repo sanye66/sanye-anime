@@ -12,11 +12,20 @@ sanye-admin:
   addressEnabled: false
   # 验证码类型 math 数字计算 char 字符验证
   captchaType: math
+  # 业务服务（anime）地址，服务间调用受控接口使用
+  anime-service-url: ${SANYE_ANIME_SERVICE_URL:http://localhost:8082}
+  feedback-service-url: ${SANYE_FEEDBACK_SERVICE_URL:http://localhost:8087}
+  ai-service-url: ${SANYE_AI_SERVICE_URL:http://localhost:8084}
+  manage-token: ${SANYE_MANAGE_TOKEN:}
 
 # 开发环境配置
 server:
   # 服务器的HTTP端口，默认为8080
   port: 8080
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain,text/css,application/javascript
+    min-response-size: 512
   servlet:
     # 应用的访问路径
     context-path: /
@@ -70,12 +79,13 @@ spring:
     redis:
       # 地址
       host: ${SANYE_ADMIN_REDIS_HOST:localhost}
-      # 端口，默认为6379
-      port: ${SANYE_ADMIN_REDIS_PORT:6379}
+      # Docker 默认端口为 16379；run-local.ps1 会覆盖为本地 Redis 的 6379。
+      port: ${SANYE_ADMIN_REDIS_PORT:16379}
+      username: ${SANYE_ADMIN_REDIS_USERNAME:sanye}
       # 数据库索引
       database: 0
       # 密码
-      password: ${SANYE_ADMIN_REDIS_PASSWORD:}
+      password: ${SANYE_ADMIN_REDIS_PASSWORD:123456}
       # 连接超时时间
       timeout: 10s
       lettuce:

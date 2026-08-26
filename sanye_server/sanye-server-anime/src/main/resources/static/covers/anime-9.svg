@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b0683a"/><stop offset="1" stop-color="#e0b45c"/></linearGradient></defs>
+  <rect width="300" height="420" fill="url(#g)"/>
+  <circle cx="150" cy="170" r="72" fill="#fff0c8" opacity="0.82"/>
+  <path d="M0 420 L300 290 L300 420 Z" fill="#4a2a14"/>
+  <text x="150" y="360" text-anchor="middle" fill="#fff" font-size="26" font-family="sans-serif">白夜食堂</text>
+</svg>

@@ -7,9 +7,23 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "dev:client": "pnpm --filter @sanye/sanye_client dev",
+    "dev:client": "node sanye_deploy/start-client-with-pet.mjs",
+    "dev:client-only": "pnpm --filter @sanye/sanye_client dev",
+    "dev:pet": "pnpm --filter @sanye/sanye_pet dev:pet",
     "dev:admin": "pnpm --filter @sanye/sanye_admin dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "docs:check": "node sanye_deploy/check-docs.mjs",
+    "test:anime-import": "node --test sanye_deploy/import-anime.test.mjs",
+    "import:anime": "node sanye_deploy/import-anime.mjs",
+    "e2e:verify": "pnpm --filter @sanye/sanye_e2e test:verify",
+    "e2e:media-cache": "pnpm --filter @sanye/sanye_e2e test:media-cache",
+    "e2e:media-quality": "pnpm --filter @sanye/sanye_e2e test:media-quality",
+    "e2e:all": "pnpm --filter @sanye/sanye_e2e test:all"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
   }
 }

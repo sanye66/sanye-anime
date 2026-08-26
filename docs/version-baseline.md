@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.2 |
+| 文档版本 | v0.4 |
 | 文档状态 | Baseline，项目初始化时执行兼容性验证 |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
-| 更新时间 | 2026-08-11 |
+| 更新时间 | 2026-08-21 |
 
 ## 1. 版本选择结论
 
@@ -40,12 +40,14 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Spring Boot | 3.5.x，初始使用 3.5.0 基线 | managed | 由 Spring Cloud Alibaba 兼容线验证后再选择补丁版本 |
 | Spring Cloud | 2025.0.x，初始使用 2025.0.0 | managed | 由 BOM 统一管理 |
 | Spring Cloud Alibaba | 2025.0.0.0 | baseline | 所有微服务使用同一版本 |
-| Spring Cloud Gateway | MVP 不引入 | deferred | 多个独立业务服务出现后再评估 |
+| Spring Cloud Gateway | 随 Spring Cloud 2025.0.x | managed/review | MVP 网关统一入口；验证 WebFlux 网关与 Spring Boot 3.5、Nacos、Sentinel 的兼容性 |
 | OpenFeign | 随 Spring Cloud 2025.0.x | managed | 不单独指定版本 |
 | MyBatis-Plus | 3.5.x | review | 与 Spring Boot 3.5、JDK 21 做启动和事务验证 |
 | Lombok | 1.18.36+ | review | 必须验证 JDK 21 编译和 IDE 注解处理 |
 | Jackson | 随 Spring Boot 3.5.x | managed | 禁止模块自行覆盖 |
 | HikariCP | 随 Spring Boot 3.5.x | managed | 统一连接池配置 |
+| Apereo CAS Client | 待定 | review | 与 Spring Boot 3.5、JDK 21 的兼容性验证后锁定；确认 CAS 服务器版本与协议（v3 serviceValidate） |
+| LangChain4j | 1.x（待定） | review | 与 Spring Boot 3.5、JDK 21、ES Java Client 的兼容性验证后锁定；包含 spring-boot-starter 与模型适配器 |
 
 ### 2.1 服务端基线规则
 
@@ -89,6 +91,7 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Redis Server | 7.4.x | pinned | 单机开发和生产集群使用同一主版本 |
 | Lettuce | 随 Spring Boot 3.5.x | managed | 不混用不同 Redis 客户端 |
 | Elasticsearch | 8.17.x | pinned | ES、Kibana 和 Java Client 使用同一小版本 |
+| Kibana | 8.17.0 | pinned | Elasticsearch 可视化控制台，与 ES 保持同一小版本 |
 | Elasticsearch Java Client | 8.17.x | baseline | 不使用跨主版本客户端 |
 | RabbitMQ | 4.1.x | pinned | 使用 Erlang 27.x 运行时 |
 | Erlang | 27.x | pinned | 与 RabbitMQ 镜像匹配 |
@@ -137,6 +140,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | XXL-JOB Admin | 3.1.0 | pinned/review | 与执行器保持同版本 |
 | Docker Engine | 27.x | pinned | 开发、测试环境统一主版本 |
 | Docker Compose | v2.32.x | pinned | 使用 Compose Specification |
+| Prometheus | 3.x（待定） | pinned | 指标采集，镜像锁定后登记 |
+| Grafana | 11.x（待定） | pinned | 指标看板与告警，镜像锁定后登记 |
 | RuoYi-Vue | 3.9.x | review | 管理平台独立锁版本 |
 | RuoYi 前端 Node.js | 22 LTS | pinned | 管理平台构建环境 |
 | Node.js | 22 LTS | pinned | Vue 客户端和 RuoYi 管理平台统一运行时 |
@@ -144,6 +149,7 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Vue | 3.5.x | baseline | PC Web 客户端建议基线 |
 | TypeScript | 5.7.x | baseline | PC Web 客户端类型系统 |
 | Vite | 6.x | baseline | PC Web 客户端构建工具 |
+| Playwright | 1.x（待定） | review | E2E 测试工具，Node 22 环境，版本验证后锁定 |
 
 ### 5.1 PC 客户端形态
 
@@ -211,9 +217,9 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 - [x] Java 包名统一为 `com.sanye.admin`，启动类为 `SanyeAdminServerApplication`。
 - [x] 使用 JDK 21 执行 `mvn clean package -DskipTests=true` 构建成功。
 - [x] PostgreSQL 初始化脚本、Quartz 初始化脚本和环境变量配置已建立。
-- [ ] PostgreSQL、Redis 实例联动和真实登录尚未验收。
-- [ ] `sanye_admin` 前端接口绑定尚未完成。
-- [ ] 生产环境凭据、容器和发布流程尚未验收。
+- [x] PostgreSQL、Redis、本地 CAS Mock、真实管理登录和权限链路已完成本地联调。
+- [x] `sanye_admin` 前端主要 P0 页面已绑定真实管理接口。
+- [ ] 正式环境凭据、容器联动、真实 CAS、外部中间件和发布流程仍待环境验收。
 
 - [ ] Java 21、Spring Boot 3.5.x、Spring Cloud 2025.0.x、Spring Cloud Alibaba 2025.0.0.0 可以完成最小服务启动。
 - [ ] Nacos 3.0.3 可以完成服务注册和配置读取。
@@ -235,3 +241,26 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 4. Elasticsearch 8.17.x 与最终 Java Client 的启动、索引和重建验证。
 5. AI 模型供应商、调用 SDK、模型成本、速率限制和服务协议。
 6. 生产 Docker Engine、Compose 和基础设施镜像的安全扫描结果。
+7. CAS 服务器（自建或外部）与 CAS Client 的 ticket 校验、单点登出和账号映射验证。
+8. LangChain4j 与模型适配器、会话记忆持久化和 ES RAG 检索的启动与流式验证。
+
+## 10. 文档体系版本基线（v0.3）
+
+企业级文档体系完善后，契约类文档作为唯一基准，版本状态如下（详见
+[docs/README.md](./README.md) 文档地图与 [document-review.md](./document-review.md) 二轮评审）：
+
+| 文档 | 版本 | 状态 | 唯一基准 |
+| --- | --- | --- | --- |
+| 工程文档体系总览 docs/README.md | v2.0 | 基线 | 文档地图与闭环模型 |
+| 接口与字段契约 api-contract.md | v0.2 | 基线 | 接口/字段/错误码/响应示例 |
+| 数据库设计 database-design.md | v1.0 | 基线 | 表/字段/迁移 |
+| 安全设计 security-design.md | v1.0 | 基线 | 安全规则/密钥/审计 |
+| 环境配置 environment-config.md | v1.0 | 基线 | 环境变量/连接 |
+| 测试策略 testing-strategy.md | v1.0 | 基线 | 测试分层/门禁/报告 |
+| 质量门禁 quality-gates.md | v1.0 | 基线 | 五道门禁清单 |
+| 发布管理 release-management.md | v1.0 | 基线 | 发布检查清单/回滚 |
+| CI/CD ci-cd.md | v1.0 | 基线 | 流水线/门禁/产物 |
+| 需求追溯矩阵 traceability-matrix.md | v1.0 | 基线 | 需求→任务→测试追溯 |
+
+新增文档维护规则：契约类文档（接口/数据/安全/环境）变更必须同步
+[document-review.md](./document-review.md) 评审记录，并更新 docs/README.md 索引。

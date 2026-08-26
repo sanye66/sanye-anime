@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 900" role="img" aria-labelledby="title desc">
+  <title id="title">作品封面占位图</title>
+  <desc id="desc">尚未取得公开封面的作品占位图</desc>
+  <rect width="640" height="900" fill="#14212b"/>
+  <path d="M0 690 180 520l120 110 120-150 220 210v210H0z" fill="#236b73"/>
+  <circle cx="476" cy="210" r="92" fill="#f0c36a" opacity=".92"/>
+  <text x="64" y="770" fill="#f8fafc" font-family="Arial, sans-serif" font-size="34" font-weight="700">SANYE ANIME</text>
+  <text x="64" y="820" fill="#b7d7d8" font-family="Arial, sans-serif" font-size="22">封面待补充</text>
+</svg>

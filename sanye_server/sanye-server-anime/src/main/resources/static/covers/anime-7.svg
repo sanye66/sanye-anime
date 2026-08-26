@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8c4a5d"/><stop offset="1" stop-color="#d984a0"/></linearGradient></defs>
+  <rect width="300" height="420" fill="url(#g)"/>
+  <circle cx="150" cy="170" r="72" fill="#ffe3ec" opacity="0.8"/>
+  <path d="M0 420 L300 290 L300 420 Z" fill="#3d1b28"/>
+  <text x="150" y="360" text-anchor="middle" fill="#fff" font-size="26" font-family="sans-serif">春樱信号</text>
+</svg>

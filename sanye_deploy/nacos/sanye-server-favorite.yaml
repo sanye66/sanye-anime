@@ -1,0 +1,7 @@
+server:
+  port: 8085
+
+sanye:
+  favorite:
+    schema: sanye_favorite
+

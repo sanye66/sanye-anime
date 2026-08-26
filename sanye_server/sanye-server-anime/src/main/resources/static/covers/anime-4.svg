@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101b3d"/><stop offset="1" stop-color="#1f6f8b"/></linearGradient></defs>
+  <rect width="300" height="420" fill="url(#g)"/>
+  <circle cx="150" cy="150" r="58" fill="#ffd98a" opacity="0.95"/>
+  <circle cx="150" cy="150" r="44" fill="#ff9f4a" opacity="0.7"/>
+  <path d="M0 300 Q150 220 300 300 L300 420 L0 420 Z" fill="#0b2b4a"/>
+  <text x="150" y="380" text-anchor="middle" fill="#fff" font-size="26" font-family="sans-serif">蓝色时刻</text>
+</svg>

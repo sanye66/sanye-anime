@@ -1,0 +1,72 @@
+server:
+  port: 8084
+
+spring:
+  config:
+    import: optional:classpath:feign-defaults.yml,optional:classpath:monitoring.yml
+  application:
+    name: sanye-server-ai-chat
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/sanye_anime}
+    username: ${DB_USERNAME:sanye}
+    password: ${DB_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+  flyway:
+    enabled: true
+    schemas: sanye_ai_chat
+    create-schemas: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      username: ${REDIS_USERNAME:sanye}
+      password: ${REDIS_PASSWORD:123456}
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        file-extension: yaml
+        group: BUSINESS_GROUP
+        shared-configs:
+          - data-id: sanye-common.yaml
+            group: COMMON_GROUP
+            refresh: true
+    sentinel:
+      enabled: ${SENTINEL_ENABLED:false}
+
+sanye:
+  ai:
+    provider: ${AI_PROVIDER:dev}
+    api-key: ${AI_API_KEY:}
+    base-url: ${AI_BASE_URL:}
+    model: ${AI_MODEL:gpt-4o-mini}
+    temperature: ${AI_TEMPERATURE:0.7}
+    quota-storage: ${QUOTA_STORAGE:redis}
+    memory-store: ${AI_MEMORY_STORE:pg}
+    conversation-store: ${AI_CONVERSATION_STORE:pg}
+    conversation-schema: ${AI_CONVERSATION_SCHEMA:sanye_ai_chat}
+    preference-store: ${AI_PREFERENCE_STORE:pg}
+    preference-schema: ${AI_PREFERENCE_SCHEMA:sanye_ai_chat}
+    cost:
+      input-cents-per-1k: ${AI_COST_INPUT_CENTS_PER_1K:0.12}
+      output-cents-per-1k: ${AI_COST_OUTPUT_CENTS_PER_1K:0.36}
+    generation-pool:
+      core-size: ${AI_POOL_CORE:4}
+      max-size: ${AI_POOL_MAX:8}
+      queue-capacity: ${AI_POOL_QUEUE:64}
+  manage:
+    allowed-caller: ${MANAGE_ALLOWED_CALLER:sanye-admin-server}
+    internal-token: ${SANYE_MANAGE_TOKEN:}
+  rag:
+    es-host: ${ES_HOST:http://127.0.0.1:9200}
+    index: ${ES_INDEX:sanye_anime}
+    top-k: ${RAG_TOP_K:3}

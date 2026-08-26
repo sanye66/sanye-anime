@@ -1,0 +1,30 @@
+# 本地联调 profile：Nacos 未启动时用静态实例列表替代服务发现。
+# 启动方式：--spring.profiles.active=local（各业务服务按 application.yml 端口独立启动）
+server:
+  # Nacos Console 使用宿主机 8080，本机静态联调网关默认使用 8091。
+  port: ${GATEWAY_PORT:8091}
+
+spring:
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            sanye-server-auth:
+              - uri: http://localhost:8081
+            sanye-server-anime:
+              - uri: http://localhost:8082
+            sanye-server-search:
+              - uri: http://localhost:8083
+            sanye-server-ai-chat:
+              - uri: http://localhost:8084
+            sanye-server-favorite:
+              - uri: http://localhost:8085
+            sanye-server-file:
+              - uri: http://localhost:8086
+            sanye-server-feedback:
+              - uri: http://localhost:8087
+            sanye-server-job:
+              - uri: http://localhost:8088
+            sanye-admin-server:
+              - uri: http://localhost:8089

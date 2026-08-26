@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -31,7 +32,8 @@ public class ResourcesConfig implements WebMvcConfigurer
     {
         /** 本地文件上传路径 */
         registry.addResourceHandler(Constants.RESOURCE_PREFIX + "/**")
-                .addResourceLocations("file:" + SanyeAdminConfig.getProfile() + "/");
+                .addResourceLocations("file:" + SanyeAdminConfig.getProfile() + "/")
+                .setCacheControl(CacheControl.maxAge(7, TimeUnit.DAYS).cachePublic());
 
         /** swagger配置 */
         registry.addResourceHandler("/swagger-ui/**")
@@ -52,6 +54,7 @@ public class ResourcesConfig implements WebMvcConfigurer
      * 跨域配置
      */
     @Bean
+    @ConditionalOnProperty(name = "sanye-admin.cors-enabled", havingValue = "true")
     public CorsFilter corsFilter()
     {
         CorsConfiguration config = new CorsConfiguration();

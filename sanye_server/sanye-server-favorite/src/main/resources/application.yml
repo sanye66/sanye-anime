@@ -1,0 +1,42 @@
+server:
+  port: 8085
+
+spring:
+  config:
+    import: optional:classpath:feign-defaults.yml,optional:classpath:monitoring.yml
+  application:
+    name: sanye-server-favorite
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/sanye_anime}
+    username: ${DB_USERNAME:sanye}
+    password: ${DB_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+  flyway:
+    enabled: true
+    schemas: sanye_favorite
+    create-schemas: true
+    locations: classpath:db/migration
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        file-extension: yaml
+        group: BUSINESS_GROUP
+        shared-configs:
+          - data-id: sanye-common.yaml
+            group: COMMON_GROUP
+            refresh: true
+    sentinel:
+      enabled: ${SENTINEL_ENABLED:false}
+
+sanye:
+  favorite:
+    schema: ${FAVORITE_SCHEMA:sanye_favorite}

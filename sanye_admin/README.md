@@ -2,7 +2,7 @@
 
 这是项目的 RuoYi 管理平台工程，面向内部运营，包含内容管理、审核发布、用户反馈、AI 运营、任务管理、权限和审计。
 
-这是三个核心工程中的 RuoYi 管理平台工程，当前先建立 RuoYi-Vue 兼容的 Vue 3 和 Element Plus 前端骨架。它与 `sanye_client` 分开构建，面向内部运营人员；RuoYi 后端集成、权限服务和业务接口尚未接通。
+这是三个核心工程中的 RuoYi 管理平台工程，采用 RuoYi-Vue 兼容的 Vue 3 和 Element Plus 前端。它与 `sanye_client` 分开构建，面向内部运营人员；登录、权限、内容、反馈、任务、用户和审计页面已按本地网关接口接通，仍有依赖外部基础设施的生产能力需要在部署环境验收。
 
 ## 常用命令
 
@@ -16,10 +16,10 @@ pnpm --filter @sanye/sanye_admin build
 
 ## 当前范围
 
-- 仪表盘骨架。
-- 内容审核表格骨架。
-- AI 和用户反馈骨架。
+- 仪表盘与运营指标页面。
+- 内容管理、审核发布和官网正文编辑页面。
+- AI 运营、用户反馈、任务、用户和审计页面。
 - Vue Router、Pinia 和 Element Plus 入口。
-- 内容、反馈和仪表盘路由作为 RuoYi 菜单边界的前端占位。
+- 内容、反馈、任务和审计路由按 RuoYi 权限边界控制可见性和操作权限。
 
 产品范围：[../product/overall-architecture.md](../product/overall-architecture.md)

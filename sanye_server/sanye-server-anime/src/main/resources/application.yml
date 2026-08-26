@@ -1,0 +1,74 @@
+server:
+  port: 8082
+
+spring:
+  config:
+    import: optional:classpath:feign-defaults.yml,optional:classpath:monitoring.yml
+  application:
+    name: sanye-server-anime
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:15432/sanye_anime}
+    username: ${DB_USERNAME:sanye}
+    password: ${DB_PASSWORD:123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 10000
+  flyway:
+    enabled: true
+    schemas: sanye_anime
+    create-schemas: true
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          max-age: 7d
+      # 静态封面必须从服务自身的资源目录提供，不能指向 Flyway 迁移目录。
+      static-locations: classpath:/META-INF/resources/,classpath:/resources/,classpath:/static/,classpath:/public/
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:16379}
+      username: ${REDIS_USERNAME:sanye}
+      password: ${REDIS_PASSWORD:123456}
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+        file-extension: yaml
+        group: BUSINESS_GROUP
+        shared-configs:
+          - data-id: sanye-common.yaml
+            group: COMMON_GROUP
+            refresh: true
+    sentinel:
+      enabled: ${SENTINEL_ENABLED:false}
+
+sanye:
+  manage:
+    allowed-caller: ${MANAGE_ALLOWED_CALLER:sanye-admin-server}
+    internal-token: ${SANYE_MANAGE_TOKEN:}
+  catalog:
+    store: ${CATALOG_STORE:pg}
+    schema: ${CATALOG_SCHEMA:sanye_anime}
+  legal:
+    store: ${LEGAL_STORE:pg}
+    schema: ${LEGAL_SCHEMA:sanye_anime}
+  media:
+    store: ${MEDIA_STORE:pg}
+    schema: ${MEDIA_SCHEMA:sanye_anime}
+    import:
+      # 仅登记授权来源页和页面公开声明的播放器地址，不下载或代理视频流。
+      allowed-hosts: ${MEDIA_IMPORT_ALLOWED_HOSTS:yhdmtv.cc,www.yhdmtv.cc,yinghuadongman.org.cn,www.yinghuadongman.org.cn}
+      timeout-ms: ${MEDIA_IMPORT_TIMEOUT_MS:30000}
+      max-bytes: ${MEDIA_IMPORT_MAX_BYTES:2097152}
+      max-episodes: ${MEDIA_IMPORT_MAX_EPISODES:100}
+  home:
+    cache-enabled: ${HOME_CACHE_ENABLED:true}
+    cache-ttl-seconds: ${HOME_CACHE_TTL_SECONDS:300}
+    empty-cache-ttl-seconds: ${HOME_CACHE_EMPTY_TTL_SECONDS:30}

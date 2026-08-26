@@ -1,0 +1,8 @@
+server:
+  port: 8081
+
+sanye:
+  auth:
+    schema: sanye_auth
+    access-ttl-seconds: 1800
+

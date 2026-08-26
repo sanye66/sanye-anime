@@ -13,6 +13,9 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "anime4k.js": "1.1.3",
+    "artplayer": "5.4.0",
+    "hls.js": "1.6.15",
     "pinia": "2.3.0",
     "vue": "3.5.13",
     "vue-router": "4.5.0"

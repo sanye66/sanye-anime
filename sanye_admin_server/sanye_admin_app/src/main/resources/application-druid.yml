@@ -6,9 +6,9 @@ spring:
         druid:
             # 主库数据源
             master:
-                url: ${SANYE_ADMIN_DATASOURCE_URL:jdbc:postgresql://localhost:5432/sanye_admin}
-                username: ${SANYE_ADMIN_DATASOURCE_USERNAME:sanye_admin}
-                password: ${SANYE_ADMIN_DATASOURCE_PASSWORD:}
+                url: ${SANYE_ADMIN_DATASOURCE_URL:jdbc:postgresql://localhost:15432/sanye_admin}
+                username: ${SANYE_ADMIN_DATASOURCE_USERNAME:sanye}
+                password: ${SANYE_ADMIN_DATASOURCE_PASSWORD:123456}
             # 从库数据源
             slave:
                 # 从数据源开关/默认关闭

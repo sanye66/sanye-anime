@@ -14,12 +14,12 @@ pnpm --filter @sanye/sanye_client build
 
 ## 当前范围
 
-- 带内容发现分区的首页骨架。
-- 带会话列表、快捷问题和上下文面板的 AI 工作区骨架。
-- 带账户和个人数据占位内容的我的页面骨架。
+- 带内容发现分区的首页，并通过客户端 API 加载排期、推荐和统计数据。
+- 带会话列表、快捷问题和上下文面板的 AI 工作区，并通过 SSE 接收流式回答。
+- 带账户、收藏和个人历史数据的我的页面。
 - `official` 公开首页、产品介绍和法律信息页面属于本工程的公开页面范围。
 - Vue Router 和 Pinia 入口。
 
-`sanye_server` 已提供内存 MVP 接口，但本工程的页面尚未接通真实服务端数据。`official` 页面仍然由本工程的路由和视图承载。
+客户端页面已接通 `sanye_server` 的 MVP 接口；在服务端不可用或返回空数据时，页面保留可识别的空态和本地演示数据。`official` 页面仍然由本工程的路由和视图承载。
 
 产品范围：[../product/overall-architecture.md](../product/overall-architecture.md)

@@ -1,50 +1,53 @@
 # sanye_server
 
-这是项目的 Spring 服务端工程，负责账户、动漫内容、搜索、AI 对话、文件、反馈和定时任务。
+这是项目的 Spring 服务端微服务工程，负责账户、动漫内容、搜索、AI 对话、文件、反馈和定时任务。
 
 ## 工程定位
 
 - 框架：Spring Boot、Spring Cloud Alibaba。
-- 运行形态：MVP 采用模块化单体，模块先在一个 Spring 应用中协作。
+- 运行形态：微服务（D-024），网关 + 8 个业务服务，单 PostgreSQL 按服务独立 schema。
 - 基础设施边界：Nacos、Sentinel、RabbitMQ、PostgreSQL、Elasticsearch、Redis、MinIO 和 XXL-JOB。
 - Java 包根：`com.sanye.anime`。
-- 应用入口：`com.sanye.anime.SanyeServerApplication`。
+- 应用入口：各服务独立 `*ServiceApplication`（auth 8081 / anime 8082 / search 8083 / ai-chat 8084 / favorite 8085 / file 8086 / feedback 8087 / job 8088），网关 `GatewayApplication` 容器内部默认 8080，本机联调由 `run-local.ps1` 映射为 8091。
 
 ## 目录结构
 
 ```text
 sanye_server/
 ├── pom.xml
-└── src/
-    └── main/
-        ├── java/com/sanye/anime/
-        │   ├── SanyeServerApplication.java
-        │   ├── sanye_core/
-        │   ├── sanye_auth/
-        │   ├── sanye_anime/
-        │   ├── sanye_search/
-        │   ├── sanye_ai_chat/
-        │   ├── sanye_file/
-        │   ├── sanye_feedback/
-        │   └── sanye_job/
-        └── resources/application.yml
+├── sanye-server-core/          # 统一响应、错误码、AuthContext、脱敏
+├── sanye-server-web/           # 请求 ID、全局异常、Feign 基线、JDBC 共享
+├── sanye-server-gateway/       # 网关：路由、CORS、请求 ID（容器 8080，本机联调 8091）
+├── sanye-server-auth/          # 账户与权限、系统接口、前端错误上报（8081）
+├── sanye-server-anime/         # 动漫内容：作品/首页/详情/官网公开接口（8082）
+├── sanye-server-search/        # 搜索（8083，Elasticsearch 已完成本地联调）
+├── sanye-server-ai-chat/       # AI 对话：SSE、LangChain4j、额度、推荐（8084）
+├── sanye-server-favorite/      # 收藏与历史（8085）
+├── sanye-server-file/          # 文件（8086）
+├── sanye-server-feedback/      # 反馈（8087）
+└── sanye-server-job/           # 任务（8088）
 ```
 
-模块目录当前使用 `package-info.java` 固定边界，业务代码按“表示层、应用层、领域层、基础设施层”逐步补入对应模块。不要因为目录已经存在就直接拆成多个独立微服务。
+各服务默认通过 `lb://` 服务名路由，配合 Nacos 注册发现；本地联调无 Nacos 时使用
+`application-local.yml`（SimpleDiscoveryClient 静态实例）或 `--spring.profiles.active=dev`
+（网关静态 URI 路由）。
 
 ## 常用命令
 
 ```bash
-mvn spring-boot:run
-mvn test
-mvn package
+mvn -f sanye_server/pom.xml install -DskipTests
+.\sanye_deploy\run-local.ps1 -Infrastructure docker -Services gateway,auth,anime,ai-chat -Restart
+.\sanye_deploy\smoke-local.ps1
 ```
 
-默认端口为 `8080`。Nacos 注册与配置默认关闭，连接外部基础设施前通过环境变量显式开启；凭证只从环境变量或外部配置注入。
+联调环境变量：`DB_URL=jdbc:postgresql://localhost:5433/sanye_anime`、`DB_USERNAME=sanye`、
+`DB_PASSWORD=123456`、`NACOS_ENABLED=false`、`SENTINEL_ENABLED=false`。Docker Compose 环境默认使用
+PostgreSQL `15432`、Redis `16379`，账号为 `sanye`，密码为 `123456`；MinIO 因最低长度限制使用 `12345678`。
+Nacos 注册与配置默认关闭，连接外部基础设施前通过环境变量显式开启；凭证只从环境变量或外部配置注入。
 
 ## 当前状态
 
-- Spring Boot 启动类、Maven 构建入口、模块包骨架和内存 MVP 接口已经建立。
-- 当前接口覆盖作品、搜索、AI 会话、收藏、反馈和管理端状态操作。
-- 业务数据持久化、数据库迁移、正式认证、AI 供应商和基础设施联动尚未实现，具体限制见 [../docs/backend-mvp.md](../docs/backend-mvp.md)。
+- 多服务骨架、网关路由、共享 core/web、OpenFeign 基线与 Flyway 迁移已建立。
+- 已联调接口：系统、首页、作品详情、官网公开接口、AI 会话与 SSE 流式（含推荐、停止、重生成、额度）。
+- 本地认证（CAS Mock）、ES 搜索、会话持久化和 RAG 已完成本地联调；正式 CAS、真实模型额度、RabbitMQ 业务事件、XXL-JOB 业务任务以及动态 Nacos 注册仍属于环境或后续实现边界，具体限制见 [../docs/backend-mvp.md](../docs/backend-mvp.md)。
 - Nacos、Sentinel、RabbitMQ、PostgreSQL、Elasticsearch、Redis、MinIO 和 XXL-JOB 的版本与验证门禁见 [../docs/version-baseline.md](../docs/version-baseline.md) 和 [../docs/gap-register.md](../docs/gap-register.md)。

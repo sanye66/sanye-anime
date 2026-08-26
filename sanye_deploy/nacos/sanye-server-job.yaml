@@ -1,0 +1,7 @@
+server:
+  port: 8088
+
+sanye:
+  job:
+    schema: sanye_job
+

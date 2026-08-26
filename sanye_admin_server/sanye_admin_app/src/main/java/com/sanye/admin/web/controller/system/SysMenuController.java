@@ -21,6 +21,7 @@ import com.sanye.admin.common.core.domain.entity.SysMenu;
 import com.sanye.admin.common.enums.BusinessType;
 import com.sanye.admin.common.utils.StringUtils;
 import com.sanye.admin.system.service.ISysMenuService;
+import com.sanye.admin.system.service.ISysRoleService;
 
 /**
  * 菜单信息
@@ -33,6 +34,9 @@ public class SysMenuController extends BaseController
 {
     @Autowired
     private ISysMenuService menuService;
+
+    @Autowired
+    private ISysRoleService roleService;
 
     /**
      * 获取菜单列表
@@ -68,12 +72,21 @@ public class SysMenuController extends BaseController
     /**
      * 加载对应角色菜单列表树
      */
+    @PreAuthorize("@ss.hasPermi('system:role:query')")
     @GetMapping(value = "/roleMenuTreeselect/{roleId}")
     public AjaxResult roleMenuTreeselect(@PathVariable("roleId") Long roleId)
     {
         List<SysMenu> menus = menuService.selectMenuList(getUserId());
         AjaxResult ajax = AjaxResult.success();
-        ajax.put("checkedKeys", menuService.selectMenuListByRoleId(roleId));
+        if (roleId == null || roleId <= 0)
+        {
+            ajax.put("checkedKeys", List.of());
+        }
+        else
+        {
+            roleService.checkRoleDataScope(roleId);
+            ajax.put("checkedKeys", menuService.selectMenuListByRoleId(roleId));
+        }
         ajax.put("menus", menuService.buildMenuTreeSelect(menus));
         return ajax;
     }

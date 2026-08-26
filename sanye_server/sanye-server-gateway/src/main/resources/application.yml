@@ -1,0 +1,86 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: sanye-server-gateway
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:}
+      password: ${NACOS_PASSWORD:}
+      discovery:
+        enabled: ${NACOS_ENABLED:false}
+      config:
+        enabled: ${NACOS_ENABLED:false}
+    sentinel:
+      enabled: ${SENTINEL_ENABLED:false}
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns:
+                  - "http://localhost:*"
+                  - "http://127.0.0.1:*"
+                allowed-methods: "*"
+                allowed-headers: "*"
+                allow-credentials: true
+                max-age: 3600
+      routes:
+        - id: auth
+          uri: lb://sanye-server-auth
+          predicates:
+            - Path=/api/v1/auth/**,/api/v1/system/**,/api/v1/users/me,/api/v1/monitor/**
+        - id: anime
+          uri: lb://sanye-server-anime
+          predicates:
+            - Path=/api/v1/anime/**,/api/v1/home,/api/v1/schedule/**,/api/v1/public/**
+        - id: search
+          uri: lb://sanye-server-search
+          predicates:
+            - Path=/api/v1/search/**
+        - id: ai
+          uri: lb://sanye-server-ai-chat
+          predicates:
+            - Path=/api/v1/ai/**
+        - id: favorite
+          uri: lb://sanye-server-favorite
+          predicates:
+            - Path=/api/v1/users/me/favorites/**,/api/v1/users/me/favorites,/api/v1/users/me/history,/api/v1/users/me/history/**
+        - id: file
+          uri: lb://sanye-server-file
+          predicates:
+            - Path=/api/v1/files/**
+        - id: feedback
+          uri: lb://sanye-server-feedback
+          predicates:
+            - Path=/api/v1/feedback/**
+        - id: admin
+          # 管理端是独立 RuoYi 工程，默认不接入业务 Nacos 注册；部署时通过环境变量提供可达地址。
+          uri: ${SANYE_ADMIN_SERVICE_URL:http://localhost:8089}
+          predicates:
+            - Path=/api/v1/admin/**
+          filters:
+            - StripPrefix=3
+        - id: covers
+          uri: lb://sanye-server-anime
+          predicates:
+            - Path=/covers/**
+        - id: admin-profile
+          # 管理端上传封面只公开静态文件，不公开管理 API 和令牌。
+          uri: ${SANYE_ADMIN_SERVICE_URL:http://localhost:8089}
+          predicates:
+            - Path=/admin-profile/**
+          filters:
+            - StripPrefix=1
+
+management:
+  server:
+    port: ${MANAGEMENT_PORT:8090}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus

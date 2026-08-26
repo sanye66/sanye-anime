@@ -2,6 +2,9 @@ export type AnimeTone = 'coral' | 'blue' | 'gold' | 'pink' | 'violet' | 'teal'
 
 export type AnimeCatalogItem = {
   slug: string
+  seriesKey: string
+  seriesOrder: number
+  seasonOrder: number
   title: string
   subtitle: string
   cover: string
@@ -18,102 +21,144 @@ export type AnimeCatalogItem = {
   popularRank?: number
 }
 
+/** 客户端正式内容白名单：仅保留已导入的《你的名字》和无职转生各独立篇章。 */
+export const SUPPORTED_ANIME_IDS = ['127', '133', '136', '135', '128', '137'] as const
+
+/** 判断接口返回的作品是否属于当前客户端正式片库。 */
+export function isSupportedAnimeId(id: string | number): boolean {
+  return SUPPORTED_ANIME_IDS.includes(String(id) as (typeof SUPPORTED_ANIME_IDS)[number])
+}
+
+/**
+ * 按正式目录中的作品系列和季度顺序比较两个作品 ID。
+ * 未登记的接口数据排在正式目录之后，并返回相同权重以保留接口原始顺序。
+ */
+export function compareAnimeCatalogOrder(leftId: string | number, rightId: string | number): number {
+  const left = animeCatalogMap[String(leftId)]
+  const right = animeCatalogMap[String(rightId)]
+  if (!left && !right) return 0
+  if (!left) return 1
+  if (!right) return -1
+  return left.seriesOrder - right.seriesOrder || left.seasonOrder - right.seasonOrder
+}
+
 export const animeCatalog: AnimeCatalogItem[] = [
   {
-    slug: 'star-sea-echo',
-    title: '星海回声',
-    subtitle: '在失落的广播塔，听见来自远方的回应',
-    cover: '/covers/star-sea-echo.svg',
+    slug: '127',
+    seriesKey: 'your-name',
+    seriesOrder: 100,
+    seasonOrder: 100,
+    title: '你的名字',
+    subtitle: '关于相遇、记忆与约定的故事',
+    cover: '/client-covers/your-name.jpg',
     tone: 'coral',
-    tags: ['奇幻', '悬疑'],
-    description: '旧广播塔在流星雨后接收到一段无法解释的声音。两个寻找答案的人，沿着海岸线追踪每一个微弱的回声。',
-    update: '每周三 22:00 更新',
+    tags: ['剧场版', '爱情', '奇幻'],
+    description: '在远离大都会的小山村，两个素不相识的少年少女在梦中交换人生，并开始寻找彼此。',
+    update: '剧场版 · 已发布',
     releaseYear: 2026,
-    status: '连载中',
-    episode: '第 04 集',
-    meta: '今天更新 · 22:00',
-    popularity: 92,
-    recentRank: 1,
-  },
-  {
-    slug: 'blue-hour',
-    title: '蓝色时刻',
-    subtitle: '日落后的七分钟，城市会短暂地改变',
-    cover: '/covers/blue-hour.svg',
-    tone: 'blue',
-    tags: ['都市', '群像'],
-    description: '电车驶过最后一片蓝色天空，几个陌生人在城市的缝隙里交换各自的秘密。',
-    update: '每周三 21:30 更新',
-    releaseYear: 2026,
-    status: '连载中',
-    episode: '第 11 集',
-    meta: '昨天更新 · 21:30',
-    popularity: 98,
-    recentRank: 2,
-  },
-  {
-    slug: 'summer-afterglow',
-    title: '夏末余晖',
-    subtitle: '骑着自行车，回到那个夏天结束之前',
-    cover: '/covers/summer-afterglow.svg',
-    tone: 'gold',
-    tags: ['青春', '成长'],
-    description: '一段关于旧铁轨、夏日风和没有说出口的告别故事。',
-    update: '全 12 集 · 已完结',
-    releaseYear: 2025,
     status: '已完结',
-    episode: '第 08 集',
-    meta: '周一更新 · 已完结',
-    popularity: 86,
-    recentRank: 3,
-  },
-  {
-    slug: 'letters-from-afar',
-    title: '远方来信',
-    subtitle: '山顶的灯亮起时，回信终于抵达',
-    cover: '/covers/letter-from-faraway.svg',
-    tone: 'pink',
-    tags: ['奇幻', '治愈'],
-    description: '女孩在山顶的旧邮局里工作，每一封来自远方的信都带着一段未完的旅程。',
-    update: '每周五 20:00 更新',
-    releaseYear: 2025,
-    status: '连载中',
-    episode: '第 08 集',
-    meta: '本周五更新 · 20:00',
-    popularity: 98,
+    episode: '全 1 部',
+    meta: '剧场版 · 已导入',
+    popularity: 100,
+    recentRank: 1,
     popularRank: 1,
   },
   {
-    slug: 'tide-and-moonlight',
-    title: '潮汐与月光',
-    subtitle: '让纸船替我们保守这个夏天的秘密',
-    cover: '/covers/tide-and-moon.svg',
-    tone: 'violet',
-    tags: ['青春', '群像'],
-    description: '潮水涨落之间，两个朋友在海边寻找一座只在月光下出现的岛。',
-    update: '每周六 23:15 更新',
-    releaseYear: 2024,
-    status: '连载中',
-    episode: '第 02 集',
-    meta: '本周六更新 · 23:15',
-    popularity: 95,
+    slug: '133',
+    seriesKey: 'mushoku-tensei',
+    seriesOrder: 200,
+    seasonOrder: 100,
+    title: '无职转生 · 第一季',
+    subtitle: '到了异世界就拿出真本事',
+    cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100607A039.jpg',
+    tone: 'blue',
+    tags: ['异世界', '冒险', '成长'],
+    description: '重新开始的人生，终于有机会认真生活并拿出真正的本事。',
+    update: '第一季 · 23 集',
+    releaseYear: 2026,
+    status: '已完结',
+    episode: '23 集',
+    meta: '无职转生 · 第一季',
+    popularity: 99,
+    recentRank: 2,
     popularRank: 2,
   },
   {
-    slug: 'after-the-rain',
-    title: '雨停之后',
-    subtitle: '雨会停，故事也会继续',
-    cover: '/covers/after-the-rain.svg',
-    tone: 'teal',
-    tags: ['日常', '成长'],
-    description: '雨后的城市总有新的方向，几位住在巷口的人开始重新认识自己的生活。',
-    update: '每周一 19:30 更新',
-    releaseYear: 2023,
-    status: '连载中',
-    episode: '第 06 集',
-    meta: '本周一更新 · 19:30',
-    popularity: 91,
+    slug: '136',
+    seriesKey: 'mushoku-tensei',
+    seriesOrder: 200,
+    seasonOrder: 200,
+    title: '无职转生 · 第二季',
+    subtitle: '到了异世界就拿出真本事',
+    cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100612A042.jpg',
+    tone: 'gold',
+    tags: ['异世界', '冒险', '魔法'],
+    description: '鲁迪乌斯继续在异世界前行，面对新的伙伴、选择与成长。',
+    update: '第二季 · 24 集',
+    releaseYear: 2026,
+    status: '已完结',
+    episode: '24 集',
+    meta: '无职转生 · 第二季',
+    popularity: 98,
+    recentRank: 3,
     popularRank: 3,
+  },
+  {
+    slug: '135',
+    seriesKey: 'mushoku-tensei',
+    seriesOrder: 200,
+    seasonOrder: 201,
+    title: '无职转生 · 第二季 Part.2',
+    subtitle: '到了异世界就拿出真本事',
+    cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100611A041.jpg',
+    tone: 'pink',
+    tags: ['异世界', '冒险', '剧情'],
+    description: '第二季后半篇章，新的旅程继续展开，重要的命运交汇即将到来。',
+    update: '第二季 Part.2 · 12 集',
+    releaseYear: 2026,
+    status: '已完结',
+    episode: '12 集',
+    meta: '无职转生 · 第二季 Part.2',
+    popularity: 97,
+    recentRank: 4,
+  },
+  {
+    slug: '128',
+    seriesKey: 'mushoku-tensei',
+    seriesOrder: 200,
+    seasonOrder: 300,
+    title: '无职转生 · 第三季',
+    subtitle: '到了异世界就拿出真本事',
+    cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100559A034.jpg',
+    tone: 'violet',
+    tags: ['异世界', '冒险', '奇幻'],
+    description: '异世界的新篇章已经开启，鲁迪乌斯将面对更大的舞台和挑战。',
+    update: '第三季 · 9 集',
+    releaseYear: 2026,
+    status: '连载中',
+    episode: '9 集',
+    meta: '无职转生 · 第三季',
+    popularity: 96,
+    recentRank: 5,
+  },
+  {
+    slug: '137',
+    seriesKey: 'mushoku-tensei',
+    seriesOrder: 200,
+    seasonOrder: 900,
+    title: '无职转生 · OAD 特别篇',
+    subtitle: '到了异世界就拿出真本事',
+    cover: '/covers/mushoku-oad.svg',
+    tone: 'teal',
+    tags: ['异世界', '特别篇', '冒险'],
+    description: '无职转生系列特别篇，补充主线旅程中的重要片段。',
+    update: 'OAD 特别篇 · 1 集',
+    releaseYear: 2026,
+    status: '已完结',
+    episode: '1 集',
+    meta: '无职转生 · OAD 特别篇',
+    popularity: 95,
+    recentRank: 6,
   },
 ]
 

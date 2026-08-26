@@ -1,0 +1,193 @@
+services:
+  postgres:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/library/postgres:16.4-alpine
+    container_name: sanye-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sanye}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+      POSTGRES_DB: ${POSTGRES_DB:-sanye_anime}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/library/redis:7.4.0
+    container_name: sanye-redis
+    environment:
+      # 健康检查和 Redis 服务共用同一份环境变量，避免检查命令读取到空密码。
+      REDIS_USERNAME: ${REDIS_USERNAME:-sanye}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
+    command: ["redis-server", "--appendonly", "yes", "--user", "default", "off", "--user", "${REDIS_USERNAME:-sanye}", "on", ">${REDIS_PASSWORD:-123456}", "~*", "+@all"]
+    ports:
+      - "${REDIS_HOST_PORT:-16379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --user \"$$REDIS_USERNAME\" -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/library/rabbitmq:4.1.0-management
+    container_name: sanye-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-sanye}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-123456}
+    ports:
+      # 宿主机只保留 RabbitMQ 管理控制台端口；业务 AMQP 端口在容器网络内使用 rabbitmq:5672。
+      - "${RABBITMQ_HOST_PORT:-15672}:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  elasticsearch:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/elastic/elasticsearch:8.17.0
+    container_name: sanye-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # Kibana 是 Elasticsearch 的可视化控制台，版本必须与 ES 保持同一小版本。
+  kibana:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/elastic/kibana:8.17.0
+    container_name: sanye-kibana
+    profiles: ["full"]
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      XPACK_SECURITY_ENABLED: "false"
+    ports:
+      - "${KIBANA_HOST_PORT:-5601}:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      # Kibana 的 status API 能同时确认 Web 控制台进程和 ES 连接已就绪。
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5601/api/status >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+  minio:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: sanye-minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-sanye}
+      # MinIO 强制要求 root 密码至少 8 位，默认值使用本地开发最低长度。
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-12345678}
+    ports:
+      # 宿主机只保留 MinIO 控制台端口；对象 API 在容器网络内使用 minio:9000。
+      - "${MINIO_HOST_PORT:-9001}:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9000/minio/health/live || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  nacos:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/nacos/nacos-server:v3.0.3
+    container_name: sanye-nacos
+    profiles: ["full"]
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "false"
+      # Nacos 3.x 即使关闭认证也要求提供合法的 Base64 token；生产环境请通过环境变量覆盖。
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN:-c2FueWVfYW5pbWVfbG9jYWxfYXV0aF90b2tlbl8yMDI2XzA4}
+      # Nacos 3.x 同时要求内部身份校验字段，本地值仅用于开发环境。
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY:-sanye_anime_local}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE:-sanye_anime_local_value}
+    ports:
+      # 按 Nacos Console 默认入口只暴露一个宿主机端口：8080，路径为 /。
+      # Nacos API 8848 仅供 Compose 内部服务通过 nacos:8848 使用。
+      - "8080:8080"
+    healthcheck:
+      # Console 根路径返回 200 作为 Nacos 控制台就绪信号。
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/ >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  sentinel:
+    image: ${DOCKER_SPECIAL_MIRROR:-dockerproxy.net}/bladex/sentinel-dashboard:1.8.8
+    container_name: sanye-sentinel
+    profiles: ["full"]
+    ports:
+      - "8858:8858"
+    healthcheck:
+      # Sentinel 没有独立的 readiness API，首页 HTTP 200 作为进程就绪信号。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8858/ || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # XXL-JOB 使用独立 MySQL，避免依赖宿主机数据库导致 full profile 在新机器上不可复现。
+  xxl-job-mysql:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/library/mysql:8.4.5
+    container_name: sanye-xxl-job-mysql
+    profiles: ["full"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${XXL_JOB_MYSQL_ROOT_PASSWORD:-123456}
+      MYSQL_USER: ${XXL_JOB_MYSQL_USER:-sanye}
+      MYSQL_PASSWORD: ${XXL_JOB_MYSQL_PASSWORD:-123456}
+      MYSQL_DATABASE: xxl_job
+    volumes:
+      - xxljobmysqldata:/var/lib/mysql
+      - ./xxl-job/mysql-schema.sql:/docker-entrypoint-initdb.d/xxl-job.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u\"$$MYSQL_USER\" -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  xxl-job-admin:
+    image: ${DOCKER_MIRROR:-docker.m.daocloud.io}/xuxueli/xxl-job-admin:3.1.0
+    container_name: sanye-xxl-job-admin
+    profiles: ["full"]
+    environment:
+      # 将 XXL-JOB 管理台上下文调整为根路径，避免访问 18080/ 时返回 404。
+      PARAMS: "--server.servlet.context-path=/ --spring.datasource.url=jdbc:mysql://xxl-job-mysql:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true --spring.datasource.username=${XXL_JOB_MYSQL_USER:-sanye} --spring.datasource.password=${XXL_JOB_MYSQL_PASSWORD:-123456}"
+    ports:
+      - "18080:8080"
+    depends_on:
+      xxl-job-mysql:
+        condition: service_healthy
+    healthcheck:
+      # XXL-JOB 镜像不包含 wget/curl，使用镜像自带 bash 的 TCP 探测检查 8080 监听状态。
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080'"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  esdata:
+  miniodata:
+  xxljobmysqldata:

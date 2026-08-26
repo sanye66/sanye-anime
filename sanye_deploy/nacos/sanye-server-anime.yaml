@@ -1,0 +1,11 @@
+server:
+  port: 8082
+
+sanye:
+  catalog:
+    store: pg
+    schema: sanye_anime
+  legal:
+    store: pg
+    schema: sanye_anime
+

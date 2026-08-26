@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.2 |
+| 文档版本 | v0.3 |
 | 文档状态 | 基线，核心 MVP 已冻结，桌宠作为客户端 P1 附属形态纳入规划 |
 | 适用范围 | 客户端、官网和管理平台 |
 | 关联文档 | [product-requirements.md](./product-requirements.md)、[feature-specification.md](./feature-specification.md)、[desktop-companion-requirements.md](./desktop-companion-requirements.md)、[development-plan.md](../docs/development-plan.md)、[desktop-companion-development-plan.md](../docs/desktop-companion-development-plan.md)、[technical-architecture.md](../docs/technical-architecture.md)、[decision-log.md](../docs/decision-log.md)、[gap-register.md](../docs/gap-register.md) |
-| 更新时间 | 2026-08-12 |
+| 更新时间 | 2026-08-18 |
 
 ## 技术工程映射
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e1b3d"/><stop offset="1" stop-color="#31539c"/></linearGradient></defs>
+  <rect width="300" height="420" fill="url(#g)"/>
+  <path d="M150 70 L215 170 L150 350 L85 170 Z" fill="#f5f0d8" opacity="0.9"/>
+  <path d="M150 110 L185 170 L150 300 L115 170 Z" fill="#8fa8d8" opacity="0.8"/>
+  <text x="150" y="385" text-anchor="middle" fill="#fff" font-size="26" font-family="sans-serif">纸月计划</text>
+</svg>

@@ -1,62 +1,134 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { scheduleApi, type ScheduleDayKey } from '@/api/schedule'
+import { isSupportedAnimeId } from '@/data/animeCatalog'
 
 type ScheduleItem = {
+  animeId: number
   time: string
   state: string
   title: string
   episode: string
   description: string
-  tone: 'blue' | 'coral' | 'gold'
+  tone: 'blue' | 'coral' | 'gold' | 'pink' | 'violet' | 'teal'
 }
 
-type ScheduleDayKey = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+type DayMeta = { key: ScheduleDayKey; label: string; date: string }
 
-const days: Array<{ key: ScheduleDayKey; label: string; date: string }> = [
-  { key: 'monday', label: '周一', date: '09 月 15 日' },
-  { key: 'tuesday', label: '周二', date: '09 月 16 日' },
-  { key: 'wednesday', label: '周三', date: '09 月 17 日' },
-  { key: 'thursday', label: '周四', date: '09 月 18 日' },
-  { key: 'friday', label: '周五', date: '09 月 19 日' },
-  { key: 'saturday', label: '周六', date: '09 月 20 日' },
-  { key: 'sunday', label: '周日', date: '09 月 21 日' },
+const DAY_META: Array<Omit<DayMeta, 'date'>> = [
+  { key: 'monday', label: '周一' },
+  { key: 'tuesday', label: '周二' },
+  { key: 'wednesday', label: '周三' },
+  { key: 'thursday', label: '周四' },
+  { key: 'friday', label: '周五' },
+  { key: 'saturday', label: '周六' },
+  { key: 'sunday', label: '周日' },
 ]
 
-const scheduleMap: Record<ScheduleDayKey, ScheduleItem[]> = {
+const LOCAL_DATES: Record<ScheduleDayKey, string> = {
+  monday: '09 月 15 日',
+  tuesday: '09 月 16 日',
+  wednesday: '09 月 17 日',
+  thursday: '09 月 18 日',
+  friday: '09 月 19 日',
+  saturday: '09 月 20 日',
+  sunday: '09 月 21 日',
+}
+
+const LOCAL_SCHEDULE_MAP: Record<ScheduleDayKey, ScheduleItem[]> = {
   monday: [
-    { time: '18:30', state: '待播出', title: '夏末余晖', episode: '第 08 集', description: '沿着旧铁轨回到夏天结束前的最后一天。', tone: 'gold' },
+    { animeId: 128, time: '21:00', state: '待播出', title: '无职转生 · 第三季', episode: '第 10 集', description: '异世界的新篇章继续展开。', tone: 'violet' },
   ],
   tuesday: [
-    { time: '20:00', state: '待播出', title: '远方来信', episode: '第 08 集', description: '山顶的灯亮起时，来自远方的回信终于抵达。', tone: 'coral' },
+    { animeId: 133, time: '20:00', state: '待播出', title: '无职转生 · 第一季', episode: '第 01 集', description: '从重新开始的人生，认真走出第一步。', tone: 'blue' },
   ],
   wednesday: [
-    { time: '19:30', state: '待播出', title: '蓝色时刻', episode: '第 10 集', description: '潮湿的站台亮起第一盏灯，城市开始交换秘密。', tone: 'blue' },
-    { time: '22:00', state: '待播出', title: '潮汐与月光', episode: '第 02 集', description: '纸船沿着退潮的方向，带走两个人的秘密。', tone: 'gold' },
+    { animeId: 136, time: '21:30', state: '待播出', title: '无职转生 · 第二季', episode: '第 01 集', description: '新的伙伴与旅程在异世界继续。', tone: 'gold' },
+    { animeId: 135, time: '23:00', state: '待播出', title: '无职转生 · 第二季 Part.2', episode: '第 01 集', description: '第二季后半篇章开启新的命运交汇。', tone: 'pink' },
   ],
   thursday: [
-    { time: '19:30', state: '已播出', title: '雨停之后', episode: '第 06 集', description: '雨后的电车站迎来一封没有署名的信。', tone: 'blue' },
-    { time: '21:30', state: '即将播出', title: '蓝色时刻', episode: '第 11 集', description: '只有日落后的七分钟，才能看见城市被遗忘的另一面。', tone: 'blue' },
-    { time: '22:00', state: '下一场', title: '星海回声', episode: '第 04 集', description: '旧广播塔接收到一段来自失落地表的求救信号。', tone: 'coral' },
-    { time: '23:15', state: '稍后', title: '潮汐与月光', episode: '第 02 集', description: '纸船沿着退潮的方向，带走两个人的秘密。', tone: 'gold' },
+    { animeId: 127, time: '20:00', state: '推荐观看', title: '你的名字', episode: '剧场版', description: '在黄昏天空下重新寻找彼此。', tone: 'coral' },
+    { animeId: 137, time: '22:30', state: '稍后', title: '无职转生 · OAD 特别篇', episode: '第 01 集', description: '补充主线旅程中的重要片段。', tone: 'teal' },
   ],
   friday: [
-    { time: '20:00', state: '待播出', title: '远方来信', episode: '第 09 集', description: '回信的最后一页，写着一条通往海边的路。', tone: 'coral' },
+    { animeId: 128, time: '21:00', state: '待播出', title: '无职转生 · 第三季', episode: '第 11 集', description: '新的挑战等待着重新出发的旅人。', tone: 'violet' },
   ],
   saturday: [
-    { time: '18:00', state: '待播出', title: '雨停之后', episode: '第 07 集', description: '他们决定在雨季结束前，走完那条巷子。', tone: 'blue' },
-    { time: '21:00', state: '待播出', title: '星海回声', episode: '第 05 集', description: '流星雨之后，广播里出现了第二个声音。', tone: 'coral' },
+    { animeId: 136, time: '21:00', state: '待播出', title: '无职转生 · 第二季', episode: '第 02 集', description: '继续追踪异世界中的新线索。', tone: 'gold' },
   ],
   sunday: [
-    { time: '22:30', state: '待播出', title: '夏末余晖', episode: '特别篇', description: '沿着旧铁轨回到夏天结束前的最后一天。', tone: 'gold' },
+    { animeId: 135, time: '22:00', state: '待播出', title: '无职转生 · 第二季 Part.2', episode: '第 02 集', description: '旅程还在继续，新的选择即将到来。', tone: 'pink' },
   ],
+}
+
+/** 复制本地排期兜底数据，避免页面状态直接修改常量。 */
+function copyLocalSchedule(): Record<ScheduleDayKey, ScheduleItem[]> {
+  return Object.fromEntries(
+    Object.entries(LOCAL_SCHEDULE_MAP).map(([key, items]) => [key, [...items]]),
+  ) as Record<ScheduleDayKey, ScheduleItem[]>
+}
+
+/** 根据服务端生成日期计算当前周一至周日的展示日期。 */
+function weekDatesFrom(iso: string): Record<ScheduleDayKey, string> {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return LOCAL_DATES
+  const mondayOffset = (date.getDay() + 6) % 7
+  const monday = new Date(date)
+  monday.setDate(date.getDate() - mondayOffset)
+  const dates = {} as Record<ScheduleDayKey, string>
+  DAY_META.forEach((meta, index) => {
+    const day = new Date(monday)
+    day.setDate(monday.getDate() + index)
+    dates[meta.key] = `${String(day.getMonth() + 1).padStart(2, '0')} 月 ${String(day.getDate()).padStart(2, '0')} 日`
+  })
+  return dates
+}
+
+const loading = ref(true)
+const apiError = ref(false)
+const scheduleMap = ref<Record<ScheduleDayKey, ScheduleItem[]>>(copyLocalSchedule())
+const weekDates = ref<Record<ScheduleDayKey, string>>(LOCAL_DATES)
+
+/** 加载服务端周排期；失败时保留本地排期并提示接口异常。 */
+async function loadSchedule() {
+  loading.value = true
+  apiError.value = false
+  try {
+    const data = await scheduleApi.week()
+    const next = copyLocalSchedule()
+    for (const day of data.days) {
+      const supportedItems = day.items.map((item) => ({
+        animeId: item.animeId,
+        time: item.time,
+        state: item.state,
+        title: item.title,
+        episode: item.episode,
+        description: item.description,
+        tone: item.tone,
+      })).filter((item) => isSupportedAnimeId(item.animeId))
+      if (supportedItems.length) next[day.day] = supportedItems
+    }
+    scheduleMap.value = next
+    weekDates.value = weekDatesFrom(data.generatedAt)
+  } catch {
+    apiError.value = true
+  } finally {
+    loading.value = false
+  }
 }
 
 const selectedDay = ref<ScheduleDayKey>('thursday')
 const remindedItems = ref<string[]>([])
-const scheduleItems = computed(() => scheduleMap[selectedDay.value])
-const totalScheduleCount = computed(() => Object.values(scheduleMap).reduce((total, items) => total + items.length, 0))
+const days = computed<DayMeta[]>(() =>
+  DAY_META.map((meta) => ({ ...meta, date: weekDates.value[meta.key] })),
+)
+const scheduleItems = computed(() => scheduleMap.value[selectedDay.value])
+const totalScheduleCount = computed(() =>
+  Object.values(scheduleMap.value).reduce((total, items) => total + items.length, 0),
+)
 
+/** 切换单个节目的本地提醒标记。 */
 function toggleReminder(item: ScheduleItem) {
   const key = `${selectedDay.value}-${item.title}-${item.episode}`
   remindedItems.value = remindedItems.value.includes(key)
@@ -64,9 +136,14 @@ function toggleReminder(item: ScheduleItem) {
     : [...remindedItems.value, key]
 }
 
+/** 判断当前节目是否已经加入提醒。 */
 function hasReminder(item: ScheduleItem) {
   return remindedItems.value.includes(`${selectedDay.value}-${item.title}-${item.episode}`)
 }
+
+onMounted(() => {
+  void loadSchedule()
+})
 </script>
 
 <template>
@@ -79,6 +156,12 @@ function hasReminder(item: ScheduleItem) {
         <p>查看本周每天的动漫更新时间，提前收藏想看的作品。</p>
       </div>
       <div class="schedule-summary"><strong>{{ totalScheduleCount }}</strong><span>本周场次</span></div>
+    </div>
+
+    <div v-if="loading" class="schedule-status-hint" aria-live="polite">排期加载中…</div>
+    <div v-else-if="apiError" class="schedule-status-hint schedule-status-error" role="status">
+      接口暂不可用，当前展示本地演示数据
+      <button class="schedule-retry" type="button" @click="loadSchedule">重试</button>
     </div>
 
     <div class="schedule-day-tabs" role="tablist" aria-label="排期日期">

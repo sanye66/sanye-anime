@@ -1,0 +1,7 @@
+server:
+  port: 8087
+
+sanye:
+  feedback:
+    schema: sanye_feedback
+

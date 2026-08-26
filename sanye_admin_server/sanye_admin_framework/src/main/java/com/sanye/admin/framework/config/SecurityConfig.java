@@ -49,8 +49,12 @@ public class SecurityConfig
     /**
      * 跨域过滤器
      */
-    @Autowired
+    @Autowired(required = false)
     private CorsFilter corsFilter;
+
+    /** 网关统一处理 CORS 时的空过滤器占位。 */
+    private static final CorsFilter NOOP_CORS_FILTER =
+            new CorsFilter(new org.springframework.web.cors.UrlBasedCorsConfigurationSource());
 
     /**
      * 允许匿名访问的地址
@@ -111,9 +115,9 @@ public class SecurityConfig
             .logout(logout -> logout.logoutUrl("/logout").logoutSuccessHandler(logoutSuccessHandler))
             // 添加JWT filter
             .addFilterBefore(authenticationTokenFilter, UsernamePasswordAuthenticationFilter.class)
-            // 添加CORS filter
-            .addFilterBefore(corsFilter, JwtAuthenticationTokenFilter.class)
-            .addFilterBefore(corsFilter, LogoutFilter.class)
+            // 添加CORS filter（sanye-admin.cors-enabled=true 时存在，默认经网关处理）
+            .addFilterBefore(corsFilter != null ? corsFilter : NOOP_CORS_FILTER, JwtAuthenticationTokenFilter.class)
+            .addFilterBefore(corsFilter != null ? corsFilter : NOOP_CORS_FILTER, LogoutFilter.class)
             .build();
     }
 

@@ -1,3 +1,5 @@
 packages:
   - sanye_client
   - sanye_admin
+  - sanye_pet
+  - e2e

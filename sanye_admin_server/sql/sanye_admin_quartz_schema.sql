@@ -21,10 +21,10 @@ create table sanye_qrtz_job_details (
     job_group            varchar(200)    not null,
     description          varchar(250)    null,
     job_class_name       varchar(250)    not null,
-    is_durable           varchar(1)      not null,
-    is_nonconcurrent     varchar(1)      not null,
-    is_update_data       varchar(1)      not null,
-    requests_recovery    varchar(1)      not null,
+    is_durable           boolean         not null,
+    is_nonconcurrent     boolean         not null,
+    is_update_data       boolean         not null,
+    requests_recovery    boolean         not null,
     job_data             bytea            null,
     primary key (sched_name, job_name, job_group)
 );
@@ -126,8 +126,8 @@ create table sanye_qrtz_fired_triggers (
     state                varchar(16)     not null,
     job_name             varchar(200)    null,
     job_group            varchar(200)    null,
-    is_nonconcurrent     varchar(1)      null,
-    requests_recovery    varchar(1)      null,
+    is_nonconcurrent     boolean         null,
+    requests_recovery    boolean         null,
     primary key (sched_name, entry_id)
 );
 
@@ -167,8 +167,8 @@ create table sanye_qrtz_simprop_triggers (
     long_prop_2          bigint          null,
     dec_prop_1           numeric(13,4)   null,
     dec_prop_2           numeric(13,4)   null,
-    bool_prop_1          varchar(1)      null,
-    bool_prop_2          varchar(1)      null,
+    bool_prop_1          varchar(8)      null,
+    bool_prop_2          varchar(8)      null,
     primary key (sched_name, trigger_name, trigger_group),
     foreign key (sched_name, trigger_name, trigger_group) references sanye_qrtz_triggers(sched_name, trigger_name, trigger_group)
 );

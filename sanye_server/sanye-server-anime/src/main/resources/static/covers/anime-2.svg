@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a62"/><stop offset="1" stop-color="#c84b6b"/></linearGradient></defs>
+  <rect width="300" height="420" fill="url(#g)"/>
+  <circle cx="190" cy="120" r="46" fill="#ffe3b3" opacity="0.9"/>
+  <path d="M0 330 Q150 250 300 330 L300 420 L0 420 Z" fill="#5c2a4a"/>
+  <text x="150" y="375" text-anchor="middle" fill="#fff" font-size="26" font-family="sans-serif">夏末余晖</text>
+</svg>

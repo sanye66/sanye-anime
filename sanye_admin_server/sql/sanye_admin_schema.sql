@@ -438,11 +438,11 @@ create table sanye_sys_oper_log (
   error_msg         varchar(2000)   default '',
   oper_time         timestamp,
   cost_time         bigint      default 0,
-  primary key (oper_id),
-  key idx_sys_oper_log_bt (business_type),
-  key idx_sys_oper_log_s  (status),
-  key idx_sys_oper_log_ot (oper_time)
+  primary key (oper_id)
 );
+create index if not exists idx_sys_oper_log_bt on sanye_sys_oper_log (business_type);
+create index if not exists idx_sys_oper_log_s on sanye_sys_oper_log (status);
+create index if not exists idx_sys_oper_log_ot on sanye_sys_oper_log (oper_time);
 
 
 -- ----------------------------
@@ -551,7 +551,8 @@ create table sanye_sys_config (
 insert into sanye_sys_config values(1, '主框架页-默认皮肤样式名称',     'sys.index.skinName',               'skin-blue',     'Y', 'admin', CURRENT_TIMESTAMP, '', null, '蓝色 skin-blue、绿色 skin-green、紫色 skin-purple、红色 skin-red、黄色 skin-yellow' );
 insert into sanye_sys_config values(2, '用户管理-账号初始密码',         'sys.user.initPassword',            '123456',        'Y', 'admin', CURRENT_TIMESTAMP, '', null, '初始化密码 123456' );
 insert into sanye_sys_config values(3, '主框架页-侧边栏主题',           'sys.index.sideTheme',              'theme-dark',    'Y', 'admin', CURRENT_TIMESTAMP, '', null, '深色主题theme-dark，浅色主题theme-light' );
-insert into sanye_sys_config values(4, '账号自助-验证码开关',           'sys.account.captchaEnabled',       'true',          'Y', 'admin', CURRENT_TIMESTAMP, '', null, '是否开启验证码功能（true开启，false关闭）');
+-- 本地开发默认关闭验证码，便于自动化联调；生产环境必须通过管理端参数或配置覆盖为 true。
+insert into sanye_sys_config values(4, '账号自助-验证码开关',           'sys.account.captchaEnabled',       'false',         'Y', 'admin', CURRENT_TIMESTAMP, '', null, '是否开启验证码功能（true开启，false关闭）');
 insert into sanye_sys_config values(5, '账号自助-是否开启用户注册功能', 'sys.account.registerUser',         'false',         'Y', 'admin', CURRENT_TIMESTAMP, '', null, '是否开启注册用户功能（true开启，false关闭）');
 insert into sanye_sys_config values(6, '用户登录-黑名单列表',           'sys.login.blackIPList',            '',              'Y', 'admin', CURRENT_TIMESTAMP, '', null, '设置登录IP黑名单限制，多个匹配项以;分隔，支持匹配（*通配、网段）');
 insert into sanye_sys_config values(7, '用户管理-初始密码修改策略',     'sys.account.initPasswordModify',   '1',             'Y', 'admin', CURRENT_TIMESTAMP, '', null, '0：初始密码修改策略关闭，没有任何提示，1：提醒用户，如果未修改初始密码，则在登录时就会提醒修改密码对话框');
@@ -573,10 +574,10 @@ create table sanye_sys_logininfor (
   status         char(1)        default '0',
   msg            varchar(255)   default '',
   login_time     timestamp,
-  primary key (info_id),
-  key idx_sys_logininfor_s  (status),
-  key idx_sys_logininfor_lt (login_time)
+  primary key (info_id)
 );
+create index if not exists idx_sys_logininfor_s on sanye_sys_logininfor (status);
+create index if not exists idx_sys_logininfor_lt on sanye_sys_logininfor (login_time);
 
 
 -- ----------------------------
@@ -742,3 +743,38 @@ SELECT setval(pg_get_serial_sequence('sanye_sys_notice', 'notice_id'), coalesce(
 SELECT setval(pg_get_serial_sequence('sanye_sys_notice_read', 'read_id'), coalesce((select max(read_id) from sanye_sys_notice_read), 1), (select max(read_id) is not null from sanye_sys_notice_read));
 SELECT setval(pg_get_serial_sequence('sanye_gen_table', 'table_id'), coalesce((select max(table_id) from sanye_gen_table), 1), (select max(table_id) is not null from sanye_gen_table));
 SELECT setval(pg_get_serial_sequence('sanye_gen_table_column', 'column_id'), coalesce((select max(column_id) from sanye_gen_table_column), 1), (select max(column_id) is not null from sanye_gen_table_column));
+
+-- 内容/反馈权限菜单（T-F-03/TODO-006 权限串，供角色授权）
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1061, '内容管理', 0, 10, 'content', null, '', '', 1, 0, 'F', '0', '0', 'anime:content:list', 'guide', 'admin', now(), '', null, '内容管理权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1061);
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1062, '内容状态', 0, 11, '', null, '', '', 1, 0, 'F', '0', '0', 'anime:content:status', '', 'admin', now(), '', null, '内容状态权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1062);
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1063, '反馈管理', 0, 12, 'feedback', null, '', '', 1, 0, 'F', '0', '0', 'feedback:list', 'guide', 'admin', now(), '', null, '反馈管理权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1063);
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1064, '反馈处理', 0, 13, '', null, '', '', 1, 0, 'F', '0', '0', 'feedback:status', '', 'admin', now(), '', null, '反馈处理权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1064);
+
+-- 官网正文（法律文档）权限菜单（T-D-07，供角色授权）
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1065, '官网正文', 0, 14, 'official-content', null, '', '', 1, 0, 'F', '0', '0', 'legal:content:list', 'guide', 'admin', now(), '', null, '官网正文管理权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1065);
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1066, '官网正文编辑', 0, 15, '', null, '', '', 1, 0, 'F', '0', '0', 'legal:content:edit', '', 'admin', now(), '', null, '官网正文编辑权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1066);
+
+-- 内容编辑权限（T-F-03 深化：新建/编辑作品）
+insert into sanye_sys_menu (menu_id, menu_name, parent_id, order_num, path, component, query, route_name, is_frame, is_cache, menu_type, visible, status, perms, icon, create_by, create_time, update_by, update_time, remark)
+select 1067, '内容编辑', 0, 16, '', null, '', '', 1, 0, 'F', '0', '0', 'anime:content:edit', '', 'admin', now(), '', null, '内容新建与编辑权限'
+where not exists (select 1 from sanye_sys_menu where menu_id = 1067);
+
+-- 普通角色允许查看内容管理，但不授予反馈、官网正文和内容写入权限。
+insert into sanye_sys_role_menu (role_id, menu_id)
+select 2, 1061
+where exists (select 1 from sanye_sys_role where role_id = 2)
+  and exists (select 1 from sanye_sys_menu where menu_id = 1061)
+  and not exists (select 1 from sanye_sys_role_menu where role_id = 2 and menu_id = 1061);
+SELECT setval(pg_get_serial_sequence('sanye_sys_menu', 'menu_id'), 1067, true);

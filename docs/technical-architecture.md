@@ -2,12 +2,12 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.2 |
-| 文档状态 | Baseline，首版采用模块化单体，外部兼容性仍待验证 |
+| 文档版本 | v0.4 |
+| 文档状态 | Baseline，首版按微服务架构建设（D-024），外部兼容性仍待验证 |
 | 适用范围 | PC 客户端、官网、业务服务、AI 服务和管理平台 |
-| 关联文档 | [产品需求文档](../product/product-requirements.md)、[功能详细说明](../product/feature-specification.md)、[产品总体架构](../product/overall-architecture.md)、[决策记录](./decision-log.md)、[版本基线](./version-baseline.md) |
+| 关联文档 | [产品需求文档](../product/product-requirements.md)、[功能详细说明](../product/feature-specification.md)、[产品总体架构](../product/overall-architecture.md)、[详细技术设计](./technical-design.md)、[决策记录](./decision-log.md)、[版本基线](./version-baseline.md) |
 | 开发计划 | [开发计划](./development-plan.md) |
-| 更新时间 | 2026-08-12 |
+| 更新时间 | 2026-08-18 |
 
 ## 1. 技术栈确认
 
@@ -16,6 +16,7 @@
 | 层级 | 技术 | 在本项目中的职责 |
 | --- | --- | --- |
 | 微服务基础 | Spring Cloud Alibaba | 服务注册、配置、服务间调用等微服务基础能力 |
+| 网关 | Spring Cloud Gateway | 统一入口、路由、鉴权前置、跨域与基础限流 |
 | 注册与配置 | Nacos | 服务注册发现、配置管理、环境配置 |
 | 流量治理 | Sentinel | 限流、熔断、降级和热点参数保护 |
 | 消息队列 | RabbitMQ | 异步任务、事件通知、削峰和解耦 |
@@ -26,6 +27,10 @@
 | 容器化 | Docker | 本地开发、测试和部署环境标准化 |
 | 定时任务 | XXL-JOB | 排期同步、索引重建、缓存预热、数据清理等定时任务 |
 | 管理平台 | RuoYi | 管理后台的用户、权限、内容、AI 反馈和运营配置 |
+| 统一认证 | CAS（Apereo CAS） | 客户端与官网单点登录；业务端在 ticket 校验后签发本地会话凭证 |
+| AI 编排 | LangChain4j | 模型调用、会话记忆（Memory）、RAG 检索和流式输出 |
+| E2E 测试 | Playwright | 三端浏览器 E2E、API 契约测试与合成监控 |
+| 监控 | Prometheus / Grafana / Alertmanager | 指标采集、看板与告警；覆盖基础设施、应用、业务、AI 成本与前端 |
 
 ### 1.2 口径说明
 
@@ -33,99 +38,104 @@ XXL-JOB 是分布式任务调度组件，不是编程语言。本文按“定时
 
 版本和兼容基线统一记录在 [version-baseline.md](./version-baseline.md)。首版技术落地边界和外部验证项统一记录在 [decision-log.md](./decision-log.md) 与 [gap-register.md](./gap-register.md)。
 
-## 2. 总体架构
+## 2. 总体架构（微服务）
 
-以下是逻辑架构图。MVP 的物理部署仍以一个核心业务应用和一个独立管理平台为准，不按图中的每个业务边界创建独立服务。
+项目按微服务架构建设（决策 D-024）。客户端、官网与管理平台前端不变，后端拆分为网关和八个业务服务，管理端 RuoYi 独立运行。
 
 ```text
-官网 / PC 客户端
+官网 / PC 客户端 / 管理平台前端
       |
       v
-统一访问入口 / 认证边界
+sanye_gateway（统一入口：路由、鉴权前置、跨域、限流、请求 ID）
       |
-      +--> 用户与权限服务 --------> PostgreSQL / Redis
-      +--> 动漫内容服务 ----------> PostgreSQL / Redis
-      +--> 搜索服务 --------------> Elasticsearch
-      +--> AI 对话服务 -----------> Redis / PostgreSQL / Elasticsearch
-      +--> 文件服务 --------------> MinIO / PostgreSQL
-      +--> 排期与同步服务 --------> RabbitMQ / XXL-JOB
-      +--> 反馈与运营服务 --------> PostgreSQL / RabbitMQ
-      |
-      +--> 管理平台 RuoYi
+      +---> sanye_auth（CAS 登录、本地会话、账户、角色权限）
+      +---> sanye_anime（作品、Banner、榜单、排期、详情）
+      +---> sanye_search（Elasticsearch 检索、索引构建与同步）
+      +---> sanye_ai_chat（会话、记忆、RAG、SSE 流式、额度、推荐）
+      +---> sanye_favorite（收藏、浏览历史）
+      +---> sanye_file（MinIO 上传/下载、文件元数据、扫描状态）
+      +---> sanye_feedback（用户反馈、AI 反馈与处理）
+      +---> sanye_job（XXL-JOB 执行器、同步与清理任务）
+      +---> sanye_admin_server（RuoYi 管理端，独立应用）
 
-Spring Cloud Alibaba：服务治理
-Nacos：注册中心与配置中心
-Sentinel：限流、熔断、降级
-RabbitMQ：异步事件和任务解耦
-Docker：运行环境封装
+基础设施：Nacos（注册/配置）、Sentinel（限流熔断）、RabbitMQ（事件）、
+PostgreSQL（每服务独立 schema）、Redis（缓存/会话/幂等/额度）、
+Elasticsearch、MinIO、XXL-JOB、Prometheus/Grafana/Alertmanager
 ```
 
 ### 2.1 分层职责
 
 | 层 | 主要职责 | 不应承担的职责 |
 | --- | --- | --- |
-| 客户端 | 页面渲染、交互状态、请求发起、流式展示 | 保存模型密钥、决定权限、拼装作品事实 |
-| 统一入口 | 认证前置、跨域、请求 ID、基础限流 | 复杂业务逻辑、直接操作业务表 |
-| 业务服务 | 用户、动漫、会话、收藏和反馈业务 | 直接暴露数据库给客户端 |
-| AI 服务 | 意图识别、检索、上下文组装、模型调用、安全审核 | 让客户端直接调用模型供应商 |
-| 数据层 | 持久化、搜索、缓存和对象存储 | 把 Redis 当作唯一事实来源 |
-| 管理平台 | 内容管理、权限、反馈处理、任务监控 | 绕过服务权限直接修改生产数据 |
+| 客户端/官网/管理前端 | 页面渲染、交互状态、请求发起、流式展示 | 保存模型密钥、决定权限、拼装作品事实 |
+| 网关 sanye_gateway | 统一入口、路由、鉴权前置、跨域、请求 ID、基础限流 | 业务逻辑、直接操作业务库 |
+| 业务服务 | 各自领域内的业务、数据、缓存与事件 | 跨服务直连数据库、私自修改他人领域数据 |
+| AI 服务 sanye_ai_chat | 意图识别、检索、上下文组装、模型调用、安全审核、SSE | 让客户端直接调用模型供应商 |
+| 数据层 | 每服务独立 schema、ES、Redis、MinIO | 把 Redis 当作唯一事实来源 |
+| 管理端 RuoYi | 内容管理、权限、反馈处理、任务监控 | 绕过网关与服务直接修改生产数据 |
 
-## 3. 未来服务边界
+## 3. 服务清单与边界（当前架构）
 
-以下是未来可以独立部署的业务边界，不代表 MVP 必须拆成多个服务。首版只实现模块边界，服务数量不宜为了“微服务”而增加。
+后端按微服务拆分（决策 D-024），每个服务可独立构建、独立容器部署、独立发布。
 
-| 服务 | 主要职责 | 主要依赖 |
-| --- | --- | --- |
-| `sanye_auth` | 登录、刷新凭证、用户资料、权限 | PostgreSQL、Redis |
-| `sanye_anime` | 作品、分类、Banner、榜单、排期、详情 | PostgreSQL、Redis |
-| `sanye_search` | 搜索建议、作品搜索、角色和标签检索 | Elasticsearch、Redis |
-| `sanye_ai_chat` | 会话、消息、额度、流式 AI、推荐卡片 | PostgreSQL、Redis、Elasticsearch、RabbitMQ |
-| `sanye_file` | 上传、下载授权、文件元数据、图片校验 | MinIO、PostgreSQL |
-| `sanye_feedback` | AI 反馈、用户反馈、处理状态 | PostgreSQL、RabbitMQ |
-| `sanye_job` | XXL-JOB 执行器、同步和清理任务 | XXL-JOB、RabbitMQ |
-| `sanye_admin` | RuoYi 管理端业务接口和后台权限 | PostgreSQL、Redis |
+| 服务 | 主要职责 | 数据（PostgreSQL schema） | 主要依赖 |
+| --- | --- | --- | --- |
+| `sanye_gateway` | 统一入口、路由、鉴权前置、跨域、限流、请求 ID | 无 | Nacos、Sentinel、Redis |
+| `sanye_auth` | CAS 登录、本地会话（JWT/Redis）、账户、角色权限 | `sanye_auth` | PostgreSQL、Redis、CAS |
+| `sanye_anime` | 作品、Banner、榜单、排期、详情、发布状态 | `sanye_anime` | PostgreSQL、Redis |
+| `sanye_search` | ES 检索、索引构建与同步 | `sanye_search` | Elasticsearch、PostgreSQL、RabbitMQ |
+| `sanye_ai_chat` | 会话、消息、记忆、RAG、SSE、额度、推荐 | `sanye_ai_chat` | PostgreSQL、Redis、Elasticsearch、RabbitMQ、模型供应商 |
+| `sanye_favorite` | 收藏、浏览历史 | `sanye_favorite` | PostgreSQL、Redis |
+| `sanye_file` | 上传/下载授权、文件元数据、扫描状态 | `sanye_file` | MinIO、PostgreSQL、RabbitMQ |
+| `sanye_feedback` | 用户反馈、AI 反馈与处理状态 | `sanye_feedback` | PostgreSQL、RabbitMQ |
+| `sanye_job` | XXL-JOB 执行器、同步与清理任务 | `sanye_job` | XXL-JOB、PostgreSQL、RabbitMQ |
+| `sanye_admin_server` | RuoYi 管理端（独立应用） | `sanye_admin`（RuoYi 表） | PostgreSQL、Redis |
 
-### 3.1 未来物理部署方案
+### 3.1 边界规则
 
-当流量、故障隔离或独立发布有明确收益时，可以按以下边界演进：
+- 服务间不直连对方数据库，只通过网关/OpenFeign 调用或 RabbitMQ 事件协作。
+- 数据一致性统一走“本地事务 + Outbox + 事件 + 对账”，禁止跨服务事务和两阶段提交。
+- 公共能力（认证、额度、会话）由 `sanye_auth` 与 Redis 提供，其他服务通过其受控接口使用。
+- 单 PostgreSQL 实例按服务独立 schema，schema 间不允许 SQL 级联访问。
+- 服务粒度调整必须记录数据边界、迁移方案、回滚方案和新增运维成本。
 
-```text
-业务服务（用户 + 动漫 + 收藏）
-AI 服务（会话 + 检索 + 模型代理）
-管理服务（RuoYi）
-任务服务（XXL-JOB 执行器）
-```
-
-首版不单独部署网关服务。逻辑上保持模块边界，物理上可以先合并部署，等流量和团队规模明确后再拆分，避免一开始维护过多独立服务。未来出现多个独立业务服务时，再增加 `sanye_gateway`。
-
-### 3.2 单人开发部署边界
-
-单人开发首版采用一个核心业务应用，内部保留模块边界：
+### 3.2 物理部署（当前）
 
 ```text
-sanye_core
-├── sanye_auth
-├── sanye_anime
-├── sanye_search
-├── sanye_ai_chat
-├── sanye_favorite
-├── sanye_file
-├── sanye_feedback
-└── sanye_job
+Docker Compose：
+  gateway + 8 个业务服务 + admin_server（各一容器）
+  基础设施：postgres / redis / rabbitmq / elasticsearch / minio / nacos / xxl-job-admin
+  可观测：prometheus / grafana / alertmanager
 ```
 
-RuoYi 管理平台作为独立应用运行；PostgreSQL、Redis、Elasticsearch、MinIO 和 RabbitMQ 作为基础设施运行。Nacos、Sentinel 和 XXL-JOB 只接入实际需要的能力，不为了形式把每个模块拆成独立服务。
+- 开发/测试：Compose 一键启动全部服务，每个服务独立端口与健康检查。
+- 生产首版：单节点多容器部署，Kubernetes 延后评估。
+- 每个服务独立配置环境变量，公共配置进 Nacos。
 
-只有满足以下任一条件，才评估将模块拆为独立服务：
+### 3.3 前端与全工程规划（D-025）
 
-- 需要独立扩容。
-- 需要独立发布而不能影响其他模块。
-- 故障隔离有明确收益。
-- 团队已经有独立维护人。
-- 模块数据边界和调用协议已经稳定。
+#### 3.3.1 前端工程
 
-拆分前必须记录原因、数据边界、迁移方案、回滚方案和新增运维成本。
+| 工程 | 框架 | 承载范围 | 对接方式 |
+| --- | --- | --- | --- |
+| `sanye_client` | Vue 3 + TypeScript + Vite | `sanye_anime` 客户端页面 + `official` 官网页面（路由分区） | 统一经网关 `/api/**`；CAS 登录跳转与回调 |
+| `sanye_admin` | Vue 3 + TypeScript + Vite（RuoYi 前端） | 管理平台页面 | 经网关或直连管理后端；RuoYi 登录与权限 |
+
+规则：
+
+- 前端只通过网关访问业务接口，不直连业务服务；请求层统一封装 accessToken、requestId、错误码映射与重试。
+- 构建产物静态托管（Nginx），history 路由回退，静态资源缓存与 CSP 头；环境变量注入网关地址。
+- 前端安全：Vue 默认转义 + 富文本白名单、token 不入日志与 URL、模型密钥永不进前端、CSP 与错误边界。
+
+#### 3.3.2 其他工程
+
+| 工程/部分 | 定位 |
+| --- | --- |
+| `sanye_deploy` | 部署辅助：Compose、镜像锁、监控配置、备份/发布/回滚脚本（已初始化 `compose.yaml` 与 `images.lock`） |
+| `sanye_website` | 早期独立官网过渡目录，不参与根工作区构建；官网页面统一在 `sanye_client` |
+| 桌宠（P1） | Windows 桌面伴侣，随客户端唤起；见桌宠文档与 PET-TODO-001 至 008 |
+| 监控栈 | Prometheus / Grafana / Alertmanager + 各中间件导出器，见 [全系统监控方案](./monitoring-design.md) |
+| CI/CD | GitHub Actions：前端构建、后端多服务构建与测试、依赖/密钥扫描（T-B-02），后续补镜像与部署作业 |
 
 ## 4. 核心业务链路
 
@@ -246,6 +256,8 @@ XXL-JOB 定时触发
 | `AI_GROUP` | 模型路由、超时、上下文和安全参数 |
 | `JOB_GROUP` | XXL-JOB 执行器和任务参数 |
 
+接入状态（2026-08-18）：`sanye_gateway` 与 8 个业务服务已引入 Nacos discovery/config 依赖；每个服务通过环境变量开关控制（`NACOS_ENABLED`、`NACOS_SERVER_ADDR`、`NACOS_USERNAME`、`NACOS_PASSWORD`），本地默认关闭；启用后按上表分组加载配置（业务配置 `sanye-{service}.yaml` + 共享配置 `sanye-common.yaml`）并注册服务，网关以 `lb://` 按服务名路由。
+
 规则：
 
 - 敏感配置使用密文或外部密钥管理，不明文放在 Nacos。
@@ -297,18 +309,18 @@ XXL-JOB 定时触发
 
 | 表 | 作用 |
 | --- | --- |
-| `user_account` | 用户和账户状态 |
-| `user_auth` | 登录凭证关联信息 |
-| `anime` | 作品主数据 |
-| `anime_schedule` | 播出排期 |
-| `anime_banner` | Banner 配置 |
-| `conversation` | AI 会话 |
-| `conversation_message` | AI 消息 |
-| `user_favorite` | 收藏关系 |
-| `user_watch_history` | 观看或查看记录 |
-| `ai_feedback` | AI 回答反馈 |
-| `file_object` | MinIO 文件元数据 |
-| `job_sync_record` | 同步任务执行记录 |
+| `sanye_user_account` | 用户和账户状态 |
+| `sanye_user_auth` | 登录凭证关联信息（CAS 主体绑定） |
+| `sanye_anime` | 作品主数据 |
+| `sanye_anime_schedule` | 播出排期 |
+| `sanye_anime_banner` | Banner 配置 |
+| `sanye_conversation` | AI 会话 |
+| `sanye_conversation_message` | AI 消息 |
+| `sanye_user_favorite` | 收藏关系 |
+| `sanye_user_watch_history` | 观看或查看记录 |
+| `sanye_ai_feedback` | AI 回答反馈 |
+| `sanye_file_object` | MinIO 文件元数据 |
+| `sanye_job_sync_record` | 同步任务执行记录 |
 
 规则：
 
@@ -317,6 +329,7 @@ XXL-JOB 定时触发
 - 删除策略要区分逻辑删除和物理删除，并与隐私政策一致。
 - 事务只覆盖本地数据库；跨服务一致性通过事件、状态和补偿实现。
 - 生产环境禁止依赖无条件级联删除清理用户大批量数据。
+- 数据库连接池统一使用 HikariCP，连接只用于短事务，禁止在事务内发起远程调用或等待外部服务；线程池与连接池的参数和监控见 [详细技术设计](./technical-design.md) 7.8、7.9 节。
 
 ### 5.6 Elasticsearch 使用规范
 
@@ -419,11 +432,9 @@ xxl-job-admin
 
 ### 5.11 RuoYi 管理平台
 
-当前管理平台后端位于 `sanye_admin_server/`，是独立于 `sanye_server/` 的 Spring Boot 管理应用。已接入 RuoYi 的 common、system、framework、quartz、generator 和 app 模块，统一使用 `com.sanye.admin` 包名；数据库驱动和初始化脚本按 PostgreSQL 适配，Redis、Token、数据源和 Druid 凭据通过环境变量注入。`sanye_admin/` 当前仍是管理平台前端原型，尚未完成全部接口绑定。
+当前管理平台后端位于 `sanye_admin_server/`，是独立于 `sanye_server/` 的 Spring Boot 管理应用。已接入 RuoYi 的 common、system、framework、quartz、generator 和 app 模块，统一使用 `com.sanye.admin` 包名；数据库驱动和初始化脚本按 PostgreSQL 适配，Redis、Token、数据源和 Druid 凭据通过环境变量注入。`sanye_admin/` 已完成真实接口绑定，覆盖仪表盘、内容、官网正文、反馈、任务/任务日志、用户、角色、菜单和审计页面。
 
-已验证：使用 JDK 21 执行 `mvn clean package -DskipTests=true`，管理后端 7 个 Maven 模块构建成功。
-
-未验证：PostgreSQL 和 Redis 实例联动、真实登录、权限路由、Quartz 任务执行、前端接口调用和生产安全配置。
+已验证：JDK 21 下管理后端 Maven 打包成功；本地 PostgreSQL/Redis、真实登录、权限守卫、角色菜单授权、Quartz 任务与日志、管理前端联调均有自动化或冒烟证据。正式凭据、生产安全配置和部署发布仍属于环境门禁。
 
 管理平台功能建议：
 
@@ -442,10 +453,14 @@ xxl-job-admin
 | 角色 | 权限 |
 | --- | --- |
 | 超级管理员 | 系统和权限管理 |
-| 内容运营 | 作品、Banner、排期和标签 |
+| 内容编辑 | 作品、Banner、排期和标签的创建与编辑 |
+| 内容审核员 | 内容审核、发布、驳回和下架 |
 | AI 运营 | AI 反馈、提示词配置和质量数据 |
-| 运维人员 | 服务状态、任务和日志 |
-| 客服人员 | 用户反馈和基础账号查询 |
+| 数据运营 | 数据同步、搜索重建和数据修正 |
+| 客服运营 | 用户反馈和基础账号查询 |
+| 审计员 | 只读审计记录和报告 |
+
+角色命名与 [产品总体架构](../product/overall-architecture.md) 5.2 保持一致；代码级权限标识（`ADMIN`、`CONTENT_EDITOR`、`CONTENT_REVIEWER`、`AUDITOR` 等）与角色名称的映射见 [详细技术设计](./technical-design.md) 5.1 节。
 
 RuoYi 只能通过受控业务接口访问业务数据，不能为了方便直接修改核心表绕过服务层规则。
 
@@ -492,6 +507,8 @@ POST /api/v1/ai/conversations/{conversationId}/messages
 - 把所有历史消息无上限传给模型。
 - 把用户私密对话写入 RabbitMQ 的公共日志消息。
 
+AI 服务使用 LangChain4j：会话记忆持久化到 PostgreSQL（ChatMemoryStore），RAG 检索基于 Elasticsearch 经典检索（BM25 ContentRetriever），详细实现见 [详细技术设计](./technical-design.md) 5.6 节。
+
 ### 6.3 AI 失败降级
 
 | 故障 | 降级行为 |
@@ -537,6 +554,7 @@ POST /api/v1/ai/conversations/{conversationId}/messages
 ## 8. 安全要求
 
 - 所有外部请求经过统一安全边界。
+- 认证使用 CAS 单点登录；ticket 必须服务端校验，service 地址白名单，本地会话凭证负责 API 鉴权与即时吊销。
 - AI 模型 Key、数据库密码、Redis 密码、MinIO 密钥不得进入客户端和 Git。
 - 管理平台采用 RBAC，敏感操作需要操作日志。
 - 会话、消息、收藏和反馈接口必须做资源所有权校验。
@@ -588,22 +606,23 @@ POST /api/v1/ai/conversations/{conversationId}/messages
 
 ### 管理平台
 
-- [ ] RuoYi 角色权限可以限制内容、AI、任务和用户操作。
+- [x] RuoYi 角色权限可以限制内容、反馈、任务、用户和管理页面操作（AI 成本统计按管理端权限聚合）。
 - [ ] 作品和排期修改可以触发缓存与索引更新。
 - [ ] AI 反馈可以检索、处理和审计。
-- [ ] XXL-JOB 任务可以查看执行记录和手动重试。
+- [x] Quartz 任务可以查看执行记录、立即执行、暂停/恢复和删除；失败记录可从任务页跳转日志处理。
 
 ## 11. 已确定的首版技术决策
 
-1. 首版采用模块化单体，不拆分多个独立业务服务；只有独立扩容、发布或故障隔离有明确收益时才拆分。
-2. 首版不单独部署 Spring Cloud Gateway；核心应用统一入口即可，未来出现多个独立业务服务时再引入网关。
-3. 模块之间优先使用模块内调用；只有独立部署的管理平台或异步任务才建立明确的业务协作边界。
+1. 首版按微服务架构建设（D-024）：网关 + 八个业务服务 + RuoYi 管理端，覆盖原模块化单体方案；服务可独立构建、部署与发布。
+2. 首版引入 Spring Cloud Gateway 作为统一入口，承担路由、鉴权前置、跨域、限流和请求 ID。
+3. 服务间通过 OpenFeign 与 RabbitMQ 事件协作，禁止跨服务直连数据库；数据一致性走“本地事务 + Outbox + 事件 + 对账”。
 4. 首版使用 Elasticsearch 做全文和结构化检索，不引入向量数据库和 Embedding 链路；AI 语义检索列为 P1。
-5. 首版使用单 PostgreSQL，不做读写分离、分库分表；通过索引、分页和归档控制规模。
+5. 首版使用单 PostgreSQL 实例，每服务独立 schema，不做读写分离、分库分表；通过索引、分页和归档控制规模。
 6. RabbitMQ 使用持久化消息、最大 3 次重试和死信处理；首版不依赖延迟队列插件。
-7. 本地和 test 使用 Docker Compose；生产首版按单机容器化部署设计，Kubernetes 延后评估。
+7. 本地和 test 使用 Docker Compose 启动全部服务与基础设施；生产首版按单节点多容器部署设计，Kubernetes 延后评估。
 8. RuoYi 作为独立管理平台运行，管理角色与普通用户角色分离；兼容性必须在项目初始化阶段验证。
 9. XXL-JOB Admin 独立部署，首版只配置一个执行器组；任务必须支持幂等、失败记录和手动重试。
+10. 服务间调用必须配置超时、重试与熔断降级，并携带 requestId 与调用方身份，便于链路追踪与审计。
 
 ## 12. 单人开发的企业级最低线
 

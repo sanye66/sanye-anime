@@ -1,0 +1,8 @@
+server:
+  port: 8086
+
+sanye:
+  file:
+    schema: sanye_file
+    storage-dir: /workspace/sanye_deploy/.local/files
+

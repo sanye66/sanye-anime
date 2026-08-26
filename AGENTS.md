@@ -74,5 +74,15 @@
 - 使用 Node.js 22 LTS 和 pnpm 10.15.0 作为项目基线。
 - 前端变更进入更高环境前，执行 `pnpm typecheck` 和 `pnpm build`。
 - 不要向仓库加入真实凭证、供应商密钥或生产数据。
+- 文档新增或实质修改必须遵守 [文档变更规则](docs/document-change-rules.md)：更新唯一事实源、版本、状态、更新时间和更新记录，登记 [文档评审记录](docs/document-review.md)，并运行 `pnpm docs:check`。
+- 文档中的“已完成/已验证”必须关联命令、日志、截图、测试报告或其他可复核证据；外部账户、授权、系统兼容和发布环境阻塞必须保留为 `待环境` 或 `blocked-external`。
 - 重命名项目、包、服务、模块或入口文件时同步更新引用。
 - 保持 `sanye_client` 和 `sanye_admin` 可以独立构建；`sanye_server` 使用独立的 Java 构建流程。
+
+### 分支、提交与合并规范
+
+- 分支：`feature-<task>` 为任务分支（当前仓库存在历史 `feature` 分支，Git 不允许同名前缀，因此暂用连字符形式；`feature` 分支归档后恢复 `feature/<task>`）；`dev` 为日常集成，`test` 为验收，`release` 为稳定发布基线。
+- 任务分支只承载当前任务范围内的代码、测试和文档；一个任务对应一个短生命周期分支，不边写边直接合并。
+- 提交信息格式：`<type>(<scope>): <subject>`，`type` 取 `feat` / `fix` / `docs` / `refactor` / `test` / `chore`；一个提交只完成一件事，不混合无关改动。
+- 禁止提交：密钥与环境变量真实值、构建产物、`node_modules`、数据库快照、大体积媒体文件。
+- 合并到 `dev` 前自查：只修改当前任务范围；成功、空数据、失败、无权限状态已覆盖；测试与文档已更新；配置、迁移和版本记录已同步；日志无敏感内容；明确回滚方式。详细清单见 [docs/development-plan.md](docs/development-plan.md) 第 16 节。

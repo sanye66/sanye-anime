@@ -16,8 +16,11 @@ public class MimeTypeUtils
     public static final String IMAGE_BMP = "image/bmp";
 
     public static final String IMAGE_GIF = "image/gif";
+
+    /** WebP 是现代浏览器常用的封面格式，管理端通用上传需要与客户端资源白名单保持一致。 */
+    public static final String IMAGE_WEBP = "image/webp";
     
-    public static final String[] IMAGE_EXTENSION = { "bmp", "gif", "jpg", "jpeg", "png" };
+    public static final String[] IMAGE_EXTENSION = { "bmp", "gif", "jpg", "jpeg", "png", "webp" };
 
     public static final String[] FLASH_EXTENSION = { "swf", "flv" };
 
@@ -28,7 +31,7 @@ public class MimeTypeUtils
 
     public static final String[] DEFAULT_ALLOWED_EXTENSION = {
             // 图片
-            "bmp", "gif", "jpg", "jpeg", "png",
+            "bmp", "gif", "jpg", "jpeg", "png", "webp",
             // word excel powerpoint
             "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt",
             // 压缩文件
@@ -52,6 +55,8 @@ public class MimeTypeUtils
                 return "bmp";
             case IMAGE_GIF:
                 return "gif";
+            case IMAGE_WEBP:
+                return "webp";
             default:
                 return "";
         }

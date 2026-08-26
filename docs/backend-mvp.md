@@ -1,23 +1,27 @@
-# sanye_server 后端 MVP 实现说明
+# sanye_server 后端实现与验证边界
+
+> 状态说明（2026-08-20）：本文记录当前实现和本地联调边界。早期内存 MVP 设计已被 PostgreSQL、Redis、CAS 本地 Mock、受控管理接口和安全过滤器实现替代；历史任务证据见 [开发任务清单](./development-tasks.md)。
 
 ## 1. 文档目的
 
-本文档记录当前 `sanye_server` 已完成的最小可运行后端范围。它描述工程实现和验证边界，不替代 `product/` 中的产品需求文档。
+本文档记录当前 `sanye_server` 的可运行后端范围。它描述工程实现和验证边界，不替代 `product/` 中的产品需求文档，也不把外部环境验收误记为已完成。
 
 ## 2. 当前实现
 
-`sanye_server` 使用一个 Spring Boot 应用承载多个业务模块，当前已实现以下模块：
+`sanye_server` 按网关和业务服务拆分，当前主要模块如下：
 
 | 模块 | 当前能力 | 当前数据形态 |
 | --- | --- | --- |
 | `sanye_core` | 统一响应、请求 ID、跨域、参数校验和异常处理 | 无状态 |
-| `sanye_anime` | 公开作品列表、搜索、详情、管理端状态修改 | 内存作品目录 |
-| `sanye_ai_chat` | 会话列表、创建会话、发送问题和避免剧透分支 | 内存会话 |
-| `sanye_favorite` | 当前用户收藏、添加收藏、取消收藏 | 内存集合 |
-| `sanye_feedback` | 用户提交反馈、查看自己的反馈 | 内存列表 |
-| `sanye_admin` | 管理端查看全部作品和反馈、修改状态 | 复用内存业务服务 |
+| `sanye_anime` | 作品列表、筛选、详情、排期、官网内容和管理 CRUD | PostgreSQL，已完成本地联调 |
+| `sanye_ai_chat` | 会话/消息、SSE、额度、记忆、偏好、剧透安全、推荐和 RAG | PostgreSQL/Redis；ES 已完成本地联调，正式模型受供应商额度约束 |
+| `sanye_favorite` | 当前用户收藏、历史和归属隔离 | PostgreSQL，已完成本地联调 |
+| `sanye_feedback` | 用户提交、查询和受控管理处理 | PostgreSQL，已完成本地联调 |
+| `sanye_file` | 登录上传、图片白名单和所有者私有下载 | 当前落本地磁盘；MinIO 数据面已导入验证，应用适配与扫描仍待实现 |
+| `sanye_search` | Elasticsearch 搜索、索引和 RAG 适配 | ES 已完成本地索引/命中验证，不可用时按契约降级 |
+| `sanye_gateway` | 路由、CORS、请求 ID、JWT 和统一错误 | 8091 本地联调已验证；8080 为历史端口 |
 
-当前实现的目标是让前后端可以先联调业务流程，不代表已经具备生产级认证、持久化、权限或 AI 模型接入能力。
+当前代码已具备本地认证、持久化、权限和降级闭环；正式 CAS、生产凭据、外部中间件、版权和发布环境仍未完成。
 
 ## 3. 接口范围
 
@@ -28,7 +32,7 @@
 | `GET` | `/api/v1/system/ping` | 检查服务是否运行 |
 | `GET` | `/api/v1/system/capabilities` | 查看当前 MVP 能力 |
 | `GET` | `/api/v1/anime` | 获取已发布作品 |
-| `GET` | `/api/v1/anime/search?keyword=` | 搜索已发布作品 |
+| `GET` | `/api/v1/search?keyword=` | Elasticsearch 搜索已发布作品 |
 | `GET` | `/api/v1/anime/{animeId}` | 查看已发布作品详情 |
 | `GET` | `/api/v1/ai/conversations` | 查看当前用户会话 |
 | `POST` | `/api/v1/ai/conversations` | 创建 AI 会话 |
@@ -36,18 +40,17 @@
 | `GET` | `/api/v1/users/me/favorites` | 查看收藏 |
 | `POST` | `/api/v1/users/me/favorites/{animeId}` | 添加收藏 |
 | `DELETE` | `/api/v1/users/me/favorites/{animeId}` | 取消收藏 |
-| `GET` | `/api/v1/feedback` | 查看当前用户反馈 |
 | `POST` | `/api/v1/feedback` | 提交用户反馈 |
 | `GET` | `/api/v1/admin/anime` | 管理端查看全部作品 |
 | `PATCH` | `/api/v1/admin/anime/{animeId}/status` | 修改作品状态 |
 | `GET` | `/api/v1/admin/feedback` | 管理端查看全部反馈 |
-| `PATCH` | `/api/v1/admin/feedback/{feedbackId}/status` | 修改反馈状态 |
+| `PATCH` | `/api/v1/admin/feedback/{feedbackId}` | 修改反馈状态（body：`{status}`） |
 
-MVP 阶段使用 `X-User-Id` 作为临时用户隔离标识，默认值为 `demo-user`。该方式只用于联调，不能作为正式登录方案。
+网关只在我方 JWT 校验通过后注入 `X-User-Id`，匿名请求不能伪造该头；文件接口绑定登录用户所有权。服务间管理接口还要求 `X-Internal-Token`，生产令牌必须由外部密钥管理。
 
 ## 4. 启动与验证
 
-工程基线要求 Java 21 或更高版本、Maven 3.9.x。当前仓库配置默认关闭 Nacos 注册和配置，因此不启动外部中间件也可以验证内存 MVP。
+工程基线要求 Java 21 或更高版本、Maven 3.9.x。推荐使用本地 PostgreSQL 5433、Redis 6379 和部署脚本启动服务：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\10121\.jdks\openjdk-26.0.2'
@@ -58,23 +61,19 @@ mvn spring-boot:run
 启动后访问：
 
 ```text
-http://localhost:8080/api/v1/system/ping
+http://localhost:8091/api/v1/system/ping
 ```
 
 ## 5. 明确的实现限制
 
-- 重启服务会丢失作品状态、会话、收藏和反馈数据。
-- 当前没有正式用户登录、令牌校验、RuoYi 权限校验和管理员角色校验。
-- 当前 AI 返回为规则化演示文本，没有连接模型供应商、检索库或流式输出。
-- 当前管理端接口没有接入审计记录、批量操作和状态机校验。
-- 当前作品目录没有接入 PostgreSQL、Elasticsearch、MinIO 或内容来源审核流程。
-- 当前 RabbitMQ、Redis、Nacos、Sentinel 和 XXL-JOB 只保留依赖与配置边界，尚未进入业务运行链路。
+- Elasticsearch 搜索/RAG、MinIO 对象导入和 Nacos 配置数据面已完成本地 Docker 验证；当前文件接口仍使用本地磁盘，MinIO 应用适配和扫描待实现。RabbitMQ 目前仅完成拓扑初始化，尚无真实业务生产者/消费者；XXL-JOB 管理台已启动但暂无业务任务；动态 Nacos 应用注册和完整应用容器部署仍待实现。
+- 正式 CAS、生产数据库/Redis 凭据、AI 供应商成本上限和正式 SLO 尚未完成。
+- 正式动漫数据、图片来源、版权授权、法律文案和官网域名/TLS 尚未完成。
+- 发布环境的备份恢复、签名升级、回滚和多机性能验收尚未完成。
 
 ## 6. 后续替换顺序
 
-1. 先接入 PostgreSQL 和数据库迁移，将内存作品、用户、收藏、会话和反馈替换为持久化仓储。
-2. 接入正式身份认证和 RuoYi 权限，移除 `X-User-Id` 演示身份。
-3. 为作品搜索接入 Elasticsearch，为热点查询和会话限流接入 Redis。
-4. 为图片和文件接入 MinIO，为内容发布、索引和缓存刷新接入 RabbitMQ。
-5. 接入 AI 模型、检索增强、剧透控制、额度和评测回归。
-6. 接入 XXL-JOB、Nacos、Sentinel、日志指标和 CI 发布门禁。
+1. 将业务服务、管理端和网关加入 Compose 网络，完成动态 Nacos 注册与容器内路由验证。
+2. 替换正式 CAS、生产凭据和受控服务间令牌，完成安全与发布门禁。
+3. 接入 RabbitMQ 事件生产者/消费者、XXL-JOB 执行器任务、MinIO 文件扫描和监控采集联调。
+4. 完成授权内容、法律文案、备份恢复和正式发布回滚演练。

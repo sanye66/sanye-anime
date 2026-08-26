@@ -1,0 +1,8 @@
+server:
+  port: 8083
+
+sanye:
+  search:
+    es-host: http://elasticsearch:9200
+    index: sanye_anime
+

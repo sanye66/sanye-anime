@@ -1,0 +1,16 @@
+server:
+  port: 8084
+
+sanye:
+  ai:
+    provider: dev
+    quota-storage: redis
+    memory-store: pg
+    conversation-store: pg
+    conversation-schema: sanye_ai_chat
+    preference-store: pg
+    preference-schema: sanye_ai_chat
+  rag:
+    es-host: http://elasticsearch:9200
+    index: sanye_anime
+

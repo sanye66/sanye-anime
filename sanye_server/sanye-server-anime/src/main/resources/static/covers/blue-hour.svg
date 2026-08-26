@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 600" role="img" aria-labelledby="title desc">
+  <title id="title">蓝色时刻封面</title><desc id="desc">蓝色城市黄昏中，两盏电车灯映在湿润街道上。</desc>
+  <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#182f68"/><stop offset=".58" stop-color="#4c7fae"/><stop offset="1" stop-color="#ec9f91"/></linearGradient><linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#355375"/><stop offset="1" stop-color="#111a36"/></linearGradient></defs>
+  <rect width="420" height="600" fill="url(#sky)"/><path d="M0 288h420v312H0Z" fill="url(#road)"/><path d="M0 305h420M0 335h420M0 380h420" stroke="#b7d1d2" stroke-width="2" opacity=".28"/><path d="M60 260V600M350 260V600" stroke="#15264b" stroke-width="22"/><path d="M45 260h330" stroke="#172b55" stroke-width="8"/>
+  <path d="M75 307h270v115H75z" fill="#203865" stroke="#a6c6d0" stroke-width="4"/><path d="M93 329h55v58H93zm83 0h55v58h-55zm83 0h55v58h-55z" fill="#f6bf96" opacity=".8"/><circle cx="129" cy="449" r="24" fill="#ffe6ad" opacity=".7"/><circle cx="293" cy="449" r="24" fill="#ffe6ad" opacity=".7"/>
+  <path d="M40 115h340" stroke="#f4d09c" stroke-width="2" opacity=".55"/><circle cx="78" cy="84" r="3" fill="#fff1d0"/><circle cx="320" cy="132" r="3" fill="#ffd9d0"/><text x="30" y="530" fill="#fff4de" font-family="sans-serif" font-size="26">蓝色时刻</text><text x="31" y="557" fill="#cde4eb" font-family="sans-serif" font-size="12" letter-spacing="3">日落后的七分钟</text>
+</svg>
