@@ -128,8 +128,17 @@ public class AnimeUrlImportService {
         String typeText = cleanText(textAfterStrong(document, "类型"), 40);
         String published = textAfterStrong(document, "首播");
         Integer year = firstYear(published.isBlank() ? document.text() : published);
-        String type = title.matches(".*(剧场版|电影|你的名字).*") || typeText.matches(".*(电影|剧场).*")
-                ? "剧场版" : "电视动画";
+        String typeEvidence = title + " " + typeText + " " + document.title();
+        String type;
+        if (typeEvidence.matches(".*(动画电影|动漫电影|剧场版|电影).*$")) {
+            type = "剧场版";
+        } else if (typeEvidence.matches(".*(网络动画|网络动漫|WEB动画).*$")) {
+            type = "网络动画";
+        } else if (typeEvidence.matches(".*(原创动画|原创动漫).*$")) {
+            type = "原创动画";
+        } else {
+            type = "电视动画";
+        }
         String keywords = firstMeta(document, "keywords");
         return new AnimeMetadata(title, "", type, year, summary, parseTags(keywords), "", coverUrl);
     }

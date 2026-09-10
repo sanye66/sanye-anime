@@ -63,7 +63,7 @@ class AnimeUrlImportServiceTest {
         assertEquals(2024, result.anime().year());
         assertEquals("已发布", result.anime().status());
         assertEquals(2, result.episodesImported());
-        assertEquals("https://media.example/one.m3u8", mediaStore.episodesOf(result.anime().id()).getFirst().playbackUrl());
+        assertEquals("https://media.example/one.m3u8", mediaStore.episodesOf(result.anime().id()).get(0).playbackUrl());
     }
 
     @Test
@@ -102,7 +102,7 @@ class AnimeUrlImportServiceTest {
     @Test
     void importsCleanTitleFromCurrentDetailTemplate() {
         fetcher.pages.put("https://example.com/v/903/153",
-                "<html><head><title>日韩动漫《天气之子》-高清全集在线观看/手机免费番剧-樱花动漫</title>"
+                "<html><head><title>电影综合《天气之子》-高清全集在线观看/手机免费番剧-樱花动漫</title>"
                         + "<meta name='description' content='公开简介。'></head><body>"
                         + "<div class='module-info-heading'><h1>天气之子</h1></div>"
                         + "<img src='/data/uploadFile/logo.png' alt='樱花动漫'>"
@@ -114,6 +114,7 @@ class AnimeUrlImportServiceTest {
         var result = service.importFrom("https://example.com/p/903/153/0", true);
 
         assertEquals("天气之子", result.anime().title());
+        assertEquals("剧场版", result.anime().type());
         assertEquals("https://img.example/weather.jpg", result.anime().coverUrl());
         assertEquals(1, result.episodesImported());
     }
@@ -150,7 +151,7 @@ class AnimeUrlImportServiceTest {
         assertEquals("预览简介。", result.summary());
         assertEquals("https://img.example/preview.jpg", result.coverUrl());
         assertEquals(1, result.episodes().size());
-        assertEquals("https://media.example/preview.m3u8", result.episodes().getFirst().playbackUrl());
+        assertEquals("https://media.example/preview.m3u8", result.episodes().get(0).playbackUrl());
         assertTrue(catalogStore.allCards().stream().noneMatch(card -> card.title().equals("预览作品")));
     }
 

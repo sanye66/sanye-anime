@@ -16,6 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.HashSet;
+import java.util.UUID;
+import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 搜索索引构建与同步（T-D-03）：按需创建索引，从 anime 服务分页拉取主数据全量重建。
@@ -28,10 +32,12 @@ public class AnimeIndexService {
     private final ElasticsearchClient es;
     private final AnimeClient animeClient;
     private final String index;
+    @Autowired
+    private DataSource dataSource;
 
     /** 注入 ES 客户端和动漫远程客户端，负责索引初始化与同步。 */
     public AnimeIndexService(ElasticsearchClient es, AnimeClient animeClient,
-                             @Value("${sanye.search.index:sanye_anime}") String index) {
+                             @Value("${sanye.search.index:sanye_anime_live}") String index) {
         this.es = es;
         this.animeClient = animeClient;
         this.index = index;
@@ -43,7 +49,8 @@ public class AnimeIndexService {
         if (exists) {
             return;
         }
-        CreateIndexRequest request = CreateIndexRequest.of(c -> c.index(index).mappings(mappings()));
+        CreateIndexRequest request = CreateIndexRequest.of(c -> c.index(index + "_" + UUID.randomUUID())
+                .aliases(index, a -> a.isWriteIndex(true)).mappings(mappings()));
         es.indices().create(request);
         log.info("创建搜索索引 {}", index);
     }
@@ -55,34 +62,76 @@ public class AnimeIndexService {
 
     /** 分页拉取动画服务数据并批量写入搜索索引。 */
     public int syncAll() throws IOException {
-        // 全量同步必须先清掉旧文档，否则下架或清理后的测试作品会残留在搜索结果中。
-        es.deleteByQuery(d -> d.index(index).query(q -> q.matchAll(m -> m)));
+        try (var connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("select pg_try_advisory_xact_lock(731903)")) {
+                try (var result = statement.executeQuery()) {
+                    if (!result.next() || !result.getBoolean(1)) throw new IOException("Index rebuild already running");
+                }
+            }
+            int total = rebuild();
+            connection.commit();
+            return total;
+        } catch (java.sql.SQLException ex) {
+            throw new IOException("Index rebuild lock failed", ex);
+        }
+    }
+
+    int rebuild() throws IOException {
+        // Never replace a concrete index: operators must select a separate alias for legacy data.
+        if (!es.indices().existsAlias(a -> a.name(index)).value()) {
+            throw new IOException("Search target must be an alias");
+        }
+        String candidate = index + "_" + UUID.randomUUID();
+        log.info("Index rebuild started alias={} candidate={}", index, candidate);
+        es.indices().create(CreateIndexRequest.of(c -> c.index(candidate).mappings(mappings())));
         int page = 1;
         int total = 0;
-        while (page <= 100) {
+        long expected = -1;
+        var ids = new HashSet<Long>();
+        while (true) {
             ApiResponse<PageResult<AnimeBrief>> response = animeClient.list(page, 50);
-            if (response == null || response.code() != 0 || response.data() == null || response.data().items().isEmpty()) {
-                break;
+            if (response == null || response.code() != 0 || response.data() == null || response.data().items() == null) {
+                throw new IOException("Anime source unavailable");
             }
+            var data = response.data();
+            if (expected < 0) expected = data.total();
+            if (expected < 0 || expected != data.total() || data.page() != page || data.items().size() > 50)
+                throw new IOException("Anime source changed during rebuild");
             List<SearchDoc> docs = response.data().items().stream().map(SearchDoc::from).toList();
-            bulkIndex(docs);
-            total += docs.size();
-            if (docs.size() < 50) {
-                break;
+            for (var doc : docs) {
+                if (!ids.add(doc.id()) || !"已发布".equals(doc.status())) throw new IOException("Invalid source document");
             }
+            if (!docs.isEmpty()) bulkIndex(candidate, docs);
+            total += docs.size();
+            if (total == expected) break;
+            if (total > expected || docs.isEmpty()) throw new IOException("Incomplete anime source");
             page++;
         }
-        log.info("搜索索引同步完成 docs={}", total);
+        es.indices().refresh(r -> r.index(candidate));
+        if (es.count(c -> c.index(candidate)).count() != total) throw new IOException("Index validation failed");
+        var old = es.indices().getAlias(a -> a.name(index)).result().keySet();
+        var switchRequest = new co.elastic.clients.elasticsearch.indices.UpdateAliasesRequest.Builder();
+        old.forEach(name -> switchRequest.actions(a -> a.remove(r -> r.index(name).alias(index))));
+        switchRequest.actions(a -> a.add(r -> r.index(candidate).alias(index).isWriteIndex(true)));
+        if (!es.indices().updateAliases(switchRequest.build()).acknowledged()) throw new IOException("Alias switch not acknowledged");
+        log.info("Index rebuild completed alias={} candidate={} docs={}", index, candidate, total);
         return total;
     }
 
+    public void delete(long id) throws IOException { es.delete(d -> d.index(index).id(String.valueOf(id))); }
+    public void upsert(SearchDoc doc) throws IOException {
+        ensureIndex();
+        es.index(i -> i.index(index).requireAlias(true).id(String.valueOf(doc.id())).document(doc));
+    }
+
     /** 将一批作品转换为 ES bulk index 操作。 */
-    private void bulkIndex(List<SearchDoc> docs) throws IOException {
+    private void bulkIndex(String target, List<SearchDoc> docs) throws IOException {
         BulkRequest.Builder builder = new BulkRequest.Builder();
-        docs.forEach(doc -> builder.operations(op -> op.index(i -> i.index(index)
+        docs.forEach(doc -> builder.operations(op -> op.index(i -> i.index(target)
                 .id(String.valueOf(doc.id()))
                 .document(doc))));
-        es.bulk(builder.build());
+        if (es.bulk(builder.build()).errors()) throw new IOException("Index bulk write failed");
     }
 
     /** 定义搜索字段的类型和索引方式，保持查询字段契约稳定。 */

@@ -6,10 +6,10 @@ import com.sanye.anime.sanye_core.web.PageResult;
 import com.sanye.anime.sanye_anime.store.AnimeCatalogStore;
 import org.springframework.stereotype.Service;
 
+import java.text.Normalizer;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /**
  * 作品目录服务（T-D-02/T-D-04）：列表组合筛选 + 分页（仅已发布）、详情聚合。
@@ -39,13 +39,10 @@ public class AnimeCatalogService {
         }
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 50);
-        String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
-        Map<Long, String> summaries = catalogStore.summaryById();
+        String normalizedKeyword = normalizeForMatch(keyword);
         List<AnimeMemoryStore.AnimeCard> all = catalogStore.publishedCards().stream()
                 .filter(a -> normalizedKeyword.isBlank()
-                        || (a.title() + a.originalTitle() + String.join("", a.tags())
-                        + summaries.getOrDefault(a.id(), ""))
-                        .toLowerCase(Locale.ROOT).contains(normalizedKeyword))
+                        || normalizeForMatch(a.title() + a.originalTitle()).contains(normalizedKeyword))
                 .filter(a -> type == null || type.isBlank() || a.type().equals(type))
                 .filter(a -> !matchesStatus(a, status))
                 .filter(a -> year == null || a.year() == year)
@@ -60,10 +57,11 @@ public class AnimeCatalogService {
 
     /** 只允许读取已发布作品的详情，避免草稿通过公开接口泄露。 */
     public AnimeMemoryStore.AnimeDetail detail(long id) {
-        if (catalogStore.cardOf(id) == null || !catalogStore.isPublished(id)) {
+        AnimeMemoryStore.AnimeDetail detail = catalogStore.detailOf(id);
+        if (detail == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
-        return catalogStore.detailOf(id);
+        return detail;
     }
 
     /** 生成首页的最近更新和热门两个业务分区。 */
@@ -108,11 +106,17 @@ public class AnimeCatalogService {
             return false;
         }
         if ("连载中".equals(status)) {
-            return !card.updateText().contains("更新");
+            return card.updateText() == null || !card.updateText().contains("更新");
         }
         if ("已完结".equals(status)) {
-            return !card.updateText().equals("已完结");
+            return !"已完结".equals(card.updateText());
         }
-        return !card.updateText().equals(status) && !card.status().equals(status);
+        return !status.equals(card.updateText()) && !status.equals(card.status());
+    }
+
+    private String normalizeForMatch(String value) {
+        String normalized = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT);
+        return normalized.replaceAll("[\\p{P}\\p{S}\\s]+", "");
     }
 }

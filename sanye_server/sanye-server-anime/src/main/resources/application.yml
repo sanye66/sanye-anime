@@ -2,6 +2,16 @@ server:
   port: 8082
 
 spring:
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          multiplier: 2
   config:
     import: optional:classpath:feign-defaults.yml,optional:classpath:monitoring.yml
   application:
@@ -9,7 +19,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:15432/sanye_anime}
     username: ${DB_USERNAME:sanye}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
@@ -30,15 +40,17 @@ spring:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:16379}
       username: ${REDIS_USERNAME:sanye}
-      password: ${REDIS_PASSWORD:123456}
+      password: ${REDIS_PASSWORD:}
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
       username: ${NACOS_USERNAME:}
       password: ${NACOS_PASSWORD:}
       discovery:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
       config:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
         file-extension: yaml
         group: BUSINESS_GROUP

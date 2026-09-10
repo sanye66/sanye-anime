@@ -67,15 +67,7 @@ public class FeedbackService {
     public List<AdminFeedbackView> listAll() {
         return jdbc.query("select id, type, content, contact, device_key, priority, status, created_at "
                         + "from " + table() + " order by id desc",
-                (rs, rowNum) -> {
-                    String content = rs.getString("content");
-                    return new AdminFeedbackView(rs.getLong("id"),
-                        truncate(content, 30),
-                        maskDevice(rs.getString("device_key")),
-                        rs.getString("type"), rs.getString("priority"),
-                        rs.getTimestamp("created_at").toInstant().toString(),
-                        rs.getString("status"), content, rs.getString("contact"));
-                });
+                this::mapFeedback);
     }
 
     @Transactional
@@ -93,7 +85,21 @@ public class FeedbackService {
         jdbc.update("insert into " + handleLog()
                         + " (feedback_id, action, note) values (?, ?, ?)",
                 feedbackId, "UPDATE_STATUS:" + status, operator);
-        return listAll().stream().filter(f -> f.id() == feedbackId).findFirst().orElseThrow();
+        return jdbc.query("select id, type, content, contact, device_key, priority, status, created_at "
+                        + "from " + table() + " where id = ?",
+                this::mapFeedback, feedbackId).stream().findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+    }
+
+    /** 将反馈查询行转换为管理端视图，并统一执行正文截断和设备脱敏。 */
+    private AdminFeedbackView mapFeedback(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
+        String content = rs.getString("content");
+        return new AdminFeedbackView(rs.getLong("id"),
+                truncate(content, 30),
+                maskDevice(rs.getString("device_key")),
+                rs.getString("type"), rs.getString("priority"),
+                rs.getTimestamp("created_at").toInstant().toString(),
+                rs.getString("status"), content, rs.getString("contact"));
     }
 
     /** 返回反馈主表名，schema 由受控配置注入。 */

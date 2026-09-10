@@ -53,6 +53,21 @@ class HomeAggregationServiceTest {
     }
 
     @Test
+    void cacheMissLoadsOnCallingThread() {
+        FakeCache cache = new FakeCache();
+        HomeAggregationService service = new HomeAggregationService(cache, objectMapper, homeMetrics, 300, 30);
+        String caller = Thread.currentThread().getName();
+        java.util.concurrent.atomic.AtomicReference<String> loaderThread = new java.util.concurrent.atomic.AtomicReference<>();
+
+        service.home("FEATURED", () -> {
+            loaderThread.set(Thread.currentThread().getName());
+            return sample();
+        });
+
+        assertEquals(caller, loaderThread.get(), "缓存回源不应占用全局公共线程池");
+    }
+
+    @Test
     void concurrentMissLoadsOnce() throws Exception {
         FakeCache cache = new FakeCache();
         HomeAggregationService service = new HomeAggregationService(cache, objectMapper, homeMetrics, 300, 30);

@@ -27,6 +27,8 @@ public class SearchController {
     private final AnimeIndexService animeIndexService;
     private final ExternalSearchService externalSearchService;
     private final HttpServletRequest request;
+    @org.springframework.beans.factory.annotation.Value("${sanye.manage.internal-token:}")
+    private String internalToken;
 
     /** 注入搜索和索引服务，管理重建接口复用统一请求编号。 */
     public SearchController(SearchService searchService, AnimeIndexService animeIndexService,
@@ -55,19 +57,32 @@ public class SearchController {
     @GetMapping("/external")
     public ApiResponse<java.util.List<ExternalSearchHitView>> externalSearch(
             @RequestParam String keyword,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "false") boolean preferredOnly,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(externalSearchService.search(keyword, size), requestId());
+        java.util.List<ExternalSearchHitView> results = preferredOnly
+                ? externalSearchService.searchPreferred(keyword, type, size)
+                : externalSearchService.search(keyword, type, size);
+        return ApiResponse.ok(results, requestId());
     }
 
     /** 创建索引并从动画服务同步全部公开作品。 */
     @PostMapping("/reindex")
     public ApiResponse<Map<String, Integer>> reindex() {
+        String caller = request.getHeader("X-Caller-Name");
+        if (!("sanye-server-job".equals(caller) || "sanye-admin-server".equals(caller))
+                || !com.sanye.anime.sanye_core.security.InternalCallerToken.matches(
+                        internalToken, request.getHeader("X-Internal-Token"))) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "调用方校验失败");
+        }
         try {
             animeIndexService.ensureIndex();
             int count = animeIndexService.syncAll();
             return ApiResponse.ok(Map.of("indexed", count), requestId());
         } catch (Exception ex) {
-            throw new BusinessException(ErrorCode.SEARCH_UNAVAILABLE, "搜索索引重建失败：" + ex.getMessage());
+            org.slf4j.LoggerFactory.getLogger(SearchController.class).warn(
+                    "Index rebuild failed requestId={} errorType={}", requestId(), ex.getClass().getSimpleName());
+            throw new BusinessException(ErrorCode.SEARCH_UNAVAILABLE, "搜索索引重建失败，请查看受控任务日志");
         }
     }
 

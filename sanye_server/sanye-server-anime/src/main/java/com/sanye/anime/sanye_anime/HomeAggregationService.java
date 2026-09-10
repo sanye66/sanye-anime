@@ -61,8 +61,21 @@ public class HomeAggregationService {
             cache.delete(key);
         }
         homeMetrics.cacheMiss();
-        CompletableFuture<HomeResponse> future = inFlight.computeIfAbsent(key,
-                k -> CompletableFuture.supplyAsync(() -> loadAndCache(k, loader)));
+        CompletableFuture<HomeResponse> created = new CompletableFuture<>();
+        CompletableFuture<HomeResponse> future = inFlight.putIfAbsent(key, created);
+        if (future == null) {
+            try {
+                HomeResponse response = loadAndCache(key, loader);
+                created.complete(response);
+                return response;
+            } catch (RuntimeException ex) {
+                created.completeExceptionally(ex);
+                homeMetrics.error();
+                throw ex;
+            } finally {
+                inFlight.remove(key, created);
+            }
+        }
         try {
             return future.get();
         } catch (InterruptedException ex) {
@@ -71,8 +84,6 @@ public class HomeAggregationService {
         } catch (java.util.concurrent.ExecutionException ex) {
             homeMetrics.error();
             throw new IllegalStateException("首页聚合失败", ex.getCause());
-        } finally {
-            inFlight.remove(key, future);
         }
     }
 

@@ -124,7 +124,7 @@ public class MediaImportService {
             if (playbacks.isEmpty()) {
                 continue;
             }
-            PlaybackSource playback = playbacks.getFirst();
+            PlaybackSource playback = playbacks.get(0);
             String playbackUrl = normalizeHttpsUrl(playback.url(), "播放器地址");
             String title = playback.title().isBlank() ? cleanTitle(document.title()) : playback.title();
             if (title.isBlank()) {
@@ -137,7 +137,10 @@ public class MediaImportService {
                             option.title().isBlank() ? option.label() : option.title()))
                     .filter(option -> !option.url().equals(playbackUrl))
                     .toList());
-            for (PlaybackSource option : rootLineOptions) {
+            // Root alternatives belong to this episode only when its primary URL is in that list.
+            List<PlaybackSource> episodeLineOptions = rootLineOptions.stream()
+                    .anyMatch(option -> option.url().equals(playbackUrl)) ? rootLineOptions : List.of();
+            for (PlaybackSource option : episodeLineOptions) {
                 String optionUrl = normalizeHttpsUrl(option.url(), "备用播放器地址");
                 if (playbackOptions.stream().noneMatch(item -> item.url().equals(optionUrl))
                         && !optionUrl.equals(playbackUrl)) {
@@ -146,7 +149,7 @@ public class MediaImportService {
                 }
             }
             playbackOptions.add(0, new AnimePlaybackOption(playbackUrl, playback.mimeType(),
-                    rootLineOptions.isEmpty()
+                    episodeLineOptions.isEmpty()
                             ? (playback.title().isBlank() ? playback.label() : playback.title())
                             : "当前线路"));
             episodes.add(new AnimeEpisode(episodeNo, episodeNo, title, page.getKey(), playbackUrl,
@@ -434,7 +437,7 @@ public class MediaImportService {
                 return group;
             }
         }
-        return groups.getFirst();
+        return groups.get(0);
     }
 
     /** 过滤为同源的播放页链接，保留旧页面没有播放列表容器时的兼容回退。 */

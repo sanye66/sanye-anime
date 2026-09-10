@@ -10,8 +10,10 @@ spring:
       username: ${NACOS_USERNAME:}
       password: ${NACOS_PASSWORD:}
       discovery:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
       config:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
     sentinel:
       enabled: ${SENTINEL_ENABLED:false}
@@ -76,6 +78,10 @@ spring:
             - Path=/admin-profile/**
           filters:
             - StripPrefix=1
+
+sanye:
+  auth:
+    token-secret: ${AUTH_TOKEN_SECRET:}
 
 management:
   server:

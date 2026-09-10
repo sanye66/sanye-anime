@@ -35,7 +35,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
     private final JwtService jwtService;
 
     /** 注入 JWT 密钥和公开路径配置，构造网关鉴权过滤器。 */
-    public GatewayAuthFilter(@Value("${sanye.auth.token-secret:sanye-local-jwt-secret-2026}") String secret,
+    public GatewayAuthFilter(@Value("${sanye.auth.token-secret}") String secret,
                              @Value("${sanye.auth.access-ttl-seconds:1800}") long accessTtlSeconds) {
         this.jwtService = new JwtService(secret, accessTtlSeconds);
     }

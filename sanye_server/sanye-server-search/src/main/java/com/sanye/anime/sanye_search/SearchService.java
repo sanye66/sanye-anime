@@ -17,7 +17,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.text.Normalizer;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 搜索服务（T-D-03）：BM25 多字段匹配 + PUBLISHED/类型/状态/年份过滤 + 分页 + 高亮；
@@ -31,10 +35,12 @@ public class SearchService {
     private final ElasticsearchClient es;
     private final AnimeClient animeClient;
     private final String index;
+    @Value("${sanye.search.catalog-only:false}")
+    private boolean catalogOnly;
 
     /** 注入 ES、动漫目录客户端和受控索引名称。 */
     public SearchService(ElasticsearchClient es, AnimeClient animeClient,
-                         @Value("${sanye.search.index:sanye_anime}") String index) {
+                         @Value("${sanye.search.index:sanye_anime_live}") String index) {
         this.es = es;
         this.animeClient = animeClient;
         this.index = index;
@@ -57,15 +63,18 @@ public class SearchService {
         }
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 50);
+        List<String> searchKeywords = SearchKeywordAliases.expand(keyword);
         PageResult<SearchHitView> indexedResult = null;
-        try {
+        if (!catalogOnly) try {
             SearchResponse<SearchDoc> response = es.search(s -> s
                     .index(index)
                     .query(buildQuery(keyword, type, status, year, yearBefore))
                     .highlight(h -> h.fields("title", f -> f).fields("summary", f -> f))
                     .from((safePage - 1) * safeSize)
                     .size(safeSize), SearchDoc.class);
-            List<SearchHitView> items = response.hits().hits().stream().map(hit -> {
+            List<SearchHitView> items = response.hits().hits().stream()
+                    .filter(hit -> hit.source() != null && matchesTitle(hit.source(), keyword))
+                    .map(hit -> {
                 SearchDoc doc = hit.source();
                 String titleHighlight = firstHighlight(hit.highlight().get("title"), doc == null ? "" : doc.title());
                 String summaryHighlight = firstHighlight(hit.highlight().get("summary"), doc == null ? "" : doc.summary());
@@ -73,7 +82,7 @@ public class SearchService {
                         doc.year(), doc.score(), doc.status(), doc.coverUrl(), doc.tags(), doc.updateText(),
                         summaryHighlight);
             }).toList();
-            long total = response.hits() != null && response.hits().total() != null
+            long total = items.size() == response.hits().hits().size() && response.hits().total() != null
                     ? response.hits().total().value() : items.size();
             indexedResult = PageResult.of(items, safePage, safeSize, total);
             if (!items.isEmpty()) {
@@ -82,18 +91,34 @@ public class SearchService {
         } catch (Exception ex) {
             log.warn("ES 搜索不可用，尝试回源目录 keyword={} error={}", keyword, ex.getMessage());
         }
-        try {
-            ApiResponse<PageResult<AnimeBrief>> response = animeClient.search(
-                    keyword, type, status, year, yearBefore, safePage, safeSize);
-            if (response != null && response.code() == 0 && response.data() != null) {
-                List<SearchHitView> items = response.data().items().stream().map(brief ->
-                        new SearchHitView(brief.id(), brief.title(), brief.title(), brief.originalTitle(), brief.type(),
-                                brief.year(), brief.score(), brief.status(), brief.coverUrl(), brief.tags(),
-                                brief.updateText(), "")).toList();
-                return PageResult.of(items, response.data().page(), response.data().size(), response.data().total());
+
+        Map<Long, SearchHitView> catalogItems = new LinkedHashMap<>();
+        boolean catalogResponded = false;
+        for (String searchKeyword : searchKeywords) {
+            try {
+                ApiResponse<PageResult<AnimeBrief>> response = animeClient.search(
+                        searchKeyword, type, status, year, yearBefore, safePage, safeSize);
+                if (response == null || response.code() != 0 || response.data() == null) {
+                    continue;
+                }
+                catalogResponded = true;
+                for (AnimeBrief brief : response.data().items()) {
+                    catalogItems.putIfAbsent(brief.id(), new SearchHitView(
+                            brief.id(), brief.title(), brief.title(), brief.originalTitle(), brief.type(),
+                            brief.year(), brief.score(), brief.status(), brief.coverUrl(), brief.tags(),
+                            brief.updateText(), ""));
+                }
+                if (searchKeywords.size() == 1) {
+                    return PageResult.of(List.copyOf(catalogItems.values()), response.data().page(),
+                            response.data().size(), response.data().total());
+                }
+            } catch (Exception ex) {
+                log.warn("目录搜索回源不可用 keyword={} error={}", searchKeyword, ex.getMessage());
             }
-        } catch (Exception ex) {
-            log.warn("目录搜索回源不可用 keyword={} error={}", keyword, ex.getMessage());
+        }
+        if (catalogResponded) {
+            List<SearchHitView> items = catalogItems.values().stream().limit(safeSize).toList();
+            return PageResult.of(items, safePage, safeSize, catalogItems.size());
         }
         if (indexedResult != null) {
             return indexedResult;
@@ -104,9 +129,20 @@ public class SearchService {
     /** 构造全文匹配和已发布、类型、状态、年份过滤条件。 */
     private Query buildQuery(String keyword, String type, String status, Integer year, Integer yearBefore) {
         return Query.of(q -> q.bool(b -> {
-            if (keyword != null && !keyword.isBlank()) {
-                b.must(m -> m.multiMatch(mm -> mm.query(keyword)
-                        .fields("title^3", "originalTitle^2", "tags", "summary")));
+            List<String> searchKeywords = SearchKeywordAliases.expand(keyword);
+            if (!searchKeywords.isEmpty()) {
+                b.must(m -> m.bool(expanded -> {
+                    for (int index = 0; index < searchKeywords.size(); index++) {
+                        String searchKeyword = searchKeywords.get(index);
+                        List<String> fields = index == 0 && searchKeywords.size() > 1
+                                ? List.of("title^6", "originalTitle^4")
+                                : List.of("title^3", "originalTitle^2");
+                        expanded.should(s -> s.multiMatch(mm -> mm.query(searchKeyword)
+                                .fields(fields)
+                                .operator(co.elastic.clients.elasticsearch._types.query_dsl.Operator.And)));
+                    }
+                    return expanded.minimumShouldMatch("1");
+                }));
             } else {
                 b.must(m -> m.matchAll(ma -> ma));
             }
@@ -135,5 +171,22 @@ public class SearchService {
             return fallback;
         }
         return String.join("…", fragments);
+    }
+
+    /** ES 分词召回后再次校验标题，确保摘要和标签不会造成伪命中。 */
+    static boolean matchesTitle(SearchDoc doc, String keyword) {
+        List<String> normalizedKeywords = SearchKeywordAliases.expand(keyword).stream()
+                .map(SearchService::normalizeForMatch)
+                .toList();
+        String normalizedTitle = normalizeForMatch(doc.title());
+        String normalizedOriginalTitle = normalizeForMatch(doc.originalTitle());
+        return normalizedKeywords.isEmpty() || normalizedKeywords.stream()
+                .anyMatch(value -> normalizedTitle.contains(value) || normalizedOriginalTitle.contains(value));
+    }
+
+    private static String normalizeForMatch(String value) {
+        String normalized = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFKC)
+                .toLowerCase(Locale.ROOT);
+        return normalized.replaceAll("[\\p{P}\\p{S}\\s]+", "");
     }
 }

@@ -9,11 +9,22 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:15432/sanye_anime}
     username: ${DB_USERNAME:sanye}
-    password: ${DB_PASSWORD:123456}
+    password: ${DB_PASSWORD:}
     hikari:
       maximum-pool-size: 20
       minimum-idle: 5
       connection-timeout: 10000
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          multiplier: 2
   flyway:
     enabled: true
     schemas: sanye_search
@@ -25,8 +36,10 @@ spring:
       username: ${NACOS_USERNAME:}
       password: ${NACOS_PASSWORD:}
       discovery:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
       config:
+        namespace: ${NACOS_NAMESPACE:}
         enabled: ${NACOS_ENABLED:false}
         file-extension: yaml
         group: BUSINESS_GROUP
@@ -40,6 +53,11 @@ spring:
 sanye:
   search:
     es-host: ${ES_HOST:http://127.0.0.1:9200}
-    index: ${ES_INDEX:sanye_anime}
+    index: ${ES_INDEX:sanye_anime_live}
     external-base: ${SANYE_SEARCH_EXTERNAL_BASE:https://yhdmtv.cc/search/index.html?keyword=}
     external-results-base: ${SANYE_SEARCH_EXTERNAL_RESULTS_BASE:https://yhdmtv.cc/public/auto/search1.html?keyword=}
+  event:
+    exchange: sanye.events
+    queue: sanye.search.events
+  manage:
+    internal-token: ${SANYE_MANAGE_TOKEN:}

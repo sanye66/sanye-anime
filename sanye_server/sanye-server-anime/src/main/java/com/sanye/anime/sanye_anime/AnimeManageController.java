@@ -113,6 +113,13 @@ public class AnimeManageController {
     }
 
     /** 校验管理服务调用方名称和内部令牌，阻断未授权写入。 */
+    @PostMapping("/{id}/events/compensate")
+    public ApiResponse<String> compensate(@PathVariable long id) {
+        checkCaller();
+        animeManageService.compensate(id);
+        return ApiResponse.ok("queued", requestId());
+    }
+
     private void checkCaller() {
         String caller = request.getHeader("X-Caller-Name");
         if (caller == null || !caller.equals(allowedCaller)

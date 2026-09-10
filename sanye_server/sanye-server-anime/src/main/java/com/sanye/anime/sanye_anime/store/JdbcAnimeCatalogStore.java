@@ -85,7 +85,7 @@ public class JdbcAnimeCatalogStore implements AnimeCatalogStore {
     @Override
     public AnimeDetail detailOf(long id) {
         return jdbc.query("select " + COLUMNS + " from " + table()
-                        + " where id = ? and deleted_at is null",
+                        + " where id = ? and deleted_at is null and status = '已发布'",
                 (rs, rowNum) -> mapDetail(rs), id)
                 .stream().findFirst().orElse(null);
     }

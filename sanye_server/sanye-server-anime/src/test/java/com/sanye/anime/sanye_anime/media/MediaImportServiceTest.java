@@ -1,5 +1,7 @@
 package com.sanye.anime.sanye_anime.media;
 
+import java.util.List;
+
 import com.sanye.anime.sanye_anime.AnimeMemoryStore.AnimeEpisode;
 import com.sanye.anime.sanye_anime.store.InMemoryAnimeCatalogStore;
 import com.sanye.anime.sanye_anime.store.InMemoryAnimeMediaStore;
@@ -170,6 +172,26 @@ class MediaImportServiceTest {
         assertEquals(1, imported.size());
         assertEquals("https://media.example/one.m3u8", imported.get(0).playbackUrl());
         assertEquals(1, imported.get(0).playbackOptions().size());
+    }
+
+    @Test
+    void doesNotAppendRootEpisodeLinesToAnotherEpisode() {
+        String root = "https://example.com/v/903-1-1/";
+        fetcher.pages.put(root, temLinePage(
+                "[{\"name\":\"main\",\"file\":\"abc" + encodedUrl("https://media.example/one.m3u8")
+                        + "\"},{\"name\":\"backup\",\"file\":\"abc"
+                        + encodedUrl("https://media.example/one-backup.m3u8") + "\"}]")
+                + "<div class='module-play-list'><a href='/v/903-1-1/'>第1集</a>"
+                + "<a href='/v/903-1-2/'>第2集</a></div>");
+        fetcher.pages.put("https://example.com/v/903-1-2/", "<script>var player_aaaa={url:"
+                + "'https://media.example/two.m3u8'};</script>");
+
+        var imported = service.importFrom(1, root);
+
+        assertEquals(2, imported.size());
+        assertEquals(2, imported.get(0).playbackOptions().size());
+        assertEquals(List.of("https://media.example/two.m3u8"), imported.get(1).playbackOptions()
+                .stream().map(option -> option.url()).toList());
     }
 
     @Test

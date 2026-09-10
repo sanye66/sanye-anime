@@ -12,6 +12,7 @@
         <jacoco.min.ratio>0.25</jacoco.min.ratio>
     </properties>
     <dependencies>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
         <dependency><groupId>com.sanye.anime</groupId><artifactId>sanye-server-web</artifactId></dependency>
         <dependency>
             <groupId>co.elastic.clients</groupId>
