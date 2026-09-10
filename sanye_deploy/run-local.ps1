@@ -21,6 +21,9 @@
 #>
 
 $ErrorActionPreference = 'Stop'
+if ($env:SANYE_ENV -and $env:SANYE_ENV -ne 'local') {
+    throw 'run-local.ps1 requires a dedicated local shell; SANYE_ENV is not local.'
+}
 $repoRoot = Split-Path $PSScriptRoot -Parent
 $localDir = Join-Path $PSScriptRoot '.local'
 $logDir = Join-Path $localDir 'logs'
@@ -122,6 +125,23 @@ if ($Infrastructure -eq 'docker') {
     $env:SANYE_ADMIN_REDIS_PORT = '16379'
     $env:SANYE_ADMIN_REDIS_USERNAME = 'sanye'
     $env:SANYE_ADMIN_REDIS_PASSWORD = '123456'
+    # 读取本机容器现有连接值，不输出凭据，也不修改容器账户。
+    $rabbitContainer = docker inspect sanye-rabbitmq | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) { throw '无法读取本机 RabbitMQ 容器连接配置。' }
+    foreach ($setting in $rabbitContainer[0].Config.Env) {
+        if ($setting.StartsWith('RABBITMQ_DEFAULT_USER=')) {
+            $env:SPRING_RABBITMQ_USERNAME = $setting.Substring('RABBITMQ_DEFAULT_USER='.Length)
+        }
+        if ($setting.StartsWith('RABBITMQ_DEFAULT_PASS=')) {
+            $env:SPRING_RABBITMQ_PASSWORD = $setting.Substring('RABBITMQ_DEFAULT_PASS='.Length)
+        }
+    }
+    $env:SPRING_RABBITMQ_HOST = '127.0.0.1'
+    $env:SPRING_RABBITMQ_PORT = '5672'
+    $env:SPRING_RABBITMQ_PUBLISHER_CONFIRM_TYPE = 'correlated'
+    $env:SPRING_RABBITMQ_PUBLISHER_RETURNS = 'true'
+    $env:SANYE_EVENT_ENABLED = 'true'
+    $env:SANYE_EVENT_PUBLISHER_ENABLED = 'true'
 } else {
     $env:DB_URL = 'jdbc:postgresql://localhost:5433/sanye_anime'
     $env:REDIS_HOST = '127.0.0.1'
@@ -137,6 +157,8 @@ if ($Infrastructure -eq 'docker') {
     $env:HOME_CACHE_ENABLED = 'false'
     $env:MANAGEMENT_HEALTH_REDIS_ENABLED = 'false'
 }
+$env:SANYE_ENV = 'local'
+if (-not $env:AUTH_TOKEN_SECRET) { $env:AUTH_TOKEN_SECRET = 'sanye-local-jwt-secret-2026' }
 $env:DB_USERNAME = 'sanye'
 $env:DB_PASSWORD = '123456'
 $env:GATEWAY_PORT = [string]$GatewayPort

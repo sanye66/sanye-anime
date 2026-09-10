@@ -17,9 +17,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26.5.0
       - name: 检查 Markdown 链接与当前事实
         run: node sanye_deploy/check-docs.mjs
+      - name: 发布准备门禁回归
+        run: node --test sanye_deploy/release/release.test.mjs
 
   frontend:
     name: 前端类型检查与构建
@@ -31,12 +33,18 @@ jobs:
           version: 10.15.0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26.5.0
           cache: pnpm
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
       - name: 类型检查
         run: pnpm typecheck
+      - name: 管理端会话竞态回归
+        run: pnpm test:admin-auth
+      - name: 备份恢复安全边界回归
+        run: pnpm test:recovery
+      - name: 敏感配置扫描器脱敏回归
+        run: pnpm test:sensitive-config
       - name: 构建
         run: pnpm build
 
@@ -49,9 +57,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
         with:
-          distribution: temurin
-          java-version: "21"
+          distribution: microsoft
+          java-version: "21.0.12"
           cache: maven
+      - name: 安装固定 Maven 版本
+        run: bash sanye_deploy/setup-ci-maven.sh
       - name: sanye_server 编译与测试
         run: mvn -B -f sanye_server/pom.xml test
       - name: sanye_admin_server 编译与测试
@@ -67,7 +77,7 @@ jobs:
           version: 10.15.0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26.5.0
           cache: pnpm
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
@@ -86,12 +96,14 @@ jobs:
           version: 10.15.0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26.5.0
       - uses: actions/setup-java@v6
         with:
-          distribution: temurin
-          java-version: "21"
+          distribution: microsoft
+          java-version: "21.0.12"
           cache: maven
+      - name: 安装固定 Maven 版本
+        run: bash sanye_deploy/setup-ci-maven.sh
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
       - name: 前端依赖审计

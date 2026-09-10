@@ -200,9 +200,9 @@ Invoke-Board 'C. 搜索（Elasticsearch）' @(
     (New-Check '搜索超长关键词返回 1001' {
         (Get-Json ('/api/v1/search?keyword=' + [uri]::EscapeDataString(('x' * 51)))).code -eq 1001
     }),
-    (New-Check 'reindex 可重复执行且不崩溃' {
+    (New-Check '普通调用者不能触发索引重建' {
         $r = Invoke-RestMethod -Uri "$Gateway/api/v1/search/reindex" -Method Post -Headers @{ 'X-Device-Id' = $DeviceId } -TimeoutSec 20
-        $r.code -eq 0 -or $r.code -eq 5001 -or $r.code -eq 4002
+        $r.code -eq 2002
     })
 )
 

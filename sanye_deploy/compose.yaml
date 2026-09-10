@@ -41,7 +41,8 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-sanye}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-123456}
     ports:
-      # 宿主机只保留 RabbitMQ 管理控制台端口；业务 AMQP 端口在容器网络内使用 rabbitmq:5672。
+      # 同时暴露管理端口和宿主机业务 AMQP 端口，供本机 Spring 服务连接。
+      - "5672:5672"
       - "${RABBITMQ_HOST_PORT:-15672}:15672"
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq

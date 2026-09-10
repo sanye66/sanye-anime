@@ -15,7 +15,7 @@ function check(name, condition, detail) {
 // 递归收集 Markdown 文件，跳过依赖、Git 元数据和本地备份产物。
 function collectMarkdown(dir, result = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['.git', 'node_modules', 'backups'].includes(entry.name)) continue
+    if (['.git', '.local', 'node_modules', 'backups'].includes(entry.name)) continue
     const fullPath = path.join(dir, entry.name)
     if (entry.isDirectory()) collectMarkdown(fullPath, result)
     else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) result.push(fullPath)

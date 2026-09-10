@@ -1,0 +1,4 @@
+{
+  "java": "docker.m.daocloud.io/library/eclipse-temurin@sha256:974b08960c5d96694c780e65b2d5705268ab1e1ca1a0dd0caf4ba6c3fe34d699",
+  "web": "docker.m.daocloud.io/library/nginx@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284"
+}

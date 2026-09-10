@@ -1,0 +1,22 @@
+{
+  "quiesced": false,
+  "postgres": {
+    "tools": {
+      "psql": { "command": "psql" },
+      "dump": { "command": "pg_dump" },
+      "restore": { "command": "pg_restore" }
+    },
+    "source": { "host": "127.0.0.1", "port": 15432, "user": "sanye", "passwordEnv": "SANYE_BACKUP_PG_PASSWORD" },
+    "target": { "host": "127.0.0.1", "port": 25432, "user": "sanye", "passwordEnv": "SANYE_RESTORE_PG_PASSWORD" }
+  },
+  "databases": [
+    { "role": "business", "source": "sanye_anime", "target": "sanye_restore_business" },
+    { "role": "admin", "source": "sanye_admin", "target": "sanye_restore_admin" }
+  ],
+  "minio": {
+    "source": { "endpoint": "http://127.0.0.1:9000", "accessKeyEnv": "SANYE_BACKUP_MINIO_USER", "secretKeyEnv": "SANYE_BACKUP_MINIO_PASSWORD" },
+    "target": { "endpoint": "http://127.0.0.1:19000", "accessKeyEnv": "SANYE_RESTORE_MINIO_USER", "secretKeyEnv": "SANYE_RESTORE_MINIO_PASSWORD" },
+    "buckets": [ { "source": "sanye-files", "target": "sanye-restored-files" } ]
+  },
+  "files": { "source": "sanye_deploy/.local/files", "target": "sanye_deploy/.local/restored-files" }
+}

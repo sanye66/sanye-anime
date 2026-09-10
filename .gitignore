@@ -17,6 +17,7 @@
 *.ear
 *.zip
 *.tar.gz
+sanye-sanye_desktop-*.tgz
 *.rar
 
 # IDE files
@@ -28,6 +29,7 @@
 .env
 .env.*
 !.env.example
+!sanye_client/.env.desktop
 sanye_deploy/.local/
 sanye_deploy/import-anime.env
 sanye_deploy/.import-anime.env
@@ -37,6 +39,7 @@ sanye_deploy/backups/
 # Build and generated output
 target/
 dist/
+dist-desktop/
 coverage/
 node_modules/
 *.tsbuildinfo

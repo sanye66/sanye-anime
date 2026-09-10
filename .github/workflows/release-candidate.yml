@@ -1,0 +1,72 @@
+name: release-candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/test'
+    runs-on: ubuntu-latest
+    environment: sanye_test
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 26.5.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10.15.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: microsoft
+          java-version: '21.0.12'
+      - name: Require successful CI for the candidate commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node sanye_deploy/release/check-ci.mjs
+      - name: Install pinned Maven
+        run: bash sanye_deploy/setup-ci-maven.sh
+      - name: Build from clean checkout
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm build
+          node --test sanye_deploy/release/release.test.mjs
+          mvn -B -ntp -f sanye_server/pom.xml clean package
+          mvn -B -ntp -f sanye_admin_server/pom.xml clean package
+      - name: Prepare allowlisted contexts
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: node sanye_deploy/release/prepare.mjs prepare "$RUNNER_TEMP/sanye_candidate"
+      - name: Authenticate registry
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and publish candidate images
+        run: node sanye_deploy/release/build.mjs "$RUNNER_TEMP/sanye_candidate" --push
+      - name: Preserve candidate provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sanye_candidate-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/sanye_candidate/*.json
+      - name: Clear registry session
+        if: always()
+        run: docker logout ghcr.io
