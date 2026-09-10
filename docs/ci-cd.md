@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.7 |
+| 文档版本 | v1.8 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
@@ -11,6 +11,12 @@
 ## 当前核对（2026-09-10）
 
 当前基础检查已重新执行，详见[审计](./current-status-audit.md)。T-R-06 本地容器报告为 `sanye_deploy/.local/tr06/sanye_tr06_2e4e2557f579/report.json`，8 项通过，仅覆盖网关与 Web 冒烟。本次未查询远端 CI/分支保护或发布注册表；历史远端访问失败不能推断当前权限状态。
+
+交付补充（2026-09-10）：独立分支 `feature-delivery-20260910` 已推送，首轮 [CI 34458436550](https://github.com/sanye66/sanye-anime/actions/runs/34458436550) 暴露 Microsoft 下载源缺少 21.0.12、GNU tar 不支持 ZIP 创建的问题。持续集成显式使用下载源可用的 Microsoft JDK 21.0.11，扫描夹具使用 JDK `jar` 创建；本机 21.0.12 基线保留。候选发布仍要求 21.0.12，供应源与候选构建待环境，不因 CI 工具链调整放宽发布门禁。
+
+同日通过 GitHub API 设置并回读 `dev`、`test`、`release` 的六项必需检查、严格更新检查及管理员约束，禁止强推和删除。实际 CI 成功、分支同步和环境发布仍须分别核对，不能由保护规则已配置推定完成。
+
+更新记录：2026-09-10，v1.8，登记实际远端失败与跨平台修复、CI/本机 JDK 补丁差异和分支保护证据；依据上述运行链接及 GitHub API 回读。
 
 更新记录：2026-09-10，v1.7，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
@@ -42,7 +48,7 @@
 
 ### 2.2 backend：后端编译与测试
 
-- 环境：ubuntu-latest，Microsoft JDK 21.0.12（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。当前配置与本机版本对应，远端实际执行结果仍以作业日志为准。
+- 环境：ubuntu-latest，Microsoft JDK 21.0.11（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。本机 JDK 为 21.0.12，CI 下载源差异见当前核对；远端实际执行结果以作业日志为准。
 - 步骤：
   - `mvn -B -f sanye_server/pom.xml test`：全模块编译 + 单测 + JaCoCo 覆盖率门禁（6 模块阈值，见 testing-strategy）。
   - `mvn -B -f sanye_admin_server/pom.xml test`：RuoYi 管理后端编译与测试，包含管理代理端点方法级权限契约。
