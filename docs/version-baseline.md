@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.9 |
+| 文档版本 | v0.10 |
 | 文档状态 | 基线（按当前本机工具链执行兼容性验证） |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
@@ -13,6 +13,8 @@
 本次按当前工具链重新执行前端与双后端基础回归，结果见[当前审计](./current-status-audit.md)。工作区包含未提交变更，HEAD 不是全部被测源码的版本标识；候选发布须另外固定干净提交、锁文件、镜像摘要与配置版本。
 
 更新记录：2026-09-10，v0.9，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+更新记录：2026-09-10，v0.10，交付分支按 [Trivy 运行](https://github.com/sanye66/sanye-anime/actions/runs/34459216085) 修正 Tomcat 与 RabbitMQ 客户端安全补丁：两套后端统一 Tomcat 10.1.59（修复下限 10.1.58 的 Maven Central 构件返回 404，10.1.59 可下载），业务后端 AMQP 客户端 5.33.1；桌面打包链统一 electron-builder/Squirrel 26.15.3，保留签名补丁。CI 使用下载源可用的 Microsoft JDK 21.0.11，本机及候选严格版本仍为 21.0.12，详见 [CI/CD](./ci-cd.md)。
 
 ## 1. 版本选择结论
 

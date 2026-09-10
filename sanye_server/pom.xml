@@ -34,6 +34,8 @@
 
     <properties>
         <java.version>21</java.version>
+        <tomcat.version>10.1.59</tomcat.version>
+        <amqp-client.version>5.33.1</amqp-client.version>
         <jackson-bom.version>2.21.5</jackson-bom.version>
         <postgresql.version>42.7.12</postgresql.version>
         <spring-cloud.version>2025.0.3</spring-cloud.version>
