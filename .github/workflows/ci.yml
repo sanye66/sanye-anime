@@ -45,6 +45,8 @@ jobs:
         run: pnpm test:recovery
       - name: 敏感配置扫描器脱敏回归
         run: pnpm test:sensitive-config
+      - name: 桌面运行边界与签名流程回归
+        run: pnpm test:desktop
       - name: 构建
         run: pnpm build
 

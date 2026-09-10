@@ -133,15 +133,31 @@ try {
   await page.waitForTimeout(500)
   const selectedText = await page.locator('.art-control-quality .art-selector-value').textContent()
   record('清晰度切换保持 ArtPlayer 控件', selectedText?.trim() === '360P', selectedText?.trim() ?? '')
-  const currentLevel = await page.evaluate(async () => {
+  const runtimeState = await page.evaluate(async () => {
     const moduleUrl = performance.getEntriesByType('resource')
       .map((entry) => entry.name)
       .find((url) => /\/assets\/artplayer-[^/]+\.js(?:\?|$)/.test(url))
     if (!moduleUrl) return null
     const { default: Artplayer } = await import(moduleUrl)
-    return Artplayer.instances[0]?.hls?.manualLevel ?? null
+    const player = Artplayer.instances[0]
+    const config = player?.hls?.config
+    return {
+      currentLevel: player?.hls?.manualLevel ?? null,
+      preload: player?.video?.preload ?? '',
+      maxBufferLength: config?.maxBufferLength ?? 0,
+      maxMaxBufferLength: config?.maxMaxBufferLength ?? 0,
+      fragLoadingMaxRetry: config?.fragLoadingMaxRetry ?? 0,
+      fragLoadingTimeOut: config?.fragLoadingTimeOut ?? 0,
+    }
   })
-  record('清晰度切换更新 HLS level', currentLevel === 0, `manualLevel=${currentLevel}`)
+  record('清晰度切换更新 HLS level', runtimeState?.currentLevel === 0,
+    `manualLevel=${runtimeState?.currentLevel ?? 'null'}`)
+  record('HLS 缓冲与重试优化生效', runtimeState?.preload === 'auto'
+    && runtimeState.maxBufferLength === 60
+    && runtimeState.maxMaxBufferLength === 120
+    && runtimeState.fragLoadingMaxRetry === 4
+    && runtimeState.fragLoadingTimeOut === 20_000,
+  JSON.stringify(runtimeState))
 } catch (error) {
   let debug = { player: false, video: '', controls: '', body: '' }
   try {

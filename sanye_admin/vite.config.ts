@@ -23,15 +23,5 @@ export default defineConfig(({ mode }) => {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
       },
     },
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            'element-plus': ['element-plus'],
-            'element-icons': ['@element-plus/icons-vue'],
-          },
-        },
-      },
-    },
   }
 })

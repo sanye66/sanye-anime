@@ -8,6 +8,7 @@ import { favoriteApi } from '@/api/favorite'
 import { isAbortError, resolveAssetUrl } from '@/api/http'
 import type { AnimeDetail, AnimeEpisode, AnimePlaybackOption } from '@/api/types'
 import { animeCatalogMap } from '@/data/animeCatalog'
+import { desktopMode } from '@/desktop'
 import { ANIME4K_PROFILE_LABELS, startAnime4KVideo, type Anime4KProfile, type Anime4KSession } from '@/video/anime4k'
 import {
   normalizePlaybackEpisodes,
@@ -24,6 +25,10 @@ import {
 const route = useRoute()
 const router = useRouter()
 
+const PLAYER_STARTUP_TIMEOUT_MS = 15_000
+const PLAYER_STALL_RECOVERY_MS = 10_000
+const PROGRESS_WRITE_INTERVAL_MS = 1_000
+
 const slug = computed(() => String(route.params.slug ?? ''))
 const previewSourceUrl = computed(() => typeof route.query.sourceUrl === 'string' ? route.query.sourceUrl.trim() : '')
 const isExternalPreview = computed(() => route.name === 'externalWatch' && Boolean(previewSourceUrl.value))
@@ -38,6 +43,7 @@ const episodesLoading = ref(false)
 const episodesFailed = ref(false)
 const selectedEpisodeId = ref<number | null>(null)
 const selectedPlaybackUrl = ref('')
+const playerLoading = ref(false)
 const playerError = ref(false)
 const episodesUsingCache = ref(false)
 const episodesRequestVersion = ref(0)
@@ -50,8 +56,12 @@ let artHls: Hls | null = null
 let playerRequestVersion = 0
 let anime4KSession: Anime4KSession | null = null
 let anime4KRequestVersion = 0
-let progressTimer = 0
 let mediaLoadTimer = 0
+let stallRecoveryTimer = 0
+let flushPlayerProgress: (() => void) | null = null
+let removePlayerProgressListeners: (() => void) | null = null
+let pendingPlaybackResume: { currentTime: number; shouldPlay: boolean } | null = null
+let pendingPlaybackNotice = ''
 let detailRequestController: AbortController | null = null
 let episodesRequestController: AbortController | null = null
 
@@ -175,6 +185,12 @@ function playbackOptionsOf(episode?: AnimeEpisode): AnimePlaybackOption[] {
 }
 
 function playbackSourceLabel(option: AnimePlaybackOption, index: number): string {
+  const matchingEpisode = episodes.value.find((episode) => episode.playbackUrl === option.url)
+  const episodeLabel = matchingEpisode?.title?.trim()
+  if (episodeLabel && /国语|国配|普通话|中文配音|日语|日文|原声|粤语|粤配|英语|英文/.test(episodeLabel)) {
+    if (/日语|日文|原声/.test(episodeLabel)) return '日语原声'
+    return episodeLabel
+  }
   return option.label?.trim() || `线路 ${index + 1}`
 }
 
@@ -184,6 +200,11 @@ const selectedEpisode = computed(() =>
 )
 
 const playbackOptions = computed(() => playbackOptionsOf(selectedEpisode.value))
+const showEpisodeList = computed(() => {
+  if (episodes.value.length < 2 || playbackOptions.value.length < 2) return true
+  const sourceUrls = new Set(playbackOptions.value.map((option) => option.url))
+  return !episodes.value.every((episode) => sourceUrls.has(episode.playbackUrl))
+})
 const activePlaybackOption = computed(() => {
   const options = playbackOptions.value
   return options.find((option) => option.url === selectedPlaybackUrl.value) ?? options[0]
@@ -310,8 +331,11 @@ watch(
     episodes.value = []
     selectedEpisodeId.value = null
     selectedPlaybackUrl.value = ''
+    pendingPlaybackResume = null
+    pendingPlaybackNotice = ''
     episodesLoading.value = false
     episodesFailed.value = false
+    playerLoading.value = false
     playerError.value = false
     episodesUsingCache.value = false
     void load()
@@ -383,25 +407,43 @@ async function loadEpisodes(animeId: number) {
 
 /** 切换剧集时重置播放器错误状态，允许同一播放器重新加载。 */
 function selectEpisode(episode: AnimeEpisode) {
+  flushPlayerProgress?.()
+  pendingPlaybackResume = null
+  pendingPlaybackNotice = ''
   selectedEpisodeId.value = episode.id
   selectedPlaybackUrl.value = episode.playbackUrl
   if (detail.value && !isExternalPreview.value) writeSelectedEpisodeId(detail.value.id, episode.id)
   playerError.value = false
 }
 
+/** 记录换线前的播放位置，避免自动或手动切换线路后从头播放。 */
+function rememberPlaybackPosition() {
+  const video = artPlayer?.video
+  if (!video) return
+  pendingPlaybackResume = {
+    currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+    shouldPlay: !video.paused && !video.ended,
+  }
+}
+
 /** 手动或自动切换到当前剧集的下一条备用线路。 */
-function advancePlaybackOption() {
+function advancePlaybackOption(notice = '') {
   const options = playbackOptions.value
   if (options.length < 2) return false
   const currentIndex = Math.max(0, options.findIndex((option) => option.url === activePlaybackUrl.value))
   const next = options[currentIndex + 1]
   if (!next) return false
+  rememberPlaybackPosition()
+  pendingPlaybackNotice = notice
   selectedPlaybackUrl.value = next.url
   playerError.value = false
   return true
 }
 
 function selectPlaybackOption(option: AnimePlaybackOption) {
+  if (option.url === activePlaybackUrl.value) return
+  rememberPlaybackPosition()
+  pendingPlaybackNotice = ''
   selectedPlaybackUrl.value = option.url
   playerError.value = false
 }
@@ -415,15 +457,16 @@ function stopAnime4K() {
 
 /** 释放 ArtPlayer 和 HLS 实例，避免切换剧集后继续请求上一集的分片。 */
 function destroyVideoPlayer() {
+  flushPlayerProgress?.()
+  flushPlayerProgress = null
+  removePlayerProgressListeners?.()
+  removePlayerProgressListeners = null
   stopAnime4K()
-  if (progressTimer) {
-    window.clearInterval(progressTimer)
-    progressTimer = 0
-  }
   if (mediaLoadTimer) {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
+  clearStallRecovery()
   artHls?.destroy()
   artHls = null
   artPlayer?.destroy()
@@ -467,8 +510,9 @@ async function applyAnime4K(player: Artplayer, requestVersion: number) {
  * HLS 通过 customType 交给 hls.js，普通视频使用浏览器媒体能力。
  */
 async function mountVideoPlayer() {
-  const requestVersion = ++playerRequestVersion
   destroyVideoPlayer()
+  const requestVersion = ++playerRequestVersion
+  playerLoading.value = false
   await nextTick()
   if (requestVersion !== playerRequestVersion) return
   const episode = selectedEpisode.value
@@ -477,6 +521,7 @@ async function mountVideoPlayer() {
   const source = activePlaybackUrl.value
   const isHlsSource = activePlaybackIsHls.value
   if (!source) return
+  playerLoading.value = true
   warmMediaSource(source)
 
   try {
@@ -495,7 +540,9 @@ async function mountVideoPlayer() {
       theme: '#e77d65',
       lang: 'zh-cn',
       volume: 0.7,
-      autoplay: false,
+      // 浏览器只稳定允许静音自动播放；外部“直接观看”应在解析完成后立即开始。
+      autoplay: isExternalPreview.value,
+      muted: isExternalPreview.value,
       autoSize: true,
       autoMini: false,
       autoPlayback: true,
@@ -520,7 +567,7 @@ async function mountVideoPlayer() {
       moreVideoAttr: {
         crossOrigin: 'anonymous',
         playsInline: true,
-        preload: 'metadata',
+        preload: isHlsSource ? 'auto' : 'metadata',
       },
       customType: isHlsSource
         ? {
@@ -544,16 +591,22 @@ async function mountVideoPlayer() {
               const hls = new HlsConstructor({
                 enableWorker: true,
                 lowLatencyMode: false,
-                backBufferLength: 30,
-                maxBufferLength: 30,
-                maxMaxBufferLength: 60,
+                backBufferLength: 60,
+                maxBufferLength: 60,
+                maxMaxBufferLength: 120,
                 capLevelToPlayerSize: true,
-                manifestLoadingTimeOut: 4_000,
-                levelLoadingTimeOut: 4_000,
-                fragLoadingTimeOut: 5_000,
-                manifestLoadingMaxRetry: 0,
-                levelLoadingMaxRetry: 0,
-                fragLoadingMaxRetry: 0,
+                manifestLoadingTimeOut: 12_000,
+                levelLoadingTimeOut: 12_000,
+                fragLoadingTimeOut: 20_000,
+                manifestLoadingMaxRetry: 2,
+                manifestLoadingRetryDelay: 1_000,
+                manifestLoadingMaxRetryTimeout: 8_000,
+                levelLoadingMaxRetry: 3,
+                levelLoadingRetryDelay: 1_000,
+                levelLoadingMaxRetryTimeout: 8_000,
+                fragLoadingMaxRetry: 4,
+                fragLoadingRetryDelay: 1_000,
+                fragLoadingMaxRetryTimeout: 10_000,
                 startFragPrefetch: true,
               })
               let networkRetries = 0
@@ -566,7 +619,6 @@ async function mountVideoPlayer() {
               hls.on(HlsConstructor.Events.MANIFEST_PARSED, () => {
                 if (requestVersion !== playerRequestVersion) return
                 mountHlsQuality(player, hls, requestVersion)
-                markPlayerLoaded()
               })
               hls.on(HlsConstructor.Events.ERROR, (_event, data) => {
                 if (!data.fatal || requestVersion !== playerRequestVersion) return
@@ -576,17 +628,17 @@ async function mountVideoPlayer() {
                     networkRetries += 1
                     hls.startLoad()
                   } else {
-                    markPlayerError()
+                    markPlayerError('当前线路网络异常，已尝试切换备用线路')
                   }
                 } else if (data.type === HlsConstructor.ErrorTypes.MEDIA_ERROR) {
                   if (mediaRetries < 1) {
                     mediaRetries += 1
                     hls.recoverMediaError()
                   } else {
-                    markPlayerError()
+                    markPlayerError('当前线路解码异常，已尝试切换备用线路')
                   }
                 } else {
-                  markPlayerError()
+                  markPlayerError('当前线路不可用，已尝试切换备用线路')
                 }
               })
               hls.attachMedia(video)
@@ -601,20 +653,36 @@ async function mountVideoPlayer() {
       if (requestVersion === playerRequestVersion && player.video.readyState < HTMLMediaElement.HAVE_METADATA) {
         markPlayerError()
       }
-    }, 8_000)
+    }, PLAYER_STARTUP_TIMEOUT_MS)
     updateAnime4KControl(player)
     player.video.addEventListener('loadedmetadata', () => {
-      if (requestVersion !== playerRequestVersion || !detail.value || isExternalPreview.value) return
-      const progress = readEpisodeProgress(detail.value.id, episode.id)
-      if (progress > 0 && progress < player.video.duration - 5) {
-        player.video.currentTime = progress
-        player.notice.show = `已恢复到 ${Math.floor(progress / 60)}:${String(Math.floor(progress % 60)).padStart(2, '0')}`
+      if (requestVersion !== playerRequestVersion) return
+      const resume = pendingPlaybackResume
+      pendingPlaybackResume = null
+      if (resume) {
+        const canResume = resume.currentTime > 0
+          && (!Number.isFinite(player.video.duration) || resume.currentTime < player.video.duration - 1)
+        if (canResume) player.video.currentTime = resume.currentTime
+        if (resume.shouldPlay) void player.video.play().catch(() => undefined)
+        return
+      }
+      if (detail.value && !isExternalPreview.value) {
+        const progress = readEpisodeProgress(detail.value.id, episode.id)
+        if (progress > 0 && progress < player.video.duration - 5) {
+          player.video.currentTime = progress
+          player.notice.show = `已恢复到 ${Math.floor(progress / 60)}:${String(Math.floor(progress % 60)).padStart(2, '0')}`
+        }
       }
     })
     player.video.addEventListener('loadeddata', () => {
       if (requestVersion !== playerRequestVersion) return
       markPlayerLoaded()
+      clearStallRecovery()
       clearPlayerMediaPendingSoon(player, requestVersion)
+      if (pendingPlaybackNotice) {
+        player.notice.show = pendingPlaybackNotice
+        pendingPlaybackNotice = ''
+      }
       if (anime4KEnabled.value && !anime4KSession) void applyAnime4K(player, requestVersion)
     })
     player.video.addEventListener('seeking', () => {
@@ -623,27 +691,57 @@ async function mountVideoPlayer() {
       artHls?.startLoad(player.video.currentTime)
     })
     player.video.addEventListener('seeked', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
+      if (requestVersion === playerRequestVersion) {
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
+      }
     })
     player.video.addEventListener('waiting', () => {
-      if (requestVersion === playerRequestVersion) setPlayerMediaPending(player, true)
+      if (requestVersion === playerRequestVersion) {
+        setPlayerMediaPending(player, true)
+        scheduleStallRecovery(player, requestVersion)
+      }
     })
     player.video.addEventListener('canplay', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
+      if (requestVersion === playerRequestVersion) {
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
+      }
     })
     player.video.addEventListener('playing', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
-    })
-    progressTimer = window.setInterval(() => {
-      if (requestVersion === playerRequestVersion && detail.value && !isExternalPreview.value && !player.video.paused) {
-        writeEpisodeProgress(detail.value.id, episode, player.video)
+      if (requestVersion === playerRequestVersion) {
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
       }
-    }, 5_000)
+    })
+    if (detail.value && !isExternalPreview.value) {
+      const animeId = detail.value.id
+      let lastProgressWriteAt = 0
+      const persistProgress = (force = false) => {
+        const now = Date.now()
+        if (!force && now - lastProgressWriteAt < PROGRESS_WRITE_INTERVAL_MS) return
+        writeEpisodeProgress(animeId, episode, player.video)
+        lastProgressWriteAt = now
+      }
+      const handleTimeUpdate = () => persistProgress()
+      const handleProgressBoundary = () => persistProgress(true)
+      player.video.addEventListener('timeupdate', handleTimeUpdate)
+      player.video.addEventListener('pause', handleProgressBoundary)
+      player.video.addEventListener('ended', handleProgressBoundary)
+      window.addEventListener('pagehide', handleProgressBoundary)
+      flushPlayerProgress = handleProgressBoundary
+      removePlayerProgressListeners = () => {
+        player.video.removeEventListener('timeupdate', handleTimeUpdate)
+        player.video.removeEventListener('pause', handleProgressBoundary)
+        player.video.removeEventListener('ended', handleProgressBoundary)
+        window.removeEventListener('pagehide', handleProgressBoundary)
+      }
+    }
     player.video.addEventListener('error', () => {
-      if (requestVersion === playerRequestVersion) markPlayerError()
+      if (requestVersion === playerRequestVersion) markPlayerError('当前线路播放失败，已尝试切换备用线路')
     })
   } catch {
-    if (requestVersion === playerRequestVersion) markPlayerError()
+    if (requestVersion === playerRequestVersion) markPlayerError('播放器加载失败，已尝试切换备用线路')
   }
 }
 
@@ -653,17 +751,45 @@ function markPlayerLoaded() {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
+  playerLoading.value = false
   playerError.value = false
 }
 
 /** 媒体元素报告错误时显示统一的播放器失败状态。 */
-function markPlayerError() {
+function markPlayerError(notice = '') {
   if (mediaLoadTimer) {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
-  if (advancePlaybackOption()) return
+  clearStallRecovery()
+  if (advancePlaybackOption(notice)) return
+  playerLoading.value = false
   playerError.value = true
+}
+
+function clearStallRecovery() {
+  if (!stallRecoveryTimer) return
+  window.clearTimeout(stallRecoveryTimer)
+  stallRecoveryTimer = 0
+}
+
+/** 持续缓冲超过阈值时切换备用线路；单线路则重新连接当前媒体。 */
+function scheduleStallRecovery(player: Artplayer, requestVersion: number) {
+  clearStallRecovery()
+  stallRecoveryTimer = window.setTimeout(() => {
+    stallRecoveryTimer = 0
+    const video = player.video
+    if (requestVersion !== playerRequestVersion || video.paused || video.ended || video.seeking
+      || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return
+    if (advancePlaybackOption('当前线路持续缓冲，已自动切换备用线路')) return
+    if (artHls) {
+      artHls.startLoad(video.currentTime)
+    } else {
+      rememberPlaybackPosition()
+      video.load()
+    }
+    player.notice.show = '当前线路较慢，正在重新连接'
+  }, PLAYER_STALL_RECOVERY_MS)
 }
 
 /** seek 或缓冲期间临时露出原视频，避免增强 canvas 尚未绘制时出现黑屏。 */
@@ -683,7 +809,7 @@ function clearPlayerMediaPendingSoon(player: Artplayer, requestVersion: number) 
 /** 手动重新加载当前剧集视频。 */
 function retryPlayer() {
   playerError.value = false
-  if (advancePlaybackOption()) return
+  if (advancePlaybackOption('已切换备用线路')) return
   void mountVideoPlayer()
 }
 
@@ -746,8 +872,13 @@ function goBack() {
   <div class="page-stack anime-detail-page">
     <button class="back-link detail-back-button" type="button" @click="goBack"><span aria-hidden="true">←</span> 返回</button>
 
-    <div v-if="loading" class="feed-skeleton" aria-label="正在加载作品详情">
-      <span></span><span></span><span></span>
+    <div v-if="loading" class="detail-loading-state" role="status" aria-live="polite">
+      <span class="detail-loading-face" aria-hidden="true"><i></i><i></i><b></b></span>
+      <span class="detail-loading-copy">
+        <strong>{{ isExternalPreview ? '正在接通信号' : '正在打开作品' }}</strong>
+        <small>{{ isExternalPreview ? '读取作品与播放线路…' : '准备作品详情与播放列表…' }}</small>
+      </span>
+      <span class="detail-loading-progress" role="progressbar" :aria-label="isExternalPreview ? '正在读取直接观看资源' : '正在加载作品详情'"><i></i></span>
     </div>
 
     <section v-if="display && detail" class="anime-player-section" aria-label="剧集播放器">
@@ -785,6 +916,12 @@ function goBack() {
               打开来源页
             </a>
           </div>
+          <div v-if="playerLoading && !playerError" class="player-loading-overlay" role="status" aria-live="polite">
+            <span class="detail-loading-face compact" aria-hidden="true"><i></i><i></i><b></b></span>
+            <strong>视频马上就绪</strong>
+            <small>正在连接播放线路…</small>
+            <span class="detail-loading-progress compact" role="progressbar" aria-label="正在加载视频"><i></i></span>
+          </div>
           <div v-if="playerError" class="player-overlay" role="status">
             <span>播放器加载失败，请稍后重试或打开来源页。</span>
             <button class="secondary-button" type="button" @click="retryPlayer">重新加载</button>
@@ -804,7 +941,7 @@ function goBack() {
             {{ playbackSourceLabel(option, index) }}
           </button>
         </div>
-        <div class="anime-episode-list" role="list" :aria-label="playbackListLabel">
+        <div v-if="showEpisodeList" class="anime-episode-list" role="list" :aria-label="playbackListLabel">
           <button
             v-for="(episode, index) in episodes"
             :key="episode.id"
@@ -837,6 +974,7 @@ function goBack() {
         <p v-if="failed" class="detail-fallback-note">接口暂不可用，当前展示本地演示数据。</p>
         <div v-if="!isExternalPreview" class="anime-detail-actions">
           <RouterLink
+            v-if="!desktopMode"
             class="primary-button"
             :to="
               detail
@@ -856,7 +994,7 @@ function goBack() {
       </div>
     </section>
 
-    <section v-else class="empty-state">
+    <section v-else-if="!loading" class="empty-state">
       <span class="empty-mark" aria-hidden="true">▣</span>
       <h3>{{ failed ? (isExternalPreview ? '暂时无法加载站内播放' : '网络异常，加载失败') : '作品不存在或已下架' }}</h3>
       <p>{{ failed ? (isExternalPreview ? '来源页面仍可打开，也可以稍后重试。' : '请检查网络后重试，或返回首页继续浏览。') : '返回首页继续发现其他作品。' }}</p>
@@ -868,7 +1006,7 @@ function goBack() {
       <RouterLink v-else class="primary-button" to="/">返回首页 →</RouterLink>
     </section>
 
-    <section v-if="display" class="anime-detail-section">
+    <section v-if="display && !desktopMode" class="anime-detail-section">
       <div><span class="eyebrow">观看前先了解</span><h3>故事线索</h3></div>
       <p>打开 AI 助手可以继续询问角色关系、观看顺序和不剧透的剧情解释。</p>
     </section>

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import { desktopMode } from '@/desktop'
 
 type RouteLoader = () => Promise<unknown>
 
@@ -58,9 +59,10 @@ export function prefetchRoute(to: string): void {
 
 // 路由守卫负责 CAS ticket 换会话、受保护页面拦截和页面标题同步。
 router.beforeEach(async (to) => {
+  if (desktopMode && ['/ai', '/mine/model-config', '/mine/import-request', '/mine/feedback'].includes(to.path)) return '/'
   const auth = useAuthStore()
   const ticket = typeof to.query.ticket === 'string' ? to.query.ticket : undefined
-  if (ticket) {
+  if (ticket && !desktopMode) {
     try {
       const service = window.location.origin + to.path
       const session = await authApi.casCallback(ticket, service)

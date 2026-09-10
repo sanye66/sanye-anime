@@ -1,4 +1,5 @@
 import { http } from './http'
+import { desktopMode } from '@/desktop'
 
 export interface FrontendErrorPayload {
   type: string
@@ -18,6 +19,7 @@ export const systemApi = {
 
 /** 尽力上报前端异常，监控接口失败不能影响用户当前操作。 */
 export function reportFrontendError(payload: FrontendErrorPayload): void {
+  if (desktopMode) return
   // 错误上报采用尽力而为策略，监控接口异常不能反过来影响页面。
   void http
     .post('/monitor/frontend-errors', {

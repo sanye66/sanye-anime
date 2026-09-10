@@ -3,16 +3,29 @@
   "private": true,
   "packageManager": "pnpm@10.15.0",
   "engines": {
-    "node": ">=22 <27",
-    "pnpm": ">=10 <11"
+    "node": ">=26.5.0 <27",
+    "pnpm": "10.15.0"
   },
   "scripts": {
+    "perf:api": "node sanye_deploy/performance-runner.mjs",
+    "perf:api-report": "node sanye_deploy/performance-report.mjs",
+    "desktop:prepare": "pnpm --filter @sanye/sanye_desktop prepare:runtime",
+    "desktop:start": "pnpm --filter @sanye/sanye_desktop start",
+    "desktop:pack": "pnpm --filter @sanye/sanye_desktop dist",
+    "desktop:verify-exe": "pnpm --filter @sanye/sanye_desktop verify:exe",
+    "test:desktop": "pnpm --filter @sanye/sanye_desktop test",
     "dev:client": "node sanye_deploy/start-client-with-pet.mjs",
     "dev:client-only": "pnpm --filter @sanye/sanye_client dev",
     "dev:pet": "pnpm --filter @sanye/sanye_pet dev:pet",
     "dev:admin": "pnpm --filter @sanye/sanye_admin dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "test:admin-auth": "node --test e2e/admin-auth-state.test.mjs",
+    "test:recovery": "node --test sanye_deploy/recovery.test.mjs",
+    "test:sensitive-config": "node --test sanye_deploy/scan-sensitive-config.test.mjs",
+    "test:release": "node --test sanye_deploy/release/release.test.mjs",
+    "security:config-scan": "node sanye_deploy/scan-sensitive-config.mjs --history",
+    "perf:check": "pnpm --filter @sanye/sanye_client build && pnpm --filter @sanye/sanye_admin build && pnpm --filter @sanye/sanye_pet build && node sanye_deploy/check-bundle-size.mjs",
     "docs:check": "node sanye_deploy/check-docs.mjs",
     "test:anime-import": "node --test sanye_deploy/import-anime.test.mjs",
     "import:anime": "node sanye_deploy/import-anime.mjs",
@@ -25,6 +38,12 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron"
-    ]
+    ],
+    "patchedDependencies": {
+      "app-builder-lib@26.15.3": "patches/app-builder-lib@26.15.3.patch"
+    }
+  },
+  "devDependencies": {
+    "minio": "8.0.6"
   }
 }

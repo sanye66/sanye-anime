@@ -21,6 +21,7 @@ export interface ExternalSearchHit {
   sourceUrl: string
   coverUrl?: string
   summary?: string
+  type?: string
 }
 
 export interface SearchParams {
@@ -45,6 +46,15 @@ export const searchApi = {
     return http.get<PageResult<SearchHit>>(`/search${query ? `?${query}` : ''}`, options)
   },
   /** 查询授权外部搜索页候选，点击后可导入观看。 */
-  external: (keyword: string, size = 20, options?: RequestOptions) =>
-    http.get<ExternalSearchHit[]>(`/search/external?keyword=${encodeURIComponent(keyword)}&size=${size}`, options),
+  external: (keyword: string, size = 20, type?: string, options?: RequestOptions) => {
+    const qs = new URLSearchParams({ keyword, size: String(size) })
+    if (type) qs.set('type', type)
+    return http.get<ExternalSearchHit[]>(`/search/external?${qs}`, options)
+  },
+  /** 只读取别名对应的最高相关结果，完整原词结果由 external 随后补齐。 */
+  externalPreferred: (keyword: string, size = 20, type?: string, options?: RequestOptions) => {
+    const qs = new URLSearchParams({ keyword, size: String(size), preferredOnly: 'true' })
+    if (type) qs.set('type', type)
+    return http.get<ExternalSearchHit[]>(`/search/external?${qs}`, options)
+  },
 }

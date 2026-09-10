@@ -1,0 +1,30 @@
+{
+  "name": "@sanye/sanye_desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "sanye_anime local desktop runtime",
+  "author": "sanye_anime",
+  "main": "main.cjs",
+  "scripts": {
+    "prepare:runtime": "node prepare.mjs",
+    "start": "electron .",
+    "test": "node --test runtime.test.cjs packaging.test.cjs",
+    "pack": "electron-builder --win dir",
+    "dist": "node build.cjs",
+    "dist:unsigned": "electron-builder --win nsis",
+    "dist:signed": "node build.cjs",
+    "verify:exe": "node verify-exe.cjs"
+  },
+  "devDependencies": { "electron": "44.0.0", "electron-builder": "26.15.3", "electron-builder-squirrel-windows": "26.15.3" },
+  "build": {
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "appId": "com.sanye.sanye_desktop",
+    "productName": "sanye_anime",
+    "directories": { "output": "dist" },
+    "files": ["main.cjs", "runtime.cjs", "package.json", "assets/icon.ico", "assets/icon.png"],
+    "extraResources": [{ "from": "runtime", "to": "runtime" }],
+    "win": { "target": "nsis", "icon": "assets/icon.ico", "signAndEditExecutable": true },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "deleteAppDataOnUninstall": false, "installerIcon": "assets/icon.ico", "uninstallerIcon": "assets/icon.ico" }
+  }
+}

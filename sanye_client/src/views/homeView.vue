@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import { animeCatalog, compareAnimeCatalogOrder } from '@/data/animeCatalog'
 import { useHomeFeed } from '@/composables/useHomeFeed'
 import type { ShelfCard } from '@/composables/useHomeFeed'
 import { resolveAssetUrl } from '@/api/http'
+import { desktopMode } from '@/desktop'
+import { favoriteApi } from '@/api/favorite'
 
 type HeroSlide = {
   slug: string
@@ -109,6 +111,13 @@ const popularAnime = computed<ShelfCard[]>(() =>
 )
 
 const collectedAnime = ref<string[]>([])
+const collectionError = ref('')
+const collectionPending = ref(false)
+onMounted(async () => {
+  if (!desktopMode) return
+  try { collectedAnime.value = (await favoriteApi.list(1, 50)).items.map(item => String(item.anime.id)) }
+  catch { collectionError.value = '收藏状态加载失败' }
+})
 const remindedEpisode = ref(false)
 const currentHeroIndex = ref(0)
 const heroDragStartX = ref<number | null>(null)
@@ -120,20 +129,26 @@ const currentHeroCover = computed(() => resolveAssetUrl(currentHero.value.cover)
 const heroTrackStyle = computed(() => ({
   transform: `translate3d(calc(-${currentHeroIndex.value * (100 / heroSlides.length)}% + ${heroDragOffset.value}px), 0, 0)`,
 }))
-const router = useRouter()
-const searchKeyword = ref('')
-
-/** 从首页搜索框跳转到仓库筛选页。 */
-function submitSearch() {
-  const keyword = searchKeyword.value.trim()
-  router.push({
-    path: '/anime-repository',
-    query: keyword ? { keyword } : undefined,
-  })
-}
-
 /** 切换首页卡片的本地收藏展示状态。 */
-function toggleCollection(title: string) {
+async function toggleCollection(title: string) {
+  if (desktopMode) {
+    if (collectionPending.value) return
+    const item = [...recentAnime.value, ...popularAnime.value].find(item => item.title === title)
+    if (!item) return
+    collectionPending.value = true
+    collectionError.value = ''
+    try {
+      if (collectedAnime.value.includes(item.slug)) {
+        await favoriteApi.remove(item.slug)
+        collectedAnime.value = collectedAnime.value.filter(id => id !== item.slug)
+      } else {
+        await favoriteApi.add(item.slug)
+        collectedAnime.value = [...collectedAnime.value, item.slug]
+      }
+    } catch { collectionError.value = '收藏操作失败，请重试' }
+    finally { collectionPending.value = false }
+    return
+  }
   collectedAnime.value = collectedAnime.value.includes(title)
     ? collectedAnime.value.filter((item) => item !== title)
     : [...collectedAnime.value, title]
@@ -141,6 +156,10 @@ function toggleCollection(title: string) {
 
 /** 判断首页卡片是否已被本地标记收藏。 */
 function isCollected(title: string) {
+  if (desktopMode) {
+    const item = [...recentAnime.value, ...popularAnime.value].find(item => item.title === title)
+    return !!item && collectedAnime.value.includes(item.slug)
+  }
   return collectedAnime.value.includes(title)
 }
 
@@ -200,13 +219,7 @@ function handleHeroClick(event: MouseEvent) {
 
 <template>
   <div class="page-stack home-page">
-    <form class="home-search" role="search" aria-label="搜索番剧" @submit.prevent="submitSearch">
-      <div class="home-search-field">
-        <span class="home-search-icon" aria-hidden="true">⌕</span>
-        <input v-model="searchKeyword" type="search" placeholder="搜索番剧、类型或故事线索" aria-label="搜索番剧、类型或故事线索" />
-      </div>
-      <button class="home-search-button" type="submit" aria-label="开始搜索" title="开始搜索"><span aria-hidden="true">→</span></button>
-    </form>
+    <p v-if="collectionError" role="alert">{{ collectionError }}</p>
     <section class="hero-panel home-hero" aria-roledescription="轮播图" aria-label="首页精选内容" @pointerdown="handleHeroPointerDown" @pointermove="handleHeroPointerMove" @pointerup="finishHeroDrag" @pointercancel="finishHeroDrag" @pointerleave="finishHeroDrag" @click.capture="handleHeroClick">
       <div class="hero-copy hero-copy-viewport">
         <div class="hero-copy-track" :class="{ 'is-dragging': isHeroDragging }" :style="heroTrackStyle">
@@ -214,14 +227,14 @@ function handleHeroClick(event: MouseEvent) {
             <div class="hero-meta"><span class="eyebrow">{{ slide.eyebrow }}</span><span class="hero-status"><i></i>{{ slide.status }}</span></div>
             <h2>{{ slide.title }}<br /><em>{{ slide.emphasis }}</em></h2>
             <p>{{ slide.description }}</p>
-            <div class="hero-actions"><RouterLink class="primary-button" :to="slide.primaryPath">{{ slide.primaryLabel }}</RouterLink><RouterLink class="secondary-button" :to="slide.secondaryPath">{{ slide.secondaryLabel }}</RouterLink></div>
+            <div class="hero-actions"><RouterLink class="primary-button" :to="slide.primaryPath">{{ slide.primaryLabel }}</RouterLink><RouterLink v-if="!desktopMode || slide.secondaryPath !== '/ai'" class="secondary-button" :to="slide.secondaryPath">{{ slide.secondaryLabel }}</RouterLink></div>
             <div class="hero-facts"><span v-for="fact in slide.facts" :key="fact.label"><strong>{{ fact.value }}</strong><small>{{ fact.label }}</small></span></div>
           </article>
         </div>
       </div>
       <div class="hero-art" aria-label="精选动漫横幅展示区">
         <RouterLink class="hero-art-link" :to="currentHero.primaryPath" :aria-label="`查看 ${currentHero.sceneTitle} 详情`" :title="`查看 ${currentHero.sceneTitle} 详情`">
-          <img :src="currentHeroCover" :alt="`${currentHero.sceneTitle} 动漫横幅`" />
+          <img :src="currentHeroCover" :alt="`${currentHero.sceneTitle} 动漫横幅`" decoding="async" fetchpriority="high" />
         </RouterLink>
         <span class="scene-label">{{ currentHero.sceneLabel }}</span>
         <span class="art-caption">{{ currentHero.sceneTitle }}<br /><small>{{ currentHero.sceneDescription }}</small></span>
@@ -235,7 +248,7 @@ function handleHeroClick(event: MouseEvent) {
       </div>
     </section>
 
-    <section class="ai-feature-strip"><div class="ai-feature-icon">✦</div><div><span class="eyebrow">三叶的 AI 动漫助手</span><h3>把你脑海里的那种感觉，说给我听。</h3><p>“想看一部有夏天、流星和一点点遗憾的故事。”</p></div><RouterLink class="strip-action" to="/ai">开始对话 <span>→</span></RouterLink></section>
+    <section v-if="!desktopMode" class="ai-feature-strip"><div class="ai-feature-icon">✦</div><div><span class="eyebrow">三叶的 AI 动漫助手</span><h3>把你脑海里的那种感觉，说给我听。</h3><p>“想看一部有夏天、流星和一点点遗憾的故事。”</p></div><RouterLink class="strip-action" to="/ai">开始对话 <span>→</span></RouterLink></section>
 
     <section class="home-section anime-shelf-section recent-section"><div class="section-heading"><div><span class="eyebrow">刚刚抵达片库</span><h2>最近更新</h2></div><span class="section-hint">按更新时间排序</span></div><template v-if="feed.loading.value"><div class="feed-skeleton"><span></span><span></span><span></span></div></template><template v-else><div v-if="feed.error.value" class="feed-error"><span>首页接口暂不可用，已展示本地演示数据。</span><button type="button" class="text-button" @click="feed.retry()">重试</button></div><div class="anime-shelf-grid"><article v-for="anime in recentAnime" :key="anime.title" class="anime-cover-card" :class="`cover-${anime.tone}`"><RouterLink class="anime-cover-link" :to="`/anime/${anime.slug}`" :aria-label="`查看 ${anime.title} 详情`"><img :src="anime.cover" :alt="`${anime.title} 动漫封面`" loading="lazy" decoding="async" /><span class="cover-shade"></span><span class="cover-episode">{{ anime.episode }}</span><span class="cover-play" aria-hidden="true">查看</span></RouterLink><div class="anime-cover-info"><div><strong>{{ anime.title }}</strong><span>{{ anime.meta }}</span></div><button class="cover-collect" type="button" :aria-label="isCollected(anime.title) ? `取消收藏 ${anime.title}` : `收藏 ${anime.title}`" :aria-pressed="isCollected(anime.title)" @click="toggleCollection(anime.title)">{{ isCollected(anime.title) ? '已收藏' : '收藏' }}</button></div></article></div></template></section>
 

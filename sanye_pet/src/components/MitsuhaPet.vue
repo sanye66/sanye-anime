@@ -45,11 +45,21 @@ function clearFrameTimer() {
 /** 按当前状态的帧时长循环播放精灵动画。 */
 function scheduleNextFrame() {
   clearFrameTimer()
+  if (document.hidden) return
   const durations = animation.value.durations
   frameTimer = setTimeout(() => {
     frame.value = (frame.value + 1) % durations.length
     scheduleNextFrame()
   }, durations[frame.value] ?? durations[0])
+}
+
+/** 窗口不可见时暂停帧循环，重新显示后从当前帧继续。 */
+function syncAnimationVisibility() {
+  if (document.hidden) {
+    clearFrameTimer()
+  } else {
+    scheduleNextFrame()
+  }
 }
 
 // 状态改变时从第一帧重新播放，避免新状态沿用旧动画进度。
@@ -64,6 +74,7 @@ watch(
 
 // 预加载精灵图并记录加载失败状态，失败时由模板显示 CSS 兜底角色。
 onMounted(() => {
+  document.addEventListener('visibilitychange', syncAnimationVisibility)
   spritePreload = new Image()
   spritePreload.onload = () => {
     spriteStatus.value = 'ready'
@@ -77,6 +88,7 @@ onMounted(() => {
 // 组件卸载时释放定时器和图片回调。
 onBeforeUnmount(() => {
   clearFrameTimer()
+  document.removeEventListener('visibilitychange', syncAnimationVisibility)
   if (spritePreload) {
     spritePreload.onload = null
     spritePreload.onerror = null

@@ -65,6 +65,10 @@ try {
     contentType: 'application/json',
     body: JSON.stringify(pageResponse(scrambledAnime)),
   }))
+  await page.route('**/api/v1/search/external?**', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: [], requestId: 'season-order-e2e' }),
+  }))
 
   await assertOrder(page, '/anime-repository', '.repository-card-title strong', '片库')
   await assertOrder(page, `/search?keyword=${encodeURIComponent('无职转生')}`, '.result-copy strong', '搜索')

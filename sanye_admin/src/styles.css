@@ -317,3 +317,8 @@ html[data-sanye-theme="dark"] .legal-field { color: #c3ccd4; }
   .archive-table-card { overflow-x: auto; }
   .archive-table-card .el-table { min-width: 620px; }
 }
+/* 大型表格离开视口后暂停渲染，翻页和滚动时仍保留稳定占位。 */
+.admin-table {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
+}

@@ -6,6 +6,7 @@ import { favoriteApi } from '@/api/favorite'
 import { isAbortError, resolveAssetUrl } from '@/api/http'
 import type { AnimeCard } from '@/api/types'
 import { animeCatalog, animeCatalogMap, compareAnimeCatalogOrder } from '@/data/animeCatalog'
+import { desktopMode } from '@/desktop'
 
 type YearFilter = '全部年份' | '2026' | '2025' | '2024' | '2023' | '2022及更早'
 
@@ -87,11 +88,19 @@ async function load(): Promise<void> {
       size,
     }, { signal: controller.signal })
     items.value = result.items.map(toRepoCard)
-    total.value = items.value.length
-    totalPages.value = 1
+    total.value = desktopMode ? result.total : items.value.length
+    totalPages.value = desktopMode ? result.totalPages : 1
     fallback.value = false
   } catch (cause) {
     if (isAbortError(cause)) return
+    if (desktopMode) {
+      error.value = true
+      fallback.value = false
+      items.value = []
+      total.value = 0
+      totalPages.value = 0
+      return
+    }
     fallback.value = true
     error.value = true
     items.value = filteredLocal.value.map((anime) => ({

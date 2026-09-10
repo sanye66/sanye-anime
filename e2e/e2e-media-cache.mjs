@@ -15,6 +15,12 @@ let failEpisodes = false
 let episodeRequests = 0
 
 try {
+  await page.route('**/api/v1/users/me/history/127', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: null }) })
+  })
+  await page.route('**/api/v1/users/me/favorites/127/status', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: { favorite: false } }) })
+  })
   await page.route('**/api/v1/anime/127/episodes', async (route) => {
     episodeRequests += 1
     if (failEpisodes) {
@@ -76,6 +82,24 @@ try {
   record('剧集接口首次读取', episodeRequests === 1, `requests=${episodeRequests}`)
 
   await page.locator('.episode-button').nth(1).click()
+  await page.locator('.anime-player-frame video').waitFor({ timeout: 15000 })
+  const liveProgress = await page.evaluate(async () => {
+    const video = document.querySelector('.anime-player-frame video')
+    if (!video) return null
+    Object.defineProperty(video, 'duration', { configurable: true, value: 120 })
+    Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: 12 })
+    video.dispatchEvent(new Event('timeupdate'))
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+    const first = localStorage.getItem('sanye:player:progress:127:402')
+    video.currentTime = 18
+    video.dispatchEvent(new Event('pause'))
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+    const paused = localStorage.getItem('sanye:player:progress:127:402')
+    return {
+      timeupdate: first ? JSON.parse(first).currentTime : 0,
+      paused: paused ? JSON.parse(paused).currentTime : 0,
+    }
+  })
   const selectedCache = await page.evaluate(() => localStorage.getItem('sanye:player:selected:127'))
   const episodeCacheLength = await page.evaluate(() => {
     const raw = localStorage.getItem('sanye:player:episodes:127')
@@ -83,6 +107,8 @@ try {
   })
   record('播放器选集写入缓存', selectedCache === '402' && episodeCacheLength === 2,
     `selected=${selectedCache}, length=${episodeCacheLength}`)
+  record('播放进度由媒体事件实时写入', liveProgress?.timeupdate === 12 && liveProgress?.paused === 18,
+    JSON.stringify(liveProgress))
   record('下一集 HLS 清单预取', hlsRequests.includes('/two.m3u8'), [...new Set(hlsRequests)].join(', ') || '未请求')
 
   failEpisodes = true

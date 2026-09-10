@@ -300,13 +300,6 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
 
 /* 首页：用大画面、半透明信息带与时间线取代单调的三张卡片排列。 */
 .home-page { width: min(100%, 1600px); gap: 28px; }
-.home-search { display: flex; align-items: center; gap: 10px; max-width: 720px; min-height: 54px; padding: 7px; border: 1px solid rgba(156, 201, 216, .34); border-radius: 5px 17px 5px 17px; background: rgba(9, 24, 48, .72); box-shadow: 0 12px 28px rgba(5, 14, 26, .14); backdrop-filter: blur(12px); }
-.home-search-field { display: flex; align-items: center; flex: 1 1 auto; gap: 10px; min-width: 0; min-height: 38px; padding: 0 13px; border: 1px solid rgba(156, 201, 216, .24); border-radius: 3px 10px 3px 10px; background: rgba(4, 14, 30, .56); }
-.home-search-icon { color: var(--sanye-sun); font-size: 20px; line-height: 1; }
-.home-search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--sanye-ink); font-size: 12px; }
-.home-search-field input::placeholder { color: #8294a6; }
-.home-search-button { display: grid; place-items: center; flex: 0 0 auto; width: 40px; height: 38px; border: 1px solid rgba(243, 200, 107, .54); border-radius: 3px 10px 3px 10px; background: rgba(231, 125, 101, .22); color: var(--sanye-sun); cursor: pointer; font-size: 19px; line-height: 1; }
-.home-search-button:hover, .home-search-button:focus-visible { border-color: var(--sanye-sun); background: rgba(231, 125, 101, .38); color: #fff8e8; outline: none; }
 .home-hero { grid-template-columns: minmax(0, .95fr) minmax(420px, 1.05fr); min-height: 460px; border-radius: 5px 24px 5px 24px; background: rgba(14, 34, 66, .66); box-shadow: 0 24px 55px rgba(4, 10, 18, .24); }
 .home-hero > div:first-child { padding: 38px 42px 30px; }.hero-copy { display: flex; flex-direction: column; justify-content: center; }.hero-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.hero-status { color: rgba(234, 242, 196, .78); font-size: 10px; white-space: nowrap; }.hero-status i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--sanye-sun); box-shadow: 0 0 0 4px rgba(243, 200, 107, .1); }
 .home-hero h2 { max-width: 540px; margin: 29px 0 17px; font-size: clamp(38px, 4vw, 58px); line-height: 1.06; }.home-hero h2 em { color: #f0a080; font-family: Georgia, "Times New Roman", serif; font-weight: 400; }.home-hero p { max-width: 460px; font-size: 13px; line-height: 1.8; }.home-hero .hero-actions { margin-top: 25px; }
@@ -468,6 +461,113 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
   backdrop-filter: blur(8px);
   color: #ffe4d7;
   text-align: center;
+}
+.detail-loading-state {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px 18px;
+  min-height: 150px;
+  padding: 26px 6px;
+  border-block: 1px solid rgba(156, 201, 216, .18);
+}
+.detail-loading-face {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 42px;
+  border: 1px solid rgba(243, 200, 107, .5);
+  border-radius: 46% 54% 43% 57%;
+  background: rgba(12, 29, 55, .78);
+  box-shadow: 0 0 24px rgba(243, 200, 107, .1);
+  animation: detail-face-float 1.7s ease-in-out infinite;
+}
+.detail-loading-face > i {
+  position: absolute;
+  top: 14px;
+  width: 5px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sanye-sun);
+  animation: detail-face-blink 2.4s ease-in-out infinite;
+}
+.detail-loading-face > i:first-child { left: 14px; }
+.detail-loading-face > i:nth-child(2) { right: 14px; }
+.detail-loading-face > b {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 14px;
+  height: 7px;
+  border-bottom: 2px solid var(--sanye-coral);
+  border-radius: 0 0 12px 12px;
+  transform: translateX(-50%);
+}
+.detail-loading-face.compact { width: 48px; height: 37px; }
+.detail-loading-face.compact > i { top: 12px; }
+.detail-loading-face.compact > i:first-child { left: 12px; }
+.detail-loading-face.compact > i:nth-child(2) { right: 12px; }
+.detail-loading-face.compact > b { bottom: 7px; }
+.detail-loading-copy { display: grid; gap: 5px; min-width: 0; }
+.detail-loading-copy strong, .player-loading-overlay strong { color: var(--sanye-ink); font-size: 14px; }
+.detail-loading-copy small, .player-loading-overlay small { color: var(--sanye-muted); font-size: 11px; }
+.detail-loading-progress {
+  position: relative;
+  display: block;
+  grid-column: 2;
+  overflow: hidden;
+  width: min(100%, 520px);
+  height: 4px;
+  background: rgba(156, 201, 216, .15);
+}
+.detail-loading-progress > i {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 34%;
+  background: var(--sanye-coral);
+  box-shadow: 0 0 12px rgba(231, 125, 101, .5);
+  animation: detail-progress-travel 1.25s ease-in-out infinite;
+}
+.player-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 22px;
+  background: rgba(5, 12, 24, .9);
+  text-align: center;
+}
+.detail-loading-progress.compact { grid-column: auto; width: min(72%, 320px); margin-top: 6px; }
+.player-overlay { z-index: 3; }
+@keyframes detail-face-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-4px) rotate(1deg); }
+}
+@keyframes detail-face-blink {
+  0%, 42%, 48%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(.12); }
+}
+@keyframes detail-progress-travel {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(340%); }
+}
+html[data-sanye-theme="light"] .detail-loading-face { background: rgba(255, 251, 242, .9); }
+html[data-sanye-theme="light"] .detail-loading-state { border-color: rgba(112, 128, 137, .2); }
+@media (max-width: 560px) {
+  .detail-loading-state { grid-template-columns: 50px minmax(0, 1fr); min-height: 132px; padding-inline: 2px; }
+  .detail-loading-face { width: 48px; height: 38px; }
+  .detail-loading-face > i { top: 12px; }
+  .detail-loading-face > i:first-child { left: 12px; }
+  .detail-loading-face > i:nth-child(2) { right: 12px; }
+  .detail-loading-face > b { bottom: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-loading-face, .detail-loading-face > i { animation: none; }
+  .detail-loading-progress > i { width: 64%; animation-duration: 2.4s; }
 }
 .anime-episode-list {
   display: flex;
@@ -631,6 +731,12 @@ button, a, .settings-entry { transition: none !important; }
 button:hover, a:hover, .theme-toggle:hover, .play-button:hover, .settings-entry:hover,
 .strip-action:hover span { transform: none !important; }
 *, *::before, *::after { animation: none !important; transition: none !important; }
+
+/* 播放进度属于功能反馈：在媒体 timeupdate 之间保持连续，不受全局静态视觉规则影响。 */
+.anime-player-frame .art-video-player .art-progress-played,
+.anime-player-frame .art-video-player .art-progress-loaded {
+  transition: width 120ms linear !important;
+}
 
 /* 首页首屏层级：文字区使用稳定的深色阅读底，背景光带不再穿过标题。 */
 .home-hero { position: relative; isolation: isolate; overflow: hidden; }
@@ -954,12 +1060,6 @@ html[data-sanye-theme="light"] .repository-heading h2,
 html[data-sanye-theme="light"] .repository-card-title strong,
 html[data-sanye-theme="light"] .repository-empty h3 { color: #263845; }
 html[data-sanye-theme="light"] .repository-select select { border-color: #cbbda9; background: rgba(255, 253, 247, .8); color: #263845; }
-html[data-sanye-theme="light"] .home-search { border-color: #cbbda9; background: rgba(255, 250, 241, .78); }
-html[data-sanye-theme="light"] .home-search-field { border-color: #d0c9bd; background: rgba(255, 253, 247, .86); }
-html[data-sanye-theme="light"] .home-search-field input { color: #263845; }
-html[data-sanye-theme="light"] .home-search-field input::placeholder { color: #7b8583; }
-html[data-sanye-theme="light"] .home-search-button { border-color: #d39b76; background: rgba(231, 125, 101, .2); color: #a9464e; }
-
 @media (max-width: 900px) {
   .repository-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .repository-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -967,7 +1067,6 @@ html[data-sanye-theme="light"] .home-search-button { border-color: #d39b76; back
 
 @media (max-width: 560px) {
   .repository-heading { align-items: flex-start; }
-  .home-search { max-width: none; }
   .repository-toolbar { grid-template-columns: 1fr; }
   .repository-grid { grid-template-columns: 1fr; }
   .repository-result-line { align-items: flex-start; flex-direction: column; gap: 5px; }
@@ -1090,7 +1189,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty {
@@ -1103,7 +1201,6 @@ html[data-sanye-theme="dark"] .home-hero > .hero-copy,
 html[data-sanye-theme="dark"] .official-home-page .official-home-hero > div:first-child,
 html[data-sanye-theme="dark"] .official-download-page .download-hero-copy { background: linear-gradient(135deg, rgba(3, 14, 36, .98), rgba(12, 31, 65, .96)); }
 
-html[data-sanye-theme="dark"] .home-search-field,
 html[data-sanye-theme="dark"] .repository-select select,
 html[data-sanye-theme="dark"] .chat-input input,
 html[data-sanye-theme="dark"] .form-field input,
@@ -1173,7 +1270,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty {
@@ -1186,7 +1282,6 @@ html[data-sanye-theme="light"] .home-hero > .hero-copy,
 html[data-sanye-theme="light"] .official-home-page .official-home-hero > div:first-child,
 html[data-sanye-theme="light"] .official-download-page .download-hero-copy { background: linear-gradient(135deg, rgba(255, 250, 241, .98), rgba(242, 245, 238, .96)); }
 
-html[data-sanye-theme="light"] .home-search-field,
 html[data-sanye-theme="light"] .repository-select select,
 html[data-sanye-theme="light"] .chat-input input,
 html[data-sanye-theme="light"] .form-field input,
@@ -1225,7 +1320,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty { background-color: rgba(7, 22, 48, .72); }
@@ -1240,7 +1334,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty { background-color: rgba(255, 251, 243, .78); }
@@ -1536,6 +1629,10 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
 .result-count { margin-left: auto; color: #71818d; font-size: 10px; }
 .search-results { margin-top: 6px; }
 .sort-label { color: #81909c; font-size: 10px; }
+.search-source-block { margin-top: 18px; }
+.search-source-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.search-source-heading h3 { font-size: 13px; }
+.search-source-heading span { color: #71818d; font-size: 10px; }
 .result-list { margin-top: 14px; border-top: 1px solid #293945; }
 .result-row {
   display: grid;
@@ -1589,6 +1686,7 @@ html[data-sanye-theme="light"] .search-panel { border-color: #d4c9ba; background
 html[data-sanye-theme="light"] .large-search { border-color: #c8b99f; background: rgba(255, 255, 255, .8); color: #a9464e; }
 html[data-sanye-theme="light"] .large-search input { color: #263845; }
 html[data-sanye-theme="light"] .result-list, html[data-sanye-theme="light"] .result-row { border-color: #e0d8cb; }
+html[data-sanye-theme="light"] .search-source-heading h3 { color: #263845; }
 html[data-sanye-theme="light"] .result-copy strong, html[data-sanye-theme="light"] .empty-state h3 { color: #263845; }
 html[data-sanye-theme="light"] .tag-list em { background: #efe8da; color: #6a7b82; }
 
@@ -2124,7 +2222,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty,
@@ -2157,7 +2254,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty,
@@ -2195,7 +2291,6 @@ html[data-sanye-theme="light"] .official-download-page .download-hero-copy {
   background: linear-gradient(135deg, rgba(250, 253, 251, .98), rgba(238, 246, 247, .96));
 }
 
-html[data-sanye-theme="dark"] .home-search-field,
 html[data-sanye-theme="dark"] .repository-select select,
 html[data-sanye-theme="dark"] .chat-input input,
 html[data-sanye-theme="dark"] .form-field input,
@@ -2206,7 +2301,6 @@ html[data-sanye-theme="dark"] .large-search {
   color: #f3f7fa;
 }
 
-html[data-sanye-theme="light"] .home-search-field,
 html[data-sanye-theme="light"] .repository-select select,
 html[data-sanye-theme="light"] .chat-input input,
 html[data-sanye-theme="light"] .form-field input,
@@ -2436,10 +2530,11 @@ html[data-sanye-theme="light"] .episode-button.active {
   .search-panel { padding: 15px; }
   .filter-row { overflow-x: auto; padding-bottom: 2px; }
   .filter-chip { flex: 0 0 auto; }
-  .result-row { grid-template-columns: 30px minmax(0, 1fr) 18px; gap: 10px; }
-  .result-row .search-cover, .result-score { display: none; }
+  .result-row { grid-template-columns: 24px 58px minmax(0, 1fr) 14px; gap: 10px; }
+  .result-row .search-cover { display: block; width: 56px; height: 78px; }
+  .result-score { display: none; }
   .result-copy p { margin-top: 7px; }
-  .external-result-actions { grid-column: 2 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .external-result-actions { grid-column: 3 / -1; justify-content: flex-start; flex-wrap: wrap; }
 
   .official-header { flex-wrap: wrap; gap: 12px; padding: 16px 0; }
   .official-nav { order: 3; width: 100%; justify-content: space-between; gap: 12px; overflow-x: auto; }
@@ -2456,3 +2551,18 @@ html[data-sanye-theme="light"] .episode-button.active {
   .official-legal-copy { grid-column: 1; padding-top: 26px; }
   .official-footer { align-items: flex-start; flex-direction: column; padding: 20px 0; }
 }
+/* 跳过离屏长列表的布局与绘制，同时保留稳定的滚动占位尺寸。 */
+.anime-cover-card,
+.repository-card,
+.result-row,
+.mine-shelf-card,
+.detail-similar-card {
+  content-visibility: auto;
+}
+.anime-cover-card,
+.repository-card {
+  contain-intrinsic-size: auto 360px;
+}
+.result-row { contain-intrinsic-size: auto 180px; }
+.mine-shelf-card,
+.detail-similar-card { contain-intrinsic-size: auto 240px; }

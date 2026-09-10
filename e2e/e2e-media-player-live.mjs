@@ -38,25 +38,41 @@ try {
       const video = document.querySelector('video')
       if (!video) return { started: false, error: '未找到 video 元素' }
       try {
-        await video.play()
-        // 第三方 HLS 首段可能慢于 1.5 秒，限定 10 秒轮询进度，避免把 CDN 首段延迟误判为播放失败。
-        const deadline = Date.now() + 10000
-        while (video.currentTime <= 0 && Date.now() < deadline) {
+        await Promise.race([
+          video.play(),
+          new Promise((_, reject) => window.setTimeout(() => reject(new Error('播放启动超时')), 12000)),
+        ])
+        const startedAt = video.currentTime
+        const played = document.querySelector('.art-progress-played')
+        const initialProgressStyle = played?.getAttribute('style') ?? ''
+        // 必须持续推进至少 2 秒，并同步改变可见进度条；短暂启动几十毫秒不再算播放成功。
+        const deadline = Date.now() + 12000
+        while (video.currentTime - startedAt < 2 && Date.now() < deadline) {
           await new Promise((resolve) => window.setTimeout(resolve, 250))
         }
-        return { started: video.currentTime > 0, error: '' }
+        const progressStyle = played?.getAttribute('style') ?? ''
+        return {
+          started: video.currentTime - startedAt >= 2,
+          elapsed: video.currentTime - startedAt,
+          progressUpdated: Boolean(progressStyle && progressStyle !== initialProgressStyle),
+          progressStyle,
+          error: '',
+        }
       } catch (error) {
-        return { started: false, error: String(error) }
+        return { started: false, elapsed: 0, progressUpdated: false, progressStyle: '', error: String(error) }
       }
     })
 
     const state = await page.evaluate(() => {
       const video = document.querySelector('video')
       const episodes = document.querySelectorAll('.episode-button').length
+      const episodeButtons = document.querySelectorAll('.anime-episode-list .episode-button').length
+      const sourceButtons = Array.from(document.querySelectorAll('.anime-playback-sources .source-button'))
+        .map((button) => button.textContent?.trim() ?? '')
       return {
         hasVideo: Boolean(video),
         hasArtPlayer: Boolean(document.querySelector('.anime-player-frame .art-video-player')),
-        videoControls: Boolean(video?.playsInline && video?.preload === 'metadata'),
+        videoControls: Boolean(video?.playsInline && video?.preload === 'auto'),
         artControls: Boolean(document.querySelector('.anime-player-frame .art-controls')),
         standardControls: [
           '.art-control-setting',
@@ -69,9 +85,12 @@ try {
         qualityOptions: document.querySelectorAll('.anime-player-frame .art-control-quality .art-selector-item').length,
         hasIframe: Boolean(document.querySelector('.anime-player-frame iframe')),
         episodes,
+        episodeButtons,
+        sourceButtons,
         readyState: video?.readyState ?? -1,
         mediaError: video?.error?.code ?? 0,
         playerError: document.querySelector('.player-overlay')?.textContent?.trim() ?? '',
+        progressTransition: getComputedStyle(document.querySelector('.art-progress-played')).transitionDuration,
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       }
     })
@@ -85,8 +104,16 @@ try {
     record(`真实播放器无错误 ${animeId}`, playResult.started && !state.mediaError && !state.playerError,
       playResult.error || state.playerError || failedRequests[0]
         || `mediaError=${state.mediaError}, currentTime=${await page.locator('video').evaluate((video) => video.currentTime)}`)
+    record(`真实播放进度持续更新 ${animeId}`, playResult.started && playResult.progressUpdated
+      && state.progressTransition !== '0s',
+    `elapsed=${playResult.elapsed.toFixed(2)}, style=${playResult.progressStyle}, transition=${state.progressTransition}`)
     record(`真实播放器移动端布局 ${animeId}`, !state.overflow,
       `scrollWidth=${await page.evaluate(() => document.documentElement.scrollWidth)}`)
+    if (animeId === 139) {
+      record('电影语言切换不重复显示选集', state.episodeButtons === 0
+        && state.sourceButtons.join(',') === '日语原声,国语',
+      `sources=${state.sourceButtons.join(',')}, episodeButtons=${state.episodeButtons}`)
+    }
   }
 
   // 片库回归验证无职转生每个季度都是独立卡片，并且每张卡片使用独立封面。
@@ -112,11 +139,15 @@ try {
   // 搜索页也必须去重，否则用户可能从搜索结果进入无剧集的历史重复作品。
   await page.goto(`${BASE}/search?keyword=${encodeURIComponent('无职转生')}`, { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.locator('.result-list').waitFor({ timeout: 15000 })
-  const searchState = await page.evaluate(() => ({
-    count: document.querySelectorAll('.result-row').length,
-    links: [...document.querySelectorAll('.result-row')].map((item) => item.getAttribute('href')),
-    titles: [...document.querySelectorAll('.result-row')].map((item) => item.querySelector('.result-copy strong')?.textContent?.trim()),
-  }))
+  const searchState = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.result-row')]
+      .filter((item) => item.getAttribute('href')?.startsWith('/anime/'))
+    return {
+      count: rows.length,
+      links: rows.map((item) => item.getAttribute('href')),
+      titles: rows.map((item) => item.querySelector('.result-copy strong')?.textContent?.trim()),
+    }
+  })
   record('无职转生搜索结果独立展示', searchState.count === 5, `${searchState.count} 个独立季度结果`)
   record('搜索结果指向有剧集的作品', searchState.links.join(',') === '/anime/133,/anime/136,/anime/135,/anime/128,/anime/137',
     searchState.links.join(','))

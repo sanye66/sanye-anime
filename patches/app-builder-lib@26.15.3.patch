@@ -1,0 +1,12 @@
+diff --git a/out/targets/nsis/NsisTarget.js b/out/targets/nsis/NsisTarget.js
+--- a/out/targets/nsis/NsisTarget.js
++++ b/out/targets/nsis/NsisTarget.js
+@@ -350,6 +350,8 @@ class NsisTarget extends core_1.Target {
+         defines.BUILD_UNINSTALLER = null;
+         defines.UNINSTALLER_OUT_FILE = isWin ? uninstallerPath : path.win32.join("Z:", uninstallerPath);
+         await this.executeMakensis(defines, commands, sharedHeader + (await this.computeFinalScript(script, false, archs)));
++        // Windows application control also checks the temporary uninstaller generator.
++        await packager.signIf(installerPath);
+         // http://forums.winamp.com/showthread.php?p=3078545
+         // TODO: remove workaround when wine is fully upgraded to 11
+         if ((0, macosVersion_1.isMacOsCatalina)()) {

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import { getRefreshToken } from '@/auth/session'
 import { prefetchRoute } from '@/router'
+import { desktopMode } from '@/desktop'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,7 +24,7 @@ const navigation = [
   { label: 'AI 动漫助手', path: '/ai', icon: '✦' },
   { label: '一周排期', path: '/schedule', icon: '◷' },
   { label: '我的', path: '/mine', icon: '○' },
-]
+].filter((item) => !desktopMode || item.path !== '/ai')
 
 const theme = ref<'dark' | 'light'>(window.localStorage.getItem('sanyeThemeMode') === 'light' ? 'light' : 'dark')
 const collapsed = ref(false)
@@ -179,7 +180,7 @@ onUnmounted(() => {
             </button>
             <button class="logout-button" type="button" title="退出登录" @click="void logout()">退出</button>
           </template>
-          <button v-else class="profile-button" type="button" @click="auth.loginRedirect()">登录</button>
+          <button v-else-if="!desktopMode" class="profile-button" type="button" @click="auth.loginRedirect()">登录</button>
         </div>
       </header>
       <RouterView v-slot="{ Component }">
