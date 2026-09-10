@@ -71,7 +71,7 @@
 ## 开发规则
 
 - 使用根目录 `pnpm-workspace.yaml` 管理 `sanye_client` 和 `sanye_admin` 前端依赖。
-- 使用 Node.js 22 LTS 和 pnpm 10.15.0 作为项目基线。
+- 使用当前本机工具链作为项目基线：Node.js 26.5.0（非 LTS）、pnpm 10.15.0、Java 21.0.12 和 Maven 3.9.16。
 - 前端变更进入更高环境前，执行 `pnpm typecheck` 和 `pnpm build`。
 - 不要向仓库加入真实凭证、供应商密钥或生产数据。
 - 文档新增或实质修改必须遵守 [文档变更规则](docs/document-change-rules.md)：更新唯一事实源、版本、状态、更新时间和更新记录，登记 [文档评审记录](docs/document-review.md)，并运行 `pnpm docs:check`。

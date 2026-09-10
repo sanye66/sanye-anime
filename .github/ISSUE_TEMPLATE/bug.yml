@@ -1,0 +1,35 @@
+name: 问题反馈
+description: 提交可复现的功能或运行问题
+title: "[问题] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 分支或提交
+      description: 填写出现问题的分支、提交或构建版本。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、浏览器、运行方式与涉及的模块，请勿填写凭据。
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏日志或截图
+      description: 删除 Token、密码、个人数据和真实供应商密钥。

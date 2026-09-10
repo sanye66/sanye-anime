@@ -2,18 +2,24 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.7 |
-| 文档状态 | Baseline，项目初始化时执行兼容性验证 |
+| 文档版本 | v0.9 |
+| 文档状态 | 基线（按当前本机工具链执行兼容性验证） |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
-| 更新时间 | 2026-08-26 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+本次按当前工具链重新执行前端与双后端基础回归，结果见[当前审计](./current-status-audit.md)。工作区包含未提交变更，HEAD 不是全部被测源码的版本标识；候选发布须另外固定干净提交、锁文件、镜像摘要与配置版本。
+
+更新记录：2026-09-10，v0.9，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 版本选择结论
 
 本项目采用以下兼容基线：
 
 ```text
-Java 21 LTS
+Java 21.0.12 LTS
   -> Spring Boot 3.5.x
   -> Spring Cloud 2025.0.x
   -> Spring Cloud Alibaba 2025.0.0.0
@@ -35,8 +41,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 
 | 技术 | 版本选择 | 状态 | 版本规则 |
 | --- | --- | --- | --- |
-| JDK | 21 LTS | baseline | 只接受 Java 21，统一时区和编码 |
-| Maven | 3.9.9 | pinned | 构建环境统一，禁止开发机自行升级 |
+| JDK | 21.0.12 LTS | baseline | Java 21 编译目标，当前本机 Microsoft JDK 21.0.12；统一时区和编码 |
+| Maven | 3.9.16 | baseline | 与当前本机构建工具保持一致 |
 | Spring Boot | 3.5.16 | managed | 保持 Boot 3.5 兼容线，安全补丁升级由两套父 POM 统一管理 |
 | Spring Cloud | 2025.0.3 | managed | 保持 2025.0 兼容线，由 BOM 统一管理 |
 | Spring Cloud Alibaba | 2025.0.0.0 | baseline | 所有微服务使用同一版本 |
@@ -59,7 +65,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 
 - 所有 Spring 依赖通过 Spring Cloud Alibaba BOM、Spring Cloud BOM 和 Spring Boot BOM 管理。
 - 业务模块的 `pom.xml` 不允许随意覆盖 BOM 中的版本。
-- Java 编译目标、测试运行时和 Docker 运行时都使用 Java 21。
+- Java 编译目标、测试运行时和 Docker 运行时统一使用 Java 21；本机补丁版本为 21.0.12，CI 与容器的实际补丁版本必须随验证记录登记。
+- 2026-09-09 按用户确认切换本机工具链；历史 Java 17 构建记录保留原版本。本轮 Java 21 干净构建与测试结果以 [开发任务清单](./development-tasks.md) 为准。
 - 第一个服务启动前必须完成依赖树检查，确认不存在同一组件多个主版本。
 - 生产补丁升级必须先在 `dev` 和 `test` 环境验证，再进入 `release`。
 
@@ -149,22 +156,22 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Prometheus | 3.x（待定） | pinned | 指标采集，镜像锁定后登记 |
 | Grafana | 11.x（待定） | pinned | 指标看板与告警，镜像锁定后登记 |
 | RuoYi-Vue | 3.9.x | review | 管理平台独立锁版本 |
-| RuoYi 前端 Node.js | 22 LTS | pinned | 管理平台构建环境 |
-| Node.js | 22 LTS | pinned | Vue 客户端和 RuoYi 管理平台统一运行时 |
+| RuoYi 前端 Node.js | 26.5.0（非 LTS） | pinned | 与当前本机管理平台构建环境一致 |
+| Node.js | 26.5.0（非 LTS） | pinned | Vue 客户端和 RuoYi 管理平台统一运行时 |
 | pnpm | 10.15.0 | pinned | 前端依赖安装和锁文件统一 |
 | Vue | 3.5.13 | pinned/baseline | 三个前端工程统一版本 |
 | TypeScript | 5.7.3 | pinned/baseline | 三个前端工程统一类型系统 |
 | Vite | 6.4.3 | pinned/baseline | 三个前端工程统一构建工具 |
 | Element Plus | 2.14.5 | pinned/baseline | `sanye_admin` 管理前端组件库 |
 | Electron | 44.0.0 | pinned/review | `sanye_pet` 桌宠壳层；构建已验证，Windows 系统兼容与安装发布待环境 |
-| Playwright | 1.62.1 | pinned/baseline | E2E 测试工具，Node 22 环境 |
+| Playwright | 1.62.1 | pinned/baseline | E2E 测试工具，Node.js 26.5.0 环境 |
 
 ### 5.1 PC 客户端形态
 
 `sanye_client` 保持 PC Web 形态：
 
 ```text
-Vue 3.5.13 + TypeScript 5.7.3 + Vite 6.4.3 + Node.js 22 LTS
+Vue 3.5.13 + TypeScript 5.7.3 + Vite 6.4.3 + Node.js 26.5.0（非 LTS）
 ```
 
 `sanye_pet` 是独立 Electron 桌宠，不改变 `sanye_client` 的 PC Web 产品形态。Electron 44.0.0 已通过类型检查和生产构建；多屏、缩放、锁屏唤醒、安装签名、升级和回滚仍按待环境处理。
@@ -223,7 +230,7 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 
 - [x] `sanye_admin_server` 已建立独立 Maven 根工程和 6 个功能模块。
 - [x] Java 包名统一为 `com.sanye.admin`，启动类为 `SanyeAdminServerApplication`。
-- [x] 使用 JDK 21 执行 `mvn -f sanye_admin_server/pom.xml test`，管理后端编译与权限契约测试通过。
+- [x] 历史证据：使用 JDK 17 执行 `mvn -f sanye_admin_server/pom.xml test`，管理后端编译与权限契约测试通过；不替代本轮 Java 21 验证。
 - [x] PostgreSQL 初始化脚本、Quartz 初始化脚本和环境变量配置已建立。
 - [x] PostgreSQL、Redis、本地 CAS Mock、真实管理登录和权限链路已完成本地联调。
 - [x] `sanye_admin` 前端主要 P0 页面已绑定真实管理接口。
@@ -282,3 +289,4 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 | 2026-08-26 | v0.5 | 固定 Vite、Element Plus、Electron 和 Playwright 当前安全版本，明确 PC Web 与独立桌宠边界 | 三端 `package.json`、`pnpm-lock.yaml`、`pnpm typecheck`、`pnpm build`、`pnpm audit --audit-level high` |
 | 2026-08-26 | v0.6 | 将两套后端统一升级到 Spring Boot 3.5.16，并固定 Jackson 2.21.5、PostgreSQL JDBC 42.7.12 安全补丁 | Maven 依赖树、Trivy HIGH/CRITICAL 扫描、两套后端测试 |
 | 2026-08-26 | v0.7 | 将 Spring Cloud 升级到 2025.0.3，并统一固定 Netty、HttpCore 5、Commons FileUpload、Bouncy Castle 和 Apache POI/Commons Compress 的安全版本 | Maven 依赖树、Trivy HIGH/CRITICAL 扫描、两套后端测试 |
+| 2026-09-09 | v0.8 | 按当前本机统一 Java 21.0.12、Node.js 26.5.0（非 LTS）、pnpm 10.15.0 和 Maven 3.9.16；区分历史验证与本轮验证 | 用户确认、本机工具版本、[开发任务清单](./development-tasks.md) |

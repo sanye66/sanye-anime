@@ -2,15 +2,24 @@
 
 | 项目 | 内容 |
 | --- | --- |
+| 文档版本 | v0.2 |
+| 文档状态 | 基线 |
+| 关联文档 | [版本基线](./version-baseline.md)、[开发任务清单](./development-tasks.md) |
 | 适用范围 | `sanye_admin_server` 管理平台后端 |
 | 当前状态 | 已完成模块接入、构建和本地运行时联调；正式环境验收待环境 |
-| 更新时间 | 2026-08-12 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+当前管理后端 23 项测试通过，前端已接入真实接口并完成受控 XXL-JOB 整合；历史 Java 17 证据不代表当前工具链。本次未启动管理服务作整套登录/运营验收，见[当前审计](./current-status-audit.md)。
+
+更新记录：2026-09-10，v0.2，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 接入边界
 
 管理平台后端独立放置在 `sanye_admin_server/`，业务后端继续放置在 `sanye_server/`。两者不共用启动类，不把管理权限代码混入业务后端。
 
-管理平台前端位于 `sanye_admin/`。当前前端仍是 Vue 3 + Element Plus 页面原型，后续再绑定本管理后端的登录、菜单、用户、内容和反馈接口。
+管理平台前端位于 `sanye_admin/`。当前 Vue 3 + Element Plus 前端已绑定管理后端登录、菜单、用户、内容、反馈、Quartz 与 XXL-JOB 接口；目标环境完整运营验收仍待完成。
 
 ## 2. 已接入模块
 
@@ -55,7 +64,7 @@ Java 包名统一为 `com.sanye.admin`，启动类为 `com.sanye.admin.SanyeAdmi
 
 ## 5. 构建验证
 
-在管理后端目录执行：
+当前工具链基线为 Java 21.0.12、Maven 3.9.16。在管理后端目录执行：
 
 ```powershell
 $env:JAVA_HOME='C:\Users\10121\.jdks\microsoft-jdk-21.0.12'
@@ -63,9 +72,9 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 mvn clean package -DskipTests=true
 ```
 
-2026-08-12 已验证结果：
+2026-08-12 历史验证结果（不代表本轮 Java 21 验证通过，本轮结果见 [开发任务清单](./development-tasks.md)）：
 
-- Java 21 可用。
+- Java 17 可用。
 - 7 个 Maven 模块全部构建成功。
 - 管理应用已生成可执行 Spring Boot JAR。
 - Mapper XML 静态解析通过。
@@ -88,5 +97,11 @@ mvn clean package -DskipTests=true
 2. 执行两个 PostgreSQL 初始化脚本并校验表、种子用户和 identity 序列。
 3. 启动 `sanye_admin_server`，完成管理员登录和权限接口验收。
 4. 将 `sanye_admin` 前端请求地址绑定到管理后端。
+
+## 更新记录
+
+| 日期 | 版本 | 变更 | 依据 |
+| --- | --- | --- | --- |
+| 2026-09-09 | v0.1 | 统一当前本机 Java/Maven 基线与构建命令，保留 Java 17 历史验证记录 | 用户确认、[版本基线](./version-baseline.md) |
 5. 补充动漫内容、AI 反馈和用户反馈的管理业务接口。
 6. 再接入 Docker Compose、CI 和发布回滚流程。

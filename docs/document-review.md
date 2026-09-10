@@ -2,13 +2,219 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v5.3 |
-| 文档状态 | 复查完成：CI Action、跨时区测试、后端高危依赖与扫描稳定性已修正，公开导入降级策略保持不变 |
+| 文档版本 | v5.22 |
+| 文档状态 | 基线 |
+| 关联文档 | [开发任务清单](./development-tasks.md)、[开发待办事项](./development-todo.md) |
+| 更新时间 | 2026-09-10 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
-| 评审日期 | 2026-08-26 |
+
+## 当前核对（2026-09-10）
+
+更新记录：2026-09-10，v5.22，登记 GitHub 交付入口调整：[根说明](../README.md) 新增持续集成徽章、文档导航和分支用途，问题表单要求提交与环境证据。基于独立交付工作区整理既有代码，不将本地 HEAD、历史隔离报告或仓库首页更新视为正式发布。文档验证使用 `pnpm docs:check`；远端运行结果以 GitHub Actions 对应提交为准。
+
+同轮交付复核：[性能报告](./performance-test-report.md) 六处本机证据改为路径说明，避免干净检出出现失效链接；[桌面专项](./local-desktop.md) 同步打包依赖安全更新、签名补丁与测试接口。原工作区保留既有修改，交付修正位于独立工作区。
+
+更新记录：2026-09-10，v5.21，登记[桌面启动与打包阻塞修复](./local-desktop.md)：通过系统 3077/3118 事件确认 Smart App Control 拦截，修正临时安装器签名顺序并补齐签名门禁与失败报告，四项桌面测试通过；本机缺少可信签名身份，最新产物启动及安装验收仍为 `blocked-external`。
+
+更新记录：2026-09-10，v5.20，登记[性能后续修复](./performance-test-report.md)：监控改为后台采样并限制旧样本有效期；22.4 秒跨周期测试 80 次成功、p95 29.6 毫秒；部门状态校验 SQL 修正并在本机 PostgreSQL 只读执行成功。管理测试 26 项通过；外部调度未配置继续标记环境阻塞，未变更其他未测接口的状态。
+
+更新记录：2026-09-10，v5.19，登记[本轮接口压测](./performance-test-report.md)：62 场景、60 通过、2 个 XXL-JOB 受阻；静态 217 映射只覆盖 59，未写成全量通过。监控快照优化和路由 SQL 修复有原始响应、25 项管理测试及复测证据。未测外部、管理写操作和生产容量保留待环境，历史记录保留原日期。`pnpm docs:check` 866 项通过、失败 0，证据为 `sanye_deploy/.local/perf-docs-check.log`。
+
+本地桌面专项：新增 `local-desktop.md`，同步任务清单与文档索引；核对登录/AI/桌宠排除、固定推荐、独立数据库和安装包边界。更新记录：2026-09-10，v5.18，依据本次桌面代码、Maven/前端检查及专用运行报告；实际播放、签名与干净系统验收分别记录，不与构建成功混同。
+
+本次按当前代码与进度复核正式文档、工程入口和文档索引，修正 T-R-06、管理前端、可靠事件/XXL-JOB、Java 21、CAS 本地地址及发布结论的漂移。历史报告补充时效边界；产品需求、原型规范及 AiCoding 模板不批量改写为实现完成。完整检查结果、未执行项和正常使用判断见[当前审计](./current-status-audit.md)。基础回归通过不关闭外部门禁；文档检查结果在本次收口记录登记。
+
+更新记录：2026-09-10，v5.17，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+本次收口结果：前端类型检查和三端构建通过，业务后端 291、管理后端 23、脚本测试 40、自包含浏览器 13 项通过；`pnpm docs:check` 856 项通过、失败 0，`git -c core.safecrlf=false diff --check` 退出码 0。日志为 `sanye_deploy/.local/docs-audit-*`。T-R-04 演练脚本及四个 JAR 与历史报告摘要不同，最新真实恢复复验未执行；已同步任务、恢复说明和当前审计，不把旧完成记录当作当前产物证明。
+
+## 本次全仓文档清单（2026-09-10）
+
+范围为 `rg --files -g '*.md'` 可见的 117 份 Markdown，排除依赖、构建产物和本地生成目录。本次修订 53 份现有文档并新增 1 份当前审计，其余 63 份经目录、状态表述和引用核对后保留。产品需求和规范仍是验收标准，上游说明及历史 Ledger 保留来源语境；这不是每个接口字段、产品状态或运行环境的全面实测声明。
+
+方法为全仓文件/链接与过期表述扫描、重点事实源通读、针对身份/媒体/事件/调度/发布的源码追溯、当前基础回归及报告摘要核对。子代理只读协助；最终修改与证据判断由主审统一。既有未提交修改及本轮同步补入的 T-R-06 记录已保留，未提交或推送。
+
+| 文档 | 本次处置 |
+| --- | --- |
+| [AGENTS.md](../AGENTS.md) | 保留现行项目协作规则 |
+| [AiCoding/CONTENTS.md](../AiCoding/CONTENTS.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/MIGRATION-NOTICE.md](../AiCoding/MIGRATION-NOTICE.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/TODO-P2-strategy-shelf.md](../AiCoding/TODO-P2-strategy-shelf.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/TODO.md](../AiCoding/TODO.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/contracts/README.md](../AiCoding/contracts/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/contracts/examples/README.md](../AiCoding/contracts/examples/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/contracts/metadata/README.md](../AiCoding/contracts/metadata/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/contracts/site/README.md](../AiCoding/contracts/site/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/design/00-design-overview.md](../AiCoding/design/00-design-overview.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/design/api-design.md](../AiCoding/design/api-design.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/design/database-design.md](../AiCoding/design/database-design.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/design/frontend-design.md](../AiCoding/design/frontend-design.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/development-plan/README.md](../AiCoding/development-plan/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/index/freshness-report.md](../AiCoding/index/freshness-report.md) | 修订当前事实、进度或引用边界 |
+| [AiCoding/index/provenance-map.md](../AiCoding/index/provenance-map.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/index/retrieval-guide.md](../AiCoding/index/retrieval-guide.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/ledger/S001-bootstrap.md](../AiCoding/ledger/S001-bootstrap.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/ledger/ledger-index.md](../AiCoding/ledger/ledger-index.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/ops/README.md](../AiCoding/ops/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/ops/env/README.md](../AiCoding/ops/env/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/ops/runs/README.md](../AiCoding/ops/runs/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/plan/README.md](../AiCoding/plan/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/plan/active/README.md](../AiCoding/plan/active/README.md) | 修订当前事实、进度或引用边界 |
+| [AiCoding/policy/agent-workflow-policy.md](../AiCoding/policy/agent-workflow-policy.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/policy/conflict-resolution.md](../AiCoding/policy/conflict-resolution.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/policy/document-authoring-policy.md](../AiCoding/policy/document-authoring-policy.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/policy/document-status-policy.md](../AiCoding/policy/document-status-policy.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/policy/memory-write-policy.md](../AiCoding/policy/memory-write-policy.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/policy/retrieval-policy.md](../AiCoding/policy/retrieval-policy.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/reports/README.md](../AiCoding/reports/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/sql/README.md](../AiCoding/sql/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/system/ai-debug-workflow.md](../AiCoding/system/ai-debug-workflow.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/system/engineering-bootstrap.md](../AiCoding/system/engineering-bootstrap.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/system/legacy-code-map.md](../AiCoding/system/legacy-code-map.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/system/memory-recovery.md](../AiCoding/system/memory-recovery.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/templates/ledger-template.md](../AiCoding/templates/ledger-template.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/templates/plan-template.md](../AiCoding/templates/plan-template.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/templates/view-template.md](../AiCoding/templates/view-template.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/test/README.md](../AiCoding/test/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/tools/README.md](../AiCoding/tools/README.md) | 修订当前事实、进度或引用边界 |
+| [AiCoding/userstory/README.md](../AiCoding/userstory/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/README.md](../AiCoding/views/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/api/README.md](../AiCoding/views/api/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/architecture/README.md](../AiCoding/views/architecture/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/business/README.md](../AiCoding/views/business/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/concepts.md](../AiCoding/views/concepts.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/database/README.md](../AiCoding/views/database/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/domain-overview.md](../AiCoding/views/domain-overview.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/domain/README.md](../AiCoding/views/domain/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/domains/README.md](../AiCoding/views/domains/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/flows/README.md](../AiCoding/views/flows/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/frontend/README.md](../AiCoding/views/frontend/README.md) | 保留治理规范/派生入口/历史记录 |
+| [AiCoding/views/frontend/domains/README.md](../AiCoding/views/frontend/domains/README.md) | 保留治理规范/派生入口/历史记录 |
+| [README.md](../README.md) | 修订当前事实、进度或引用边界 |
+| [docs/README.md](./README.md) | 修订当前事实、进度或引用边界 |
+| [docs/ai-evaluation.md](./ai-evaluation.md) | 补充历史证据时效，保留原结果 |
+| [docs/anime-import.md](./anime-import.md) | 修订当前事实、进度或引用边界 |
+| [docs/api-contract.md](./api-contract.md) | 修订当前事实、进度或引用边界 |
+| [docs/backend-mvp.md](./backend-mvp.md) | 修订当前事实、进度或引用边界 |
+| [docs/backup-recovery.md](./backup-recovery.md) | 修订当前事实、进度或引用边界 |
+| [docs/button-test-report.md](./button-test-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/ci-cd.md](./ci-cd.md) | 修订当前事实、进度或引用边界 |
+| [docs/current-status-audit.md](./current-status-audit.md) | 新增当前证据与可用性判断 |
+| [docs/database-design.md](./database-design.md) | 修订当前事实、进度或引用边界 |
+| [docs/decision-log.md](./decision-log.md) | 核对后保留原范围 |
+| [docs/degradation-report.md](./degradation-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/desktop-companion-development-plan.md](./desktop-companion-development-plan.md) | 修订当前事实、进度或引用边界 |
+| [docs/desktop-companion-test-report.md](./desktop-companion-test-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/development-plan.md](./development-plan.md) | 修订当前事实、进度或引用边界 |
+| [docs/development-tasks.md](./development-tasks.md) | 修订当前事实、进度或引用边界 |
+| [docs/development-todo.md](./development-todo.md) | 修订当前事实、进度或引用边界 |
+| [docs/document-change-rules.md](./document-change-rules.md) | 修订当前事实、进度或引用边界 |
+| [docs/document-review.md](./document-review.md) | 修订当前事实、进度或引用边界 |
+| [docs/environment-config.md](./environment-config.md) | 修订当前事实、进度或引用边界 |
+| [docs/gap-register.md](./gap-register.md) | 修订当前事实、进度或引用边界 |
+| [docs/interface-test-report.md](./interface-test-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/layout-regression-report.md](./layout-regression-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/media-import-review.md](./media-import-review.md) | 补充历史证据时效，保留原结果 |
+| [docs/media-player-development.md](./media-player-development.md) | 修订当前事实、进度或引用边界 |
+| [docs/media-player-test-plan.md](./media-player-test-plan.md) | 修订当前事实、进度或引用边界 |
+| [docs/media-player-test-report.md](./media-player-test-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/module-dev-test-plan.md](./module-dev-test-plan.md) | 修订当前事实、进度或引用边界 |
+| [docs/monitoring-design.md](./monitoring-design.md) | 修订当前事实、进度或引用边界 |
+| [docs/ops-runbook.md](./ops-runbook.md) | 修订当前事实、进度或引用边界 |
+| [docs/performance-optimization-guide.md](./performance-optimization-guide.md) | 修订当前事实、进度或引用边界 |
+| [docs/performance-test-report.md](./performance-test-report.md) | 补充历史证据时效，保留原结果 |
+| [docs/project-flow.md](./project-flow.md) | 修订当前事实、进度或引用边界 |
+| [docs/prototype-review.md](./prototype-review.md) | 补充历史证据时效，保留原结果 |
+| [docs/quality-gates.md](./quality-gates.md) | 修订当前事实、进度或引用边界 |
+| [docs/release-management.md](./release-management.md) | 修订当前事实、进度或引用边界 |
+| [docs/release-readiness.md](./release-readiness.md) | 修订当前事实、进度或引用边界 |
+| [docs/ruoyi-admin-backend.md](./ruoyi-admin-backend.md) | 修订当前事实、进度或引用边界 |
+| [docs/security-design.md](./security-design.md) | 修订当前事实、进度或引用边界 |
+| [docs/technical-architecture.md](./technical-architecture.md) | 修订当前事实、进度或引用边界 |
+| [docs/technical-design.md](./technical-design.md) | 修订当前事实、进度或引用边界 |
+| [docs/test-report-2026-08-20.md](./test-report-2026-08-20.md) | 补充历史证据时效，保留原结果 |
+| [docs/testing-strategy.md](./testing-strategy.md) | 修订当前事实、进度或引用边界 |
+| [docs/traceability-matrix.md](./traceability-matrix.md) | 修订当前事实、进度或引用边界 |
+| [docs/version-baseline.md](./version-baseline.md) | 修订当前事实、进度或引用边界 |
+| [e2e/README.md](../e2e/README.md) | 修订当前事实、进度或引用边界 |
+| [product/README.md](../product/README.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/desktop-companion-requirements.md](../product/desktop-companion-requirements.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/feature-specification.md](../product/feature-specification.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/mvp-freeze.md](../product/mvp-freeze.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/overall-architecture.md](../product/overall-architecture.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/page-state-matrix.md](../product/page-state-matrix.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/product-requirements.md](../product/product-requirements.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/prototypes/README.md](../product/prototypes/README.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [product/visual-design-system.md](../product/visual-design-system.md) | 保留产品标准/原型范围，不推定验收完成 |
+| [sanye_admin/README.md](../sanye_admin/README.md) | 修订当前事实、进度或引用边界 |
+| [sanye_admin_server/UPSTREAM_README.md](../sanye_admin_server/UPSTREAM_README.md) | 保留上游说明，项目基线另见版本文档 |
+| [sanye_client/README.md](../sanye_client/README.md) | 修订当前事实、进度或引用边界 |
+| [sanye_deploy/README.md](../sanye_deploy/README.md) | 修订当前事实、进度或引用边界 |
+| [sanye_pet/README.md](../sanye_pet/README.md) | 修订当前事实、进度或引用边界 |
+| [sanye_server/README.md](../sanye_server/README.md) | 修订当前事实、进度或引用边界 |
+| [sanye_website/README.md](../sanye_website/README.md) | 保留迁移过渡边界 |
+
+## T-R-06 发布准备评审（2026-09-10）
+
+已核对候选镜像入口、源码与物料摘要、固定基础镜像、配置绑定、容器健康、Nacos 身份核验和回滚材料边界。只读复核提出的配置指纹缺失、任意分支触发和可变基础镜像问题已补齐；候选工作流只发布镜像，不承担 T-R-07 的部署动作。管理后端使用根路径存活探测，不描述成数据库或登录健康。
+
+本地 10 项门禁回归、8 项真实容器冒烟通过；最终报告与清理证据见 [T-R-06 记录](./development-tasks.md#t-r-06-执行与证据2026-09-10)。首次网关因无业务用途的 Rabbit 健康探针失败，已修正非消息服务的部署开关，保留作品/搜索探针。当前工作区被候选准备入口按预期拒绝；三个远端分支保护请求均为 HTTP 401，未验证强制合并门禁。没有固定候选构建、注册表推送、十二实例或回滚验收，状态保持待环境。
+
+更新记录：2026-09-10，v5.16，同步任务、CI、环境、发布、部署与差距文档，执行 `pnpm docs:check`；不得以局部冒烟替代 T-R-06 完成定义。
+
+## T-R-05 配置与审计评审（2026-09-10）
+
+已核对业务与管理应用启动注册、移除默认敏感值、环境隔离、日志最小化和 HTTPS 默认校验。任务清单登记 291 项业务测试、23 项管理测试、8 项扫描器测试与 10 项实际 JAR 启动检查；报告路径见 [任务记录](./development-tasks.md)。HTTPS 回归使用本轮生成的自签名证书，验证不可信对端无法收到密码。Gitleaks 历史、源码和部署日志检查无规则命中；直接 JAR 检查未读取内容，明确排除该无效证据，以自定义归档扫描报告保留候选项及第三方依赖排除边界。生产配置、历史凭据是否复用及轮换确认继续待环境，不把本地验证写成正式发布完成。
+
+更新记录：2026-09-10，v5.15，同步 T-R-05 安全规则、环境变量、任务状态与部署入口；执行 `pnpm docs:check`。
+
+最终候选复核：`sanye_deploy/.local/tr05/final-classification.json` 绑定审计报告摘要，304 项分别归为本地默认值 102、代码/元数据 178、合成测试夹具 24，未解决字面凭据 0；全部 16 项产物候选读取归档并与源码核对。此结论仅覆盖本轮规则命中，不代表公开默认值可用于其他环境或第三方依赖完整审计通过。
+
+## T-R-04 问题修正复评（2026-09-10）
+
+上一轮发现问题后仍将任务标为完成，证据不足。本轮已重新打开门禁，并把空更新文案详情与筛选、Windows 路径大小写及保留名、进程树清理、对象属性与标签、identity 序列、负例精确断言和恢复后 Flyway 启动纳入最终复验。
+
+新增 Java 回归先复现空指针，再验证缺少更新文案时无虚构排期、状态筛选正常且原始空值保留。对象读写使用锁定版本的 MinIO SDK；V2 保存 MIME 参数、响应头、自定义元数据、标签和全部序列状态，V1 仅允许只读检查。Windows 路径以真实路径和大小写规范化比较；工具失败或超时终止已记录的进程树，清理失败会导致总验收失败。SDK 网络请求也有明确时限。
+
+恢复演练使用八个业务 schema 的真实 Flyway 历史，关闭源数据库及源 MinIO 后进行恢复，目标应用保持 Flyway 开启；负例匹配预期错误，并实测数据库导入中断后的失败报告、现场保留与停止后续步骤。配置、运维说明、待办与差距登记按最终开发任务清单同步。全部最终数字与报告以 T-R-04 修正复验记录为唯一事实源。
+
+更新记录：2026-09-10，v5.14，复评 T-R-04 全部已发现问题的修复及完成证据，不继续沿用上一轮通过结论。
+
+## T-R-04 独立恢复评审（2026-09-10，上一轮历史记录）
+
+核对备份与恢复的源目标分离、整库范围、MinIO 对象与本地运行文件、文件元数据桶名映射和失败处理。修正旧单库脚本硬编码、删除原库示例及只凭备份生成判断成功的问题。子代理只读检查确认文件服务从本地目录读取，因此 MinIO 恢复不替代本地文件恢复；两者均纳入清单与摘要校验。
+
+评审后补齐映射后元数据与文件校验、流式对象回读、数据库编码和排序规则、完成标记、路径与符号链接保护，以及 PostgreSQL 版本兼容预检。记录的凭据均为环境变量名称；报告不包含真实密码和 Token。原工作区改动保留，本次不提交或推送。
+
+本地 `pnpm test:recovery` 9 项通过；真实隔离演练 `b0bc7ea2d5e7` 的 17 项检查通过，包含 76 项表/序列校验、对象与文件摘要、登录、内容、所有者文件读取及越权拒绝，证据见开发任务清单 T-R-04。现有内容字段为空引起的排期问题单独登记，不归入恢复脚本已修复范围。新增操作说明已登记文档地图，环境变量只在环境矩阵定义。数据恢复、应用验收、外部 CAS 与正式发布的证据保持分开。
+
+更新记录：2026-09-10，v5.13，评审 T-R-04 实现及其验证边界；执行 `pnpm docs:check` 检查同步结果。
+
+## T-R-03 实现评审（2026-09-09）
+
+核对 XXL-JOB 执行器、搜索别名切换、数据库互斥、事件消费共享锁、内部接口鉴权与失败日志。源读取失败、批量错误、数量不符、不完整分页、重复作品均不能切换在线别名；配置不完整不能启动已开启的执行器。搜索与 RAG 的索引配置同步，原接口体检改为验证普通调用者被拒绝。
+
+证据为开发任务清单 T-R-03 所列 263 项后端测试、11 项索引与权限专项、6 项 job 测试及真实调度验收脚本。真实验收使用专用数据库及索引，读取当前作品服务 9 条公开数据；调度台注册、成功/失败/恢复回调、重复触发及缺失/多余文档修复均有本地报告。测试进程退出，保留专用数据及不自动调度的任务用于复核。
+
+追加评审：RuoYi 内嵌 XXL-JOB 管理已完成。代理接口只允许配置任务、区分三项权限、使用独立会话且不透传原始日志；触发记录审计、不自动重试。页面覆盖在线/离线/未配置/加载失败/空数据/只读/无日志权限与失败重试，并修复移动端表格撑宽。管理后端 16 项测试、前端类型检查和构建、11 项页面回归均通过；真实专用环境任务 5 日志 19/20/21 验证页面成功/失败/重试成功，匿名和无触发权限账号被拒绝。证据见 T-R-03 管理整合记录。
+
+结论限于受控测试环境，不包含正式发布或生产配置。旧索引和失败候选保留，需要单独制定清理保留策略。
+
+更新记录：2026-09-09，v5.12，关闭 T-R-03 管理整合缺口，依据管理测试、浏览器报告和 `pnpm docs:check`。
+
+更新记录：2026-09-09，v5.11，评审 T-R-03 实现与证据边界；文档检查入口为 `pnpm docs:check`。
+| 评审日期 | 2026-09-09 |
+
+## 本轮规划评审（2026-09-09）
+
+T-R-02 收口评审：任务清单 v2.7、API 契约 v0.12、数据库设计 v1.5、环境矩阵 v2.8、监控 v0.2 同步生产者、完整事件快照、消费者幂等、租约、失败补偿和指标。初始中间状态不能作为完成证据；最终以真实接口到 Outbox/RabbitMQ/ES/Redis 验收、数据库专项和未跳过覆盖率的 Maven 门禁为准。T-R-03、生产凭据、正式发布均未关闭。
+
+本次仅评审 `development-tasks.md` v2.5 与 `development-todo.md` v0.33 的剩余任务规划。五项范围分别映射到 T-R-01、T-R-02/03、T-R-04、T-R-05、T-R-06/07；保留用户排除的第六项，未扩大成正式发布承诺。检查当前工作区、Java 事件/任务入口、CI 浏览器入口及备份脚本后补齐可复核验收、依赖、估时和环境解除条件。任务状态以开发任务清单为准，本次不生成代码测试或运行验收通过结论。文档门禁使用 `pnpm docs:check`。
 
 ## 1. 评审范围
+
+2026-09-09 执行补充：评审本机工具链同步涉及的 `AGENTS.md`、根 README、版本基线 v0.8、CI v1.5、后端说明、技术设计和工程引导；保留 Java 17 历史证据，当前基线改为 Java 21.0.12、Node.js 26.5.0、pnpm 10.15.0、Maven 3.9.16。T-R-01 记录跨集线路修复、会话竞态修复与隔离 PostgreSQL 测试，普通测试和专项迁移分别登记，不把本地通过等同远端 CI 或正式发布。文档扫描排除 `.local` 生成目录，防止验证副本重复计数。详细命令、边界和结果见 `development-tasks.md` v2.6。
 
 | 分组 | 文档 | 版本 | 评审结论 |
 | --- | --- | --- | --- |
@@ -18,6 +224,7 @@
 | 产品 | [overall-architecture.md](../product/overall-architecture.md) | v0.3 | 角色基准，一致 |
 | 产品 | [page-state-matrix.md](../product/page-state-matrix.md) | v0.2 | 一致 |
 | 产品 | [mvp-freeze.md](../product/mvp-freeze.md) | v0.1 | 一致（前轮已修边界） |
+| 工程 | [performance-optimization-guide.md](./performance-optimization-guide.md) | v1.0 | 性能覆盖、教学、证据与待环境边界一致 |
 | 产品 | [desktop-companion-requirements.md](../product/desktop-companion-requirements.md) | v0.2 | 透明边界与启动关系已同步 |
 | 产品 | [visual-design-system.md](../product/visual-design-system.md) | - | 成为视觉唯一基准 |
 | 产品 | [prototypes/README.md](../product/prototypes/README.md) | - | 与原型实现一致 |
@@ -35,7 +242,7 @@
 | 工程 | [development-tasks.md](./development-tasks.md) | v0.2 | AI 与桌宠证据已同步 |
 | 工程 | [prototype-review.md](./prototype-review.md) | v0.4 | 评审/整改闭环 |
 | 工程 | [document-change-rules.md](./document-change-rules.md) | v1.0 | 文档同步与自动检查规则 |
-| 工程 | [anime-import.md](./anime-import.md) | v2.6 | 搜索页站内直接观看/导入观看、只读预览接口、详情路径、`imgUrl` 当前作品封面、并发导入和真实回归证据已同步 |
+| 工程 | [anime-import.md](./anime-import.md) | v3.0 | 搜索页简称扩展、严格标题匹配、确定性分类、窄屏封面、超时回退、双路径观看和并发导入证据已同步 |
 | 工程 | [media-player-development.md](./media-player-development.md) | v1.0 | 导入集数、线路 ID、`imgUrl` 封面解析、并发读取、导入超时、站内外部预览与 ArtPlayer/HLS 实现基准已同步 |
 | 测试 | [media-player-test-plan.md](./media-player-test-plan.md) | v1.1 | ArtPlayer 外壳、媒体属性、清晰度菜单、独立季度卡片和真实 HLS 断言已同步 |
 | 测试 | [media-player-test-report.md](./media-player-test-report.md) | v0.9 | ArtPlayer、真实 HLS 和清晰度专项结果已登记 |
@@ -447,7 +654,19 @@
 | 扫描稳定性 | Trivy 前置执行跳过测试的 Maven 构建，将两套后端及其多模块产物安装到本地仓库并缓存，避免远端 POM 解析触发 HTTP 429；Trivy 只执行漏洞扫描，密钥检查由 Gitleaks 独立负责 | `.github/workflows/ci.yml`、GitHub Actions 远端日志 |
 | 外部边界 | 分支保护、镜像发布、生产凭据与正式环境部署状态不变 | `ci-cd.md`、`gap-register.md` |
 
+## 19. 全功能性能优化复查（2026-08-26）
+
+| 检查项 | 结论 | 证据 |
+| --- | --- | --- |
+| 文档边界 | 通过，只记录工程实现、验证、门禁和教学，不新增产品需求、接口字段或数据库契约 | `performance-optimization-guide.md` |
+| 功能覆盖 | 通过，客户端、管理端、服务端各模块、桌宠和持续门禁均有审计结论；已有实现与本轮改动分开登记 | 全功能覆盖矩阵 |
+| 前端体积 | 通过，客户端 67.0/75、管理端 204.5/220、桌宠 32.0/70 KiB gzip | `pnpm perf:check` |
+| 服务端逻辑 | 通过，首页单飞、公开详情、目录列表和反馈回读的行为由定向 Reactor 115 项测试覆盖 | Maven 定向 Reactor |
+| 证据边界 | 通过，生产 QPS、真实 AI、外部来源和独立压测环境明确保持为待环境 | 优化指南第 5 节 |
+
 ## 更新记录
+
+2026-09-09，v5.10：登记可靠事件实现与验收文档核对；执行 pnpm docs:check。
 
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
@@ -508,3 +727,9 @@
 | 2026-08-26 | v5.1 | 修复远端扫描发现的后端高危依赖，统一升级 Spring Boot、Jackson 和 PostgreSQL JDBC，并将 Trivy 门槛与文档统一为 HIGH/CRITICAL | 两套父 `pom.xml`、`.github/workflows/ci.yml`、Trivy 扫描、Maven 测试 |
 | 2026-08-26 | v5.2 | 修复 Trivy 远端 POM 解析触发 Maven Central HTTP 429，增加 Maven 缓存预填并去除重复的 secret scanner | `.github/workflows/ci.yml`、GitHub Actions 远端日志、`pnpm docs:check` |
 | 2026-08-26 | v5.3 | 修复缓存预填后远端 Trivy 识别出的后端 HIGH/CRITICAL 传递依赖，保持安全门禁强度不变 | 两套父 `pom.xml`、`version-baseline.md`、Trivy 扫描、Maven 测试 |
+| 2026-08-26 | v5.4 | 复查全功能性能优化与教学文档，登记三端入口体积门禁、服务端查询/单飞优化和待环境边界 | `pnpm perf:check`、Maven 定向 Reactor、三端类型检查 |
+| 2026-08-26 | v5.5 | 复查搜索结果链路，登记站内与外部并行分区展示、标题严格匹配、确定性分类、历史类型展示校正、预览/导入分类、封面回退和双路径观看 | search 15/15、anime 80/80、客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v5.6 | 复查“春物”搜索和封面链路，登记精确简称解析、无关子串排除、搜索封面立即加载、5 秒超时回退和窄屏可见性 | search 17/17、客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v5.7 | 纠正“春物”搜索语义：简称作为补充召回而非替换，正式标题结果先渐进展示，用户原词结果随后补齐且共享回源缓存；核验并替换两张失效来源封面 | search 18/18、客户端 typecheck/build、搜索 Playwright 5/5、真实外部接口与图片复测、`pnpm docs:check` |
+| 2026-09-09 | v5.8 | 评审五项剩余任务规划、七个执行批次及排除边界；未登记实现或运行验收完成 | 当前源码、部署脚本、CI 与用户范围确认；`pnpm docs:check` |
+| 2026-09-09 | v5.9 | 评审工具链统一和 T-R-01 实现、测试及环境证据 | 本轮任务执行记录与 `pnpm docs:check` |

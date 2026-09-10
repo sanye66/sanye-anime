@@ -2,10 +2,22 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.1 |
+| 文档版本 | v0.3 |
 | 文档状态 | 设计基线，覆盖基础设施、应用、业务、前端与 AI 成本 |
 | 关联文档 | [详细技术设计](./technical-design.md)、[接口与字段契约](./api-contract.md)、[按板块开发与测试方案](./module-dev-test-plan.md)、[开发任务清单](./development-tasks.md) |
-| 更新时间 | 2026-08-18 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+Outbox 和索引任务已有实现及受控故障证据，T-R-06 已提供容器健康及实例核验工具；详见[任务清单](./development-tasks.md)。Prometheus/Grafana/Alertmanager 目标部署和通知链路没有本次验收，不能因存在配置或健康接口而标记监控交付完成。
+
+更新记录：2026-09-10，v0.3，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+## 可靠事件实测指标
+
+anime 的 `/actuator/prometheus` 提供 `sanye_event_outbox_records{state="PENDING|SENT|DEAD"}`、`sanye_event_outbox_pending_age_seconds`、`sanye_event_outbox_retry_attempts`。发布/消费日志记录 eventId、aggregateId、version、attempts 或跳过版本；不记录消息正文和凭据。DEAD 非零或等待时长持续增长应进入人工诊断和受控补偿。
+
+2026-09-09 更新记录（v0.2）：指标已在真实服务读取；故障演练保留 DEAD 与死信记录，所以这些值不表示全部历史失败记录已清空。事件故障告警接入完整监控栈属于后续部署范围。
 
 ## 1. 监控架构
 

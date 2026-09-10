@@ -2,12 +2,18 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.4 |
+| 文档版本 | v0.5 |
 | 文档状态 | Baseline，首版按微服务架构建设（D-024），外部兼容性仍待验证 |
 | 适用范围 | PC 客户端、官网、业务服务、AI 服务和管理平台 |
 | 关联文档 | [产品需求文档](../product/product-requirements.md)、[功能详细说明](../product/feature-specification.md)、[产品总体架构](../product/overall-architecture.md)、[详细技术设计](./technical-design.md)、[决策记录](./decision-log.md)、[版本基线](./version-baseline.md) |
 | 开发计划 | [开发计划](./development-plan.md) |
-| 更新时间 | 2026-08-18 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+当前架构已落地数据库 Outbox/RabbitMQ 消费、搜索 inbox/版本控制及 `rebuildAnimeIndex` XXL-JOB 执行器，并与 RuoYi 管理页整合；Quartz 保持独立。当前工具链为 Java 21，Java 17 的构建描述为历史证据；本地验证、动态注册和目标发布的不同状态见[任务清单](./development-tasks.md)及[当前审计](./current-status-audit.md)。
+
+更新记录：2026-09-10，v0.5，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 技术栈确认
 
@@ -434,7 +440,7 @@ xxl-job-admin
 
 当前管理平台后端位于 `sanye_admin_server/`，是独立于 `sanye_server/` 的 Spring Boot 管理应用。已接入 RuoYi 的 common、system、framework、quartz、generator 和 app 模块，统一使用 `com.sanye.admin` 包名；数据库驱动和初始化脚本按 PostgreSQL 适配，Redis、Token、数据源和 Druid 凭据通过环境变量注入。`sanye_admin/` 已完成真实接口绑定，覆盖仪表盘、内容、官网正文、反馈、任务/任务日志、用户、角色、菜单和审计页面。
 
-已验证：JDK 21 下管理后端 Maven 打包成功；本地 PostgreSQL/Redis、真实登录、权限守卫、角色菜单授权、Quartz 任务与日志、管理前端联调均有自动化或冒烟证据。正式凭据、生产安全配置和部署发布仍属于环境门禁。
+历史已验证：JDK 17 下管理后端 Maven 打包成功；本地 PostgreSQL/Redis、真实登录、权限守卫、角色菜单授权、Quartz 任务与日志、管理前端联调均有自动化或冒烟证据。正式凭据、生产安全配置和部署发布仍属于环境门禁。
 
 管理平台功能建议：
 

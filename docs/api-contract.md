@@ -2,10 +2,42 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.8 |
+| 文档版本 | v0.15 |
 | 文档状态 | 设计基线，与 [详细技术设计](./technical-design.md) 对应；实现时以此为准并回填字段变更 |
 | 适用范围 | `sanye_server` 业务接口、SSE 流式事件、管理平台协作接口 |
-| 更新时间 | 2026-08-25 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+可靠事件、搜索重建和 RuoYi XXL-JOB 的当前契约见本文前部；源代码与本次测试范围见[当前审计](./current-status-audit.md)。接口定义、Mock 成功和真实服务可用性是不同证据；真实 CAS、AI 与目标环境端到端验收仍待环境。
+
+更新记录：2026-09-10，v0.15，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+## 索引重建内部接口
+
+`POST /api/v1/search/reindex` 仅接受 `X-Caller-Name` 为 `sanye-server-job` 或 `sanye-admin-server`，且 `X-Internal-Token` 与搜索服务配置匹配的调用。缺失、错误或空配置均返回业务码 `2002`，不开始索引操作。普通搜索调用者无权触发重建。
+
+成功响应保持 `ApiResponse`，`data` 为 `{ "indexed": 2 }`，计数为本次完整公开目录写入数量，允许空目录为 `0`。重建并发、源数据失败、分页不完整、重复作品、非发布状态、批量写入失败或校验失败，均返回 `SEARCH_UNAVAILABLE`，不把异常原文返回给调用者。候选索引验证成功后原子切换别名；失败保留旧索引。
+
+XXL-JOB 3.1.0 管理台的登录会话、任务触发和日志接口由 RuoYi 服务端代理访问。原 `/monitor/job/*` 仍为 Quartz；新增以下独立接口，公开网关前缀为 `/api/v1/admin`：
+
+| 方法与路径 | 权限 | 响应或约束 |
+| --- | --- | --- |
+| `GET /monitor/xxl-job` | `monitor:job:list` | `data` 含 `configured`、`jobId`、`jobName`、`executorAppName`、`executorOnline`；未配置明确返回 `configured=false` |
+| `GET /monitor/xxl-job/logs` | `monitor:job:query` | 参数 `pageNum`、`pageSize`、`status`，状态只允许 -1/1/2/3（全部/成功/失败/进行中）；`data={rows,total}` |
+| `POST /monitor/xxl-job/trigger` | `monitor:job:changeStatus` | 不接受可变任务参数；成功仅表示调度已提交，实际结果由日志确认；记录 RuoYi 操作审计 |
+
+日志行包含 `id`、`jobId`、`triggerTime`、`handleTime`、`triggerCode`、`handleCode`、`status`、`triggerMessage`、`handleMessage`。状态为 `PENDING/RUNNING/SUCCESS/FAILED`。消息为固定状态摘要，不透传调度台 HTML、内部地址、堆栈、Cookie 或凭据；详情弹窗展示该行摘要。服务端只允许配置中的任务编号，核对执行器组、`BEAN`、`rebuildAnimeIndex`、`DISCARD_LATER`、无自动重试和空参数。浏览器无法指定任务编号、调度台地址或执行器地址。提交超时或响应不明确时提示先查日志，不自动重发。
+
+更新记录：2026-09-09，v0.14，登记 RuoYi XXL-JOB 状态、日志、触发与权限契约，依据管理后端测试和真实浏览器验收。
+
+更新记录：2026-09-09，v0.13，收紧重建入口权限并固定响应与失败语义；证据为 `SearchControllerSecurityTest` 和 T-R-03 调度报告。
+
+## 可靠作品事件契约
+
+`anime.status.changed` 同时表示作品状态或正文元数据改变。信封为 `eventId`、`type`、字符串 `aggregateId`、正整数 `version`、`occurredAt` 和 `payload`。载荷包含 `animeId`、`id`、`title`、`originalTitle`、`type`、`year`、`score`、`status`、`coverUrl`、`tags`、`updateText`、`summary`；两个作品编号必须一致。版本由作品行的数据库事务递增，消费者按聚合串行处理，只接受高于已处理版本的事件；所有非已发布状态均删除索引文档。
+
+`POST /api/v1/manage/anime/{id}/events/compensate` 从当前主数据生成新版本事件，成功返回 `data: "queued"`。要求与其他管理接口一致的 `X-Caller-Name` 和 `X-Internal-Token`，网关不公开该路径。不存在作品返回既有 NOT_FOUND，未授权使用既有 FORBIDDEN。验收证据见 [任务清单](./development-tasks.md)。
 
 ## 1. 通用约定
 
@@ -360,9 +392,11 @@ CAS 回调成功响应（data）：
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/search/external?keyword=&size=` | 登录/匿名 | 读取授权外部搜索页，返回可导入的 `/p/` 详情页候选 |
+| GET | `/api/v1/search/external?keyword=&type=&preferredOnly=&size=` | 登录/匿名 | 读取授权外部搜索页，返回可直接观看或导入的 `/p/` 详情页候选；`type` 可选；`preferredOnly=true` 时先返回别名正式标题结果 |
 
-当前外部搜索格式为 `https://yhdmtv.cc/search/index.html?keyword=<urlencoded keyword>`，该页面的候选列表由公开的 `/public/auto/search1.html?keyword=<urlencoded keyword>` 动态返回。`keyword` 参数可传普通关键词，也可传完整 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL；服务端会提取其中的 `keyword` 后再查询外部候选。服务端只返回标题、详情页 URL、封面和摘要候选，详情页 URL 允许 `/p/` 下的多段路径。同一关键词和数量的有效候选缓存 120 秒，空结果缓存 10 秒，并发相同请求合并为一次远端读取。客户端先查询站内搜索；ES 零命中或不可用时搜索服务回源动漫公开目录，目录仍无结果时客户端才请求外部候选。客户端对每条候选提供两条路径：直接观看进入站内 `/watch/external?sourceUrl=...`，由客户端调用 `/api/v1/anime/external-preview` 只读解析元数据和播放地址，并复用站内 ArtPlayer/HLS 播放器；导入观看调用 `/api/v1/anime/import-url` 写入作品后跳转正式详情播放。站内直接观看不创建作品、不写入剧集，也不代理或下载视频流。
+当前外部搜索格式为 `https://yhdmtv.cc/search/index.html?keyword=<urlencoded keyword>`，该页面的候选列表由公开的 `/public/auto/search1.html?keyword=<urlencoded keyword>` 动态返回。`keyword` 参数可传普通关键词，也可传完整 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL；服务端会提取其中的 `keyword` 后再查询外部候选。明确登记的作品简称会扩展为正式标题和用户原词，例如“春物”会并行查询“我的青春恋爱物语果然有问题”和“春物”；正式标题结果优先，随后保留原词本身能够召回的其他标题，未登记短词只查询原词且不做别名猜测。响应候选字段为 `title`、`sourceUrl`、`coverUrl`、`summary` 和 `type`。服务端只遍历 `/p/` 详情页候选，每路结果的规范化标题必须严格包含该路查询词，再按标题合并去重；分类只在来源文本具有确定证据时映射为“电视动画”“剧场版”“网络动画”或“原创动画”，无确定分类的候选只出现在“全部”。可选 `type` 参数按该字段精确筛选。
+
+每个实际查询词的有效候选缓存 120 秒，空结果缓存 10 秒，并发相同查询词合并为一次远端读取。客户端并行查询站内搜索、`preferredOnly=true` 的高相关候选和完整外部候选；正式标题结果先返回并立即展示，原词回源完成后再补齐其他标题，两次外部请求共享正式标题的同一次远端读取。外部候选与“已在片库”结果分区显示，因此站内命中不会阻止外部结果出现。来源封面地址长期不可用且已核对同一作品元数据时，服务端按失效图片 URL 精确替换为可用真实封面；其他加载失败仍由客户端回退到网关占位封面，不按模糊标题猜测图片。客户端对每条外部候选提供两条路径：直接观看进入站内 `/watch/external?sourceUrl=...`，由客户端调用 `/api/v1/anime/external-preview` 只读解析元数据和播放地址，并复用站内 ArtPlayer/HLS 播放器；导入观看调用 `/api/v1/anime/import-url` 写入作品后跳转正式详情播放。站内直接观看不创建作品、不写入剧集，也不代理或下载视频流。
 
 | GET | `/api/v1/anime/external-preview?sourceUrl=` | 登录/匿名 | 只读解析白名单外部作品页面，返回标题、简介、封面、剧集和播放器地址，供站内预览页播放 |
 
@@ -381,7 +415,7 @@ sourceUrl
 episodes
 ```
 
-该接口不创建或更新作品，不写入剧集媒体记录；外部播放地址仍由站内 ArtPlayer/HLS 播放器加载。
+该接口不创建或更新作品，不写入剧集媒体记录；外部播放地址仍由站内 ArtPlayer/HLS 播放器加载。预览与导入共享详情页元数据解析，`type` 会同时读取作品名、明确类型字段和页面分类标题，并按“剧场版”“网络动画”“原创动画”“电视动画”顺序确定性映射。
 
 ## 11. 管理端协作接口（sanye_admin ↔ sanye_server）
 
@@ -745,6 +779,8 @@ data: {"messageId":0,"code":3002,"reason":"匿名每日额度已用完，登录�
 
 ## 更新记录
 
+2026-09-09，v0.12：补充 T-R-02 事件信封、版本、完整快照和受控补偿接口；未授权调用已在真实服务验证。
+
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-19 | v0.2 | 追加第 13 节接口响应示例（实测）与更新记录 | 企业级文档完善 |
@@ -754,3 +790,6 @@ data: {"messageId":0,"code":3002,"reason":"匿名每日额度已用完，登录�
 | 2026-08-25 | v0.6 | 补充外部候选直接观看与导入观看双路径，以及 URL 导入并发读取限制 | `searchView.vue`、`AnimeUrlImportService`、`MediaImportService`、anime 测试与客户端 typecheck |
 | 2026-08-25 | v0.7 | 将外部候选直接观看收口为站内 `/watch/external` 预览，补充只读预览接口和响应字段契约 | `AnimeController`、`AnimeUrlPreviewResult`、`searchView.vue`、站内 Playwright 回归、anime 76 项测试 |
 | 2026-08-25 | v0.8 | 搜索增加 ES 零命中目录回源、外部候选短时缓存和并发请求合并；导入改为 8 路固定线程池与剧集批量写入 | search 12 项、anime 76 项单元测试，客户端 typecheck/build |
+| 2026-08-26 | v0.9 | 外部候选与站内片库改为并行分区展示；增加标题严格匹配、确定性分类、同名去重、历史类型展示校正、封面失败回退，并同步预览/导入详情分类 | search 15 项、anime 80 项单元测试，客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v0.10 | 增加精确作品简称解析，“春物”按正式标题查询并排除无关子串结果；搜索封面改为立即加载、5 秒超时回退且窄屏保持可见 | search 17 项、客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v0.11 | 将作品简称从替换查询修正为扩展查询：正式标题和用户原词并行回源，先渐进展示正式标题结果，再补齐原词能召回的其他标题；为已核验失效图片精确替换同作品真实封面 | search 18/18、客户端 typecheck/build、搜索 Playwright 5/5、真实外部接口与图片复测 |

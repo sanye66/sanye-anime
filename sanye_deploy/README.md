@@ -2,12 +2,28 @@
 
 这是部署辅助目录，不属于三个核心业务工程，负责本地和测试基础设施、固定版本镜像、环境模板、备份恢复脚本、发布检查和回滚流程。
 
+XXL-JOB 索引任务配置以 [环境配置矩阵](../docs/environment-config.md) 为准。`verify-index-job.mjs` 使用本机既有 PostgreSQL、Elasticsearch 和 XXL-JOB 管理台，每次新建专用数据库、索引和不自动调度的任务，启动临时搜索与 job 实例并在结束时退出。运行前准备 `sanye_deploy/.local/tr03/build` 中当前源码构建的 search/job JAR，注入 `TR03_ADMIN_USER`、`TR03_ADMIN_PASSWORD`、`XXL_JOB_ACCESS_TOKEN`；`TR03_SOURCE_URL` 可指定只读作品来源，不设置时使用合成目录。脚本固定使用本机测试端口 18082、18083、18088、19999，端口冲突时须先调整验收环境；证据写入 `.local/tr03`，不提交凭据与运行产物。完整结果见 [开发任务清单](../docs/development-tasks.md)。
+
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.5 |
+| 文档版本 | v1.13 |
 | 文档状态 | 基线，本地部署与可分享作品导入入口已同步 |
-| 更新时间 | 2026-08-25 |
-| 更新记录 | 同步作品导入脚本的位置参数、交互粘贴、本地配置模板、预览模式和 `pnpm import:anime` 入口 |
+| 更新时间 | 2026-09-10 |
+| 更新记录 | 2026-09-10：新增 T-R-06 候选镜像、配置绑定与实例核验入口，依据任务记录；保留既有恢复与敏感配置边界 |
+
+T-R-06 发布工具位于 `release/`，以 [CI/CD](../docs/ci-cd.md#t-r-06-候选镜像与实例核验) 和[环境矩阵](../docs/environment-config.md#t-r-06-候选构建与受控配置) 为唯一操作与配置基准。`pnpm test:release` 执行安全门禁回归；`node sanye_deploy/release/smoke-local.mjs` 在固定运行镜像下使用现有网关 JAR 和客户端 dist 创建专用容器及网络，验证健康、非 root、页面与代理后清理本次运行资源，保留本地镜像和 `.local/tr06` 报告。此冒烟不创建候选提交、不连接业务数据库、不推送注册表，也不启动桌宠；运行前须按环境矩阵指定两个镜像变量。
+
+敏感配置以 [环境矩阵](../docs/environment-config.md#t-r-05-环境与启动校验) 为准。`pnpm test:sensitive-config` 执行扫描器回归；`pnpm security:config-scan` 扫描工作区和本地可达 Git 历史。日志及产物使用 `node sanye_deploy/scan-sensitive-config.mjs --history --log <日志目录> --artifact <JAR> --artifact-mode first-party --output <脱敏报告>`；归档检查需要 Java 21，自研模式逐项记录排除的第三方 JAR。未决候选或读取错误返回非零。
+
+`node sanye_deploy/verify-sensitive-startup.mjs` 使用当前 gateway/admin JAR 验证缺失及占位凭据拒绝、随机密钥注入后网关健康状态与日志脱敏；结束时停止本次进程，证据写入 `.local/tr05/startup`。`SANYE_VERIFY_JAVA` 可指定 Java 21 可执行文件。本地入口显式使用 `SANYE_ENV=local`，其他环境须注入对应凭据；本项不连接生产库或轮换真实凭据。
+
+独立恢复入口：`recovery.mjs backup|verify|restore <配置文件> <备份目录>`；PowerShell 使用 `backup-local.ps1 -Config <配置> -OutputDirectory <新目录>`、`restore-local.ps1 -Config <配置> -BackupDirectory <目录>`。参数化配置见 [环境矩阵](../docs/environment-config.md#独立恢复配置)，完整操作、停写前提、失败现场及指标口径见 [独立恢复说明](../docs/backup-recovery.md)。旧单库脚本已替换，不再删除原数据库或自动清理旧备份。测试入口为 `pnpm test:recovery`，隔离真实演练为 `node sanye_deploy/verify-recovery-live.mjs`。
+
+先执行 `pnpm install --frozen-lockfile` 安装包含 MinIO SDK 的工具依赖。V2 清单补齐对象属性、标签和 identity 序列；V1 仅允许只读校验，完整恢复前需生成 V2。真实演练先使用 Flyway 建立源库，备份后停止源数据库和对象服务，再启动恢复目标进行应用验收，保留空值作品回归和中途恢复失败的现场证据。
+
+2026-09-09 更新（v1.6）：本机 RabbitMQ 额外映射 AMQP 5672，连接和开关见 [环境矩阵](../docs/environment-config.md)。使用 `run-local.ps1 -Infrastructure docker` 启动服务；客户端使用 `pnpm dev:client-only` 可排除桌宠。
+
+可靠事件验收入口：`node sanye_deploy/verify-reliable-events.mjs <专用合成作品编号> <阶段>`。阶段包含 `baseline`、`cache`、`disconnect`、`enqueue`、`restart-check`、`exhaust`、`consumer-failure`。必须使用标题以 `sanye_tr02_` 开头的专用作品。故障阶段会停止并恢复本机指定 RabbitMQ 或 ES 容器，不能对共享生产实例执行。`enqueue` 后由操作者重启 anime/search，再运行 `restart-check`。死信回放保留原队列消息供复核，不清空队列；JSON 证据在 `.local/tr02`，不提交凭据、数据库或日志产物。
 
 当前状态（T-B-03 本地运行验收完成，2026-08-21）：
 
@@ -24,6 +40,12 @@
 - Docker 默认宿主机端口为 PostgreSQL `15432`、Redis `16379`、RabbitMQ 管理台 `15672`、Elasticsearch `9200`、Kibana `5601`、MinIO 控制台 `9001`、Nacos Console `8080`、Sentinel `8858`、XXL-JOB `18080`；每个对外暴露的中间件只映射一个宿主机端口。RabbitMQ AMQP `5672`、MinIO 对象 API `9000`、Nacos API/gRPC `8848/9848` 和 XXL-JOB MySQL 只在容器网络内使用；本机网关固定使用 `8091`，不再与 Nacos Console 冲突。
 - 本地联调脚本默认沿用进程中的 `AI_PROVIDER`；未配置时使用 `dev` 模拟模型。使用 Docker 已导入数据时执行 `run-local.ps1 -Infrastructure docker`，它连接 PG `15432`、Redis `16379` 和 ES `9200`，但仍使用静态服务发现；动态 Nacos 注册需要把业务服务部署到 Compose 网络。
 - 开发环境口令为占位值，禁止用于任何非本地环境。
+
+## 当前核对（2026-09-10）
+
+当前发布候选工具已存在于 `sanye_deploy/release/`，流程见[CI/CD](../docs/ci-cd.md)，状态为 T-R-06 进行中。完整业务环境与实际回滚尚未验收。启动脚本不自动启动 Mock CAS；本地登录地址与配置步骤见[环境矩阵](../docs/environment-config.md)，当前保障范围见[审计](../docs/current-status-audit.md)。
+
+更新记录：2026-09-10，v1.13，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 一键配置脚本
 
@@ -60,7 +82,7 @@ pwsh -ExecutionPolicy Bypass -File .\configure-middleware.ps1 -Profile minimal
 pwsh -ExecutionPolicy Bypass -File .\sanye_deploy\import-middleware-data.ps1
 ```
 
-导入脚本使用 `public.sanye_deploy_migration` 记录业务迁移版本和 checksum，重复执行不会重复创建表或重复插入种子。管理平台数据库为 `sanye_admin`，业务数据库为 `sanye_anime`。当前项目没有 RabbitMQ 消费者和真实 XXL-JOB 任务，因此脚本只创建 `sanye.events`/`sanye.events.audit` 基础拓扑，并保持 `xxl_job_info` 为空；服务实例由应用启动后动态注册到 Nacos。
+导入脚本使用 `public.sanye_deploy_migration` 记录业务迁移版本和 checksum，重复执行不会重复创建表或重复插入种子。管理平台数据库为 `sanye_admin`，业务数据库为 `sanye_anime`。导入脚本只初始化历史基础拓扑和种子，不自动创建调度任务；T-R-02 事件拓扑由应用声明，T-R-03 执行器需显式启用，任务由受控管理台配置。服务实例由应用启动后动态注册到 Nacos。
 
 仅启动最小 profile 时，使用 `-Profile minimal`；此模式跳过 Nacos 和 XXL-JOB 数据导入。配置阶段如需只配置不导入数据，使用 `configure-middleware.ps1 -SkipDataImport`。
 

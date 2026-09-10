@@ -2,11 +2,17 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.7 |
-| 文档状态 | 基线，补充搜索与导入性能优化、站内外部预览和真实导入回归证据 |
-| 更新时间 | 2026-08-25 |
+| 文档版本 | v3.1 |
+| 文档状态 | 基线，补充搜索简称扩展、严格匹配、窄屏封面和双路径观看 |
+| 更新时间 | 2026-09-10 |
 | 相关实现 | `sanye_deploy/import-anime.mjs`、`sanye_deploy/anime-importer.mjs`、`sanye_deploy/import-anime.env.example`、`AnimeUrlImportService`、`contentView.vue` |
 | 相关接口 | `/api/v1/admin/anime/import-url`、`/api/v1/admin/anime`、`/api/v1/admin/anime/{id}/episodes/import`、`/api/v1/admin/common/upload` |
+
+## 当前来源证据范围
+
+本文作品编号、剧集数量、导入耗时和第三方来源检查均为原执行环境的历史快照，本次没有重新查询目标数据或第三方站点。当前导入逻辑和受控测试已复验，真实授权来源的访问、播放与性能仍须在目标环境验证，见[当前审计](./current-status-audit.md)。不能按本文历史作品编号直接清理或覆盖其他环境数据。
+
+更新记录：2026-09-10，v3.1，补充可变目录与外部来源证据的时效边界，保留现有导入流程。
 
 ## 1. 功能边界
 
@@ -22,7 +28,7 @@
 
 客户端“个人中心 → 申请导入作品”优先提交审核申请。申请进入管理端“用户反馈”，管理员审核后点击“审核导入”才会创建或更新作品，并导入简介、封面和视频资源。如果反馈/审核链路不可用，客户端会按降级策略直接调用公开降级导入接口，让作品先进入系统。
 
-客户端搜索页支持授权外部搜索候选：站内搜索无结果时，搜索服务按 `https://yhdmtv.cc/search/index.html?keyword=<关键词>` 对应的公开动态结果接口 `/public/auto/search1.html?keyword=<关键词>` 读取候选，只提取 `/p/` 作品详情链接。搜索框既可输入普通关键词，也可直接粘贴 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL，服务端会解析其中的 `keyword` 参数。每条外部候选同时提供“直接观看”和“导入观看”：前者进入站内 `/watch/external?sourceUrl=...`，通过只读预览接口解析简介、封面、剧集和播放器地址，并复用站内 ArtPlayer/HLS 播放器；后者调用降级导入接口，导入简介、封面和视频资源后跳转正式作品详情播放。站内预览不创建作品、不写入剧集。
+客户端搜索页支持授权外部搜索候选：输入关键词后，站内片库和樱花动漫候选立即并行查询并分区展示，站内已有内容不会阻止外部候选出现。搜索服务按 `https://yhdmtv.cc/search/index.html?keyword=<关键词>` 对应的公开动态结果接口 `/public/auto/search1.html?keyword=<关键词>` 读取候选；“春物”“俺ガイル”和 `Oregairu` 等明确简称会扩展为正式标题和用户原词并行查询。客户端先请求并展示正式标题的高相关结果，原词回源完成后自动补齐它能够召回的其他作品；两次读取在服务端共享正式标题抓取，不会重复访问同一来源。每路搜索只提取标题严格包含该路查询词的 `/p/` 作品详情链接，合并时按标题去重，并按来源中的确定证据标记“电视动画”“剧场版”“网络动画”或“原创动画”；分类页只做精确分类筛选，无法确定分类的候选仅展示在“全部”。同标题外部候选已有确定分类或有效封面时，客户端用它校正片库历史错误类型和占位封面的搜索展示，但不修改数据库。搜索框既可输入普通关键词，也可直接粘贴 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL，服务端会解析其中的 `keyword` 参数。外部封面解析兼容延迟加载属性；已确认长期不可用的图片按完整 URL 精确替换为同一作品的可用真实封面，其他加载失败或 CDN 持续 5 秒无有效像素时回退站内占位封面，窄屏布局仍保留封面。每条外部候选同时提供“直接观看”和“导入观看”：前者进入站内 `/watch/external?sourceUrl=...`，通过只读预览接口解析简介、封面、剧集和播放器地址，并复用站内 ArtPlayer/HLS 播放器；后者调用降级导入接口，导入简介、封面和视频资源后跳转正式作品详情播放。预览与导入共享详情解析，并结合作品名、明确类型字段和页面分类标题确定作品类型；站内预览不创建作品、不写入剧集。
 
 ## 2. 使用方式
 
@@ -117,10 +123,10 @@ node .\sanye_deploy\import-anime.mjs `
 
 ```text
 搜索框输入关键词（如 天气之子）或粘贴 `https://yhdmtv.cc/search/index.html?keyword=...`
-  -> GET /api/v1/search
-  -> 站内无结果时 GET /api/v1/search/external?keyword=天气之子 或完整搜索 URL
+  -> 并行 GET /api/v1/search、GET /api/v1/search/external?preferredOnly=true 与完整外部搜索
   -> 服务端解析完整搜索 URL 中的 keyword 参数
-  -> 展示 yhdmtv.cc 动态结果中的 /p/ 详情候选
+  -> 先展示正式标题候选，再严格校验并补齐原词候选、确定性分类并合并去重
+  -> 分区展示 yhdmtv.cc 外部候选和已在片库内容，封面失败时回退占位图
   -> 用户选择“直接观看”：进入站内 /watch/external?sourceUrl=...
   -> GET /api/v1/anime/external-preview?sourceUrl=...
   -> 站内 ArtPlayer/HLS 播放器加载外部播放地址
@@ -170,3 +176,6 @@ mvn -f .\sanye_server\pom.xml -pl sanye-server-search test
 | 2026-08-25 | v2.5 | 修正外部候选存在时的空状态误提示，补充播放页 `imgUrl` 封面解析、当前页复用和真实 URL 导入测速；确认《天气之子》导入 2 集且封面正确 | `searchView.vue`、`MediaImportServiceTest` 10 项、动漫服务直连导入实测、anime 75 项测试、`pnpm docs:check` |
 | 2026-08-25 | v2.6 | 将外部候选直接观看改为站内 `/watch/external` 只读预览，复用正式 ArtPlayer/HLS 播放器；确认预览返回《天气之子》正确封面、2 集和播放地址，且不写入片库 | `AnimeController`、`AnimeUrlPreviewResult`、站内 Playwright 回归、anime 76 项测试、客户端 typecheck/build |
 | 2026-08-25 | v2.7 | 优化搜索与导入等待：站内零命中目录回源、外部候选缓存与请求合并、8 路固定选集线程池、导入查重索引和剧集批量写入 | search 12 项、anime 76 项单元测试，客户端 typecheck/build；真实来源耗时待环境复测 |
+| 2026-08-26 | v2.8 | 搜索改为站内片库与外部候选并行分区展示；增加标题严格匹配、确定性分类、历史类型展示校正、同名去重、封面回退，并修正预览/导入详情分类，保留双路径观看 | search 15 项、anime 80 项单元测试，客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v2.9 | 增加“春物”等精确作品简称解析并排除无关子串结果；搜索封面立即加载、5 秒超时回退且窄屏不再隐藏 | search 17 项、客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v3.0 | 修正简称搜索语义：“春物”同时查询正式标题和原词，渐进展示正式作品且不再丢弃原词结果；为已核验失效图片精确替换同作品真实封面 | search 18/18、客户端 typecheck/build、搜索 Playwright 5/5、真实外部接口与图片复测 |

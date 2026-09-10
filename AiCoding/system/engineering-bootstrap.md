@@ -2,9 +2,10 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.1 |
+| 文档版本 | v0.2 |
 | 文档状态 | 基线 |
-| 更新时间 | 2026-08-26 |
+| 更新时间 | 2026-09-09 |
+| 关联文档 | [版本基线](../../docs/version-baseline.md)、[开发任务清单](../../docs/development-tasks.md) |
 | 来源 | 根 `README.md`、`AGENTS.md`、`sanye_server/pom.xml`、各前端 `package.json` |
 
 ## 工程地图
@@ -50,4 +51,10 @@ pnpm docs:check
 mvn -B -f sanye_server/pom.xml test
 ```
 
-Node.js 基线为 22 LTS，pnpm 为 10.15.0，Java 为 21。端口、环境变量、外部 AI 额度和版权授权以 `docs/environment-config.md`、`docs/gap-register.md` 为准。
+工具链统一为当前本机版本：Node.js 26.5.0（非 LTS）、pnpm 10.15.0、Java 21.0.12 和 Maven 3.9.16。端口、环境变量、外部 AI 额度和版权授权以 `docs/environment-config.md`、`docs/gap-register.md` 为准；本轮验证结果以 `docs/development-tasks.md` 为准。
+
+## 更新记录
+
+| 日期 | 版本 | 变更 | 依据 |
+| --- | --- | --- | --- |
+| 2026-09-09 | v0.2 | 工程上下文统一为当前本机工具链，注明 Node.js 26.5.0 非 LTS 与验证入口 | 用户确认、[版本基线](../../docs/version-baseline.md) |
