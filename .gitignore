@@ -40,6 +40,7 @@ sanye_deploy/backups/
 target/
 dist/
 dist-desktop/
+.runtime/
 coverage/
 node_modules/
 *.tsbuildinfo

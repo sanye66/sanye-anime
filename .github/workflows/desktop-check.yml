@@ -1,0 +1,50 @@
+name: desktop-check
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'sanye_desktop/**'
+      - 'sanye_client/**'
+      - 'sanye_server/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/desktop-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 26.5.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+        with:
+          version: 10.15.0
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: microsoft
+          java-version: '21.0.11'
+      - name: 安装固定 Maven
+        shell: bash
+        run: bash sanye_deploy/setup-ci-maven.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:desktop
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm --filter @sanye/sanye_client build:desktop
+      - name: 验证桌面服务源码
+        run: mvn -B -ntp -f sanye_server/pom.xml -pl sanye-server-anime,sanye-server-search,sanye-server-favorite -am package
+      - name: 保留测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sanye_desktop-source-check-${{ github.sha }}
+          path: sanye_server/**/target/surefire-reports/*.xml
+          if-no-files-found: warn
