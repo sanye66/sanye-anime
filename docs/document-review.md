@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v5.94 |
+| 文档版本 | v5.96 |
 | 文档状态 | 基线 |
 | 关联文档 | [开发任务清单](./development-tasks.md)、[开发待办事项](./development-todo.md) |
 | 更新时间 | 2026-09-21 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
+
+更新记录：2026-09-21，v5.96，登记交付分支 CI 三项失败的处理与证据：浏览器回归按既有分类校正语义修正（切换分类只做前端筛选，站内检索不再传 `type`），`pnpm e2e:ci` 4 个脚本全部通过；桌面回归修正 26.15.x 的 `signIf` 签名入口并在 CI 安装 Chromium，`pnpm test:desktop` 40 项（39 通过 1 跳过）；后端按 Trivy 结果升级 AMQP 客户端 5.34.0 与 Bouncy Castle 1.85，`mvn -f sanye_server/pom.xml test` 通过，详见[版本基线](./version-baseline.md) v0.12。远端复跑结果以交付分支 CI 为准，未新增生产或跨设备验收。
 
 更新记录：2026-09-21，v5.95，登记交付基线对齐：桌面打包链维持 `electron-builder` 26.15.3/Squirrel，签名补丁记为 `patches/app-builder-lib@26.15.3.patch`（26.0.12 因 high/critical 依赖告警不满足 `pnpm audit --audit-level high`），并同步[版本基线](./version-baseline.md) v0.11 与[本地桌面专项](./local-desktop.md) v1.48；按维护者授权在 [README](../README.md) v0.4 增加 MIT 许可与第三方许可边界。依据 `package.json`、`pnpm-lock.yaml`、`sanye_desktop/package.json`、`LICENSE`、[第三方许可说明](./third-party-notices.md)、`pnpm audit --audit-level high` 与 `pnpm docs:check`。既有交付分支的 CI 工具链、Tomcat 与 AMQP 补丁结论不变，未新增业务验收。
 

@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.11 |
+| 文档版本 | v0.12 |
 | 文档状态 | 基线（按当前本机工具链执行兼容性验证） |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
@@ -17,6 +17,8 @@
 更新记录：2026-09-10，v0.10，交付分支按 [Trivy 运行](https://github.com/sanye66/sanye-anime/actions/runs/34459216085) 修正 Tomcat 与 RabbitMQ 客户端安全补丁：两套后端统一 Tomcat 10.1.59（修复下限 10.1.58 的 Maven Central 构件返回 404，10.1.59 可下载），业务后端 AMQP 客户端 5.33.1；桌面打包链统一 electron-builder/Squirrel 26.15.3，保留签名补丁。CI 使用下载源可用的 Microsoft JDK 21.0.11，本机及候选严格版本仍为 21.0.12，详见 [CI/CD](./ci-cd.md)。
 
 更新记录：2026-09-21，v0.11，桌面打包链维持 `electron-builder` 26.15.3 并保留 Squirrel：临时安装器先签名后执行的补丁由 `patches/app-builder-lib@26.15.3.patch`（`packager.signIf`）承载，签名失败直接终止；26.0.12 依赖的 `app-builder-lib <26.15.0` 及 `tar`、`builder-util-runtime` 存在 high/critical 告警，不能通过 `pnpm audit --audit-level high`。原因、补丁边界和依赖升级复核要求见[本地桌面专项](./local-desktop.md)。两套后端 Tomcat 10.1.59 与 AMQP 客户端 5.33.1 维持 v0.10 结论。
+
+更新记录：2026-09-21，v0.12，按交付分支 Trivy 结果修正业务后端两个传递依赖：AMQP 客户端 5.33.1 → 5.34.0（CVE-2026-75516，高），Bouncy Castle `bcprov-jdk18on` 1.84 → 1.85（CVE-2026-8763 严重、CVE-2026-13506 高）。两个目标版本均经 Maven Central 确认可下载；升级后 `mvn -f sanye_server/pom.xml test` 通过，`mvn dependency:tree -Dincludes=org.bouncycastle:*,com.rabbitmq:*` 确认解析为 1.85 与 5.34.0。Tomcat 10.1.59 维持 v0.10 结论；远端 Trivy 复跑结果以交付分支 CI 为准。
 
 ## 1. 版本选择结论
 
@@ -58,7 +60,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Netty | 4.1.137.Final | managed | 两套父工程统一覆盖安全补丁版本，禁止业务模块单独覆盖 |
 | Apache HttpCore 5 | 5.4.3 | managed | 微服务父工程统一覆盖 Nacos Client 的传递依赖版本 |
 | Commons FileUpload | 1.6.0 | managed | 微服务父工程统一覆盖 OpenFeign 表单支持的传递依赖版本 |
-| Bouncy Castle | 1.84 | managed | 微服务父工程统一覆盖 Spring Cloud 的传递依赖版本 |
+| Bouncy Castle | 1.85 | managed | 微服务父工程统一覆盖 Spring Cloud 的传递依赖版本；1.84 存在 CVE-2026-8763（严重）与 CVE-2026-13506（高） |
+| RabbitMQ AMQP 客户端 | 5.34.0 | managed | 微服务父工程按 Spring Boot 的 `rabbit-amqp-client.version` 覆盖；5.33.1 存在 CVE-2026-75516（高） |
 | Apache POI | 5.4.0 | managed | 管理后端父工程统一管理，包含 Commons Compress 1.27.1 安全版本 |
 | Commons Compress | 1.27.1 | managed | 随 Apache POI 5.4.0 管理，不在业务模块单独覆盖 |
 | HikariCP | 随 Spring Boot 3.5.x | managed | 统一连接池配置 |
