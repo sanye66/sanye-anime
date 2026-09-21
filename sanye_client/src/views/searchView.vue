@@ -86,7 +86,7 @@ function isPlaceholderCover(value?: string): boolean {
 
 const query = computed(() => normalizeSearchInput(String(route.query.keyword ?? '')))
 let loadedQuery = query.value
-let loadedChip = chip.value
+let loadedPage = page.value
 const filteredExternalResults = computed(() => chip.value === '全部'
   ? externalResults.value
   : externalResults.value.filter((anime) => anime.type === chip.value))
@@ -119,14 +119,17 @@ const resultCount = computed(() => filteredInternalResults.value.length + filter
 watch(() => route.fullPath, () => {
   const nextKeyword = String(route.query.keyword ?? '')
   const nextChip = chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部'
-  const onlyPageChanged = loadedQuery === normalizeSearchInput(nextKeyword) && loadedChip === nextChip
+  const nextPage = routePage()
+  const keywordChanged = loadedQuery !== normalizeSearchInput(nextKeyword)
+  const pageChanged = loadedPage !== nextPage
   loadedQuery = normalizeSearchInput(nextKeyword)
-  loadedChip = nextChip
+  loadedPage = nextPage
   keyword.value = nextKeyword
   chip.value = nextChip
-  page.value = routePage()
-  if (onlyPageChanged) void loadInternal(query.value)
-  else void load()
+  page.value = nextPage
+  // 分类是对已返回候选的前端筛选；重建请求会清空站内结果与外部类型校正依据。
+  if (keywordChanged) { void load(); return }
+  if (pageChanged) void loadInternal(query.value)
 })
 
 function selectChip(type: string): void {
@@ -230,7 +233,6 @@ async function loadInternal(queryText: string): Promise<void> {
     }
     const result = await searchApi.search({
       keyword: queryText,
-      type: chip.value === '全部' ? undefined : chip.value,
       page: page.value,
       size,
     }, { signal: controller.signal, timeout: 10_000, retries: 0 })
