@@ -49,6 +49,17 @@ class MediaImportServiceTest {
     }
 
     @Test
+    void resolvesRelativePlayerAddressesAgainstSourcePage() {
+        for (String address : List.of("/media/video.m3u8", "//example.com/media/video.m3u8")) {
+            var episodes = service.parseEpisodes("https://example.com/p/1/1/1",
+                    "<script>var player_aaaa={\"url\":\"" + address + "\"};</script>");
+            assertEquals(1, episodes.size());
+            assertEquals("https://example.com/media/video.m3u8", episodes.get(0).playbackUrl());
+            assertEquals(episodes.get(0).playbackUrl(), episodes.get(0).playbackOptions().get(0).url());
+        }
+    }
+
+    @Test
     void rejectsNonHttpsAndNonWhitelistedHost() {
         assertThrows(BusinessException.class, () -> service.importFrom(1, "http://example.com/p/1/1/1"));
         BusinessException ex = assertThrows(BusinessException.class,
@@ -228,6 +239,24 @@ class MediaImportServiceTest {
         assertEquals("第01集", imported.get(0).title());
         assertEquals("https://media.example/one.m3u8", imported.get(0).playbackUrl());
         assertEquals("https://media.example/two.m3u8", imported.get(1).playbackUrl());
+    }
+
+    @Test
+    void currentMovieLinesWinOverHistoricalNumberedEpisodesWithoutExtraFetches() {
+        String root = "https://example.com/p/74487/153/0";
+        fetcher.pages.put(root, temLinePage(
+                "[{\"id\":4564169,\"name\":\"HD国语\",\"file\":\"abc" + encodedUrl("https://media.example/mandarin.m3u8")
+                        + "\"},{\"id\":4564168,\"name\":\"HD中字\",\"file\":\"abc" + encodedUrl("https://media.example/subtitles.m3u8") + "\"}]")
+                + "<div class='module-play-list'><a href='/p/74487/153/124898'>第01集</a>"
+                + "<a href='/p/74487/153/124897'>第02集</a></div>"
+                + "<div class='module-play-list'><a href='/p/74487/153/4564169'>HD国语</a>"
+                + "<a href='/p/74487/153/4564168'>HD中字</a></div>");
+        var episodes = service.parseEpisodes(root, null);
+        assertEquals(1, episodes.size());
+        assertEquals("https://media.example/mandarin.m3u8", episodes.getFirst().playbackUrl());
+        assertEquals(List.of("https://media.example/mandarin.m3u8", "https://media.example/subtitles.m3u8"),
+                episodes.getFirst().playbackOptions().stream().map(option -> option.url()).toList());
+        assertEquals(List.of(root), fetcher.requested);
     }
 
     private String temLinePage(String lines) {

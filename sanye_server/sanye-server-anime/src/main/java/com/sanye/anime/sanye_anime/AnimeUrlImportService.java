@@ -15,11 +15,18 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 
 /** URL 一键导入服务：读取授权公开详情页，写入作品简介、封面和剧集媒体元数据。 */
 @Service
 public class AnimeUrlImportService {
+
+    private static final long PREVIEW_CACHE_TTL_MS = 30_000L;
+    private final Map<String, PreviewCacheEntry> previewCache = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<AnimeUrlPreviewResult>> previewInFlight = new ConcurrentHashMap<>();
 
     private final AnimeManageService animeManageService;
     private final MediaImportService mediaImportService;
@@ -85,6 +92,38 @@ public class AnimeUrlImportService {
     /** 读取外部作品的公开元数据和播放地址，供客户端使用站内播放器直接观看。 */
     public AnimeUrlPreviewResult previewFrom(String sourceUrl) {
         URI uri = mediaImportService.validateSourceUrl(sourceUrl);
+        String cacheKey = uri.toString();
+        PreviewCacheEntry cached = previewCache.get(cacheKey);
+        if (cached != null && cached.expiresAt() > System.currentTimeMillis()) {
+            return cached.value();
+        }
+        CompletableFuture<AnimeUrlPreviewResult> existing = previewInFlight.get(cacheKey);
+        if (existing != null) {
+            return existing.join();
+        }
+        CompletableFuture<AnimeUrlPreviewResult> pending = new CompletableFuture<>();
+        CompletableFuture<AnimeUrlPreviewResult> raced = previewInFlight.putIfAbsent(cacheKey, pending);
+        if (raced != null) {
+            return raced.join();
+        }
+        try {
+            AnimeUrlPreviewResult result = previewFromUncached(uri);
+            if (!result.episodes().isEmpty()) {
+                previewCache.put(cacheKey, new PreviewCacheEntry(result,
+                        System.currentTimeMillis() + PREVIEW_CACHE_TTL_MS));
+            }
+            pending.complete(result);
+            return result;
+        } catch (RuntimeException ex) {
+            pending.completeExceptionally(ex);
+            throw ex;
+        } finally {
+            previewInFlight.remove(cacheKey, pending);
+            previewCache.entrySet().removeIf(entry -> entry.getValue().expiresAt() <= System.currentTimeMillis());
+        }
+    }
+
+    private AnimeUrlPreviewResult previewFromUncached(URI uri) {
         URI metadataUri = metadataPage(uri);
         String rootHtml = pageFetcher.fetch(uri);
         String metadataHtml = rootHtml;
@@ -102,6 +141,9 @@ public class AnimeUrlImportService {
         return new AnimeUrlPreviewResult(metadata.title(), metadata.originalTitle(), metadata.type(), metadata.year(),
                 metadata.summary(), metadata.tags(), metadata.updateText(), metadata.coverUrl(), uri.toString(),
                 mediaImportService.parseEpisodes(uri.toString(), rootHtml));
+    }
+
+    private record PreviewCacheEntry(AnimeUrlPreviewResult value, long expiresAt) {
     }
 
     /** 播放页缺少封面和规范标题时，优先读取同作品的公开详情页。 */

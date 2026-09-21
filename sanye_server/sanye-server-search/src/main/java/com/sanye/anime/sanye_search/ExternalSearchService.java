@@ -1,6 +1,8 @@
 package com.sanye.anime.sanye_search;
 
 import com.sanye.anime.sanye_search.model.ExternalSearchHitView;
+import com.sanye.anime.sanye_core.exception.BusinessException;
+import com.sanye.anime.sanye_core.exception.ErrorCode;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -22,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -53,8 +56,8 @@ public class ExternalSearchService {
 
     /** 注入搜索页和动态结果页模板，默认匹配 yhdmtv.cc 的 keyword 查询格式。 */
     public ExternalSearchService(
-            @Value("${sanye.search.external-base:https://yhdmtv.cc/search/index.html?keyword=}") String externalBase,
-            @Value("${sanye.search.external-results-base:https://yhdmtv.cc/public/auto/search1.html?keyword=}") String externalResultsBase,
+            @Value("${sanye.search.external-base:https://www.yhdmtv.cc/search/index.html?keyword=}") String externalBase,
+            @Value("${sanye.search.external-results-base:https://www.yhdmtv.cc/public/auto/search1.html?keyword=}") String externalResultsBase,
             @Value("${sanye.search.external-max-bytes:2097152}") int maxBytes) {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).followRedirects(HttpClient.Redirect.NEVER).build();
         this.searchBase = URI.create(externalBase);
@@ -78,12 +81,16 @@ public class ExternalSearchService {
         List<CompletableFuture<List<ExternalSearchHitView>>> searches = queryKeywords.stream()
                 .map(queryKeyword -> searchOneAsync(queryKeyword, requestedType))
                 .toList();
-        CompletableFuture.allOf(searches.toArray(CompletableFuture[]::new)).join();
+        CompletableFuture.allOf(searches.toArray(CompletableFuture[]::new)).handle((value, error) -> null).join();
         Map<String, ExternalSearchHitView> merged = new LinkedHashMap<>();
         for (CompletableFuture<List<ExternalSearchHitView>> search : searches) {
+            if (search.isCompletedExceptionally()) continue;
             for (ExternalSearchHitView hit : search.join()) {
                 merged.merge(normalizeForMatch(hit.title()), hit, this::preferCandidate);
             }
+        }
+        if (searches.stream().allMatch(CompletableFuture::isCompletedExceptionally)) {
+            throw unavailable();
         }
         return merged.values().stream().limit(limit).toList();
     }
@@ -96,7 +103,11 @@ public class ExternalSearchService {
         }
         int limit = Math.min(Math.max(size, 1), 30);
         String requestedType = type == null ? "" : type.trim();
-        return searchOneAsync(queryKeywords.get(0), requestedType).join().stream().limit(limit).toList();
+        try {
+            return searchOneAsync(queryKeywords.get(0), requestedType).join().stream().limit(limit).toList();
+        } catch (java.util.concurrent.CompletionException ex) {
+            throw unavailable();
+        }
     }
 
     private List<String> queryKeywords(String keyword) {
@@ -118,9 +129,22 @@ public class ExternalSearchService {
         }
         CompletableFuture<List<ExternalSearchHitView>> future = inFlight.computeIfAbsent(cacheKey,
                 key -> CompletableFuture.supplyAsync(() -> {
-                    URI url = URI.create(resultsBase.toString()
+                    URI resultsUrl = URI.create(resultsBase.toString()
                             + URLEncoder.encode(queryKeyword, StandardCharsets.UTF_8));
-                    return List.copyOf(parse(fetch(url), url.toString(), queryKeyword, requestedType, 30));
+                    List<ExternalSearchHitView> parsed;
+                    try {
+                        parsed = parse(fetch(resultsUrl), resultsUrl.toString(), queryKeyword, requestedType, 30);
+                    } catch (BusinessException unavailable) {
+                        if (searchBase.equals(resultsBase)) throw unavailable;
+                        parsed = List.of();
+                    }
+                    // 动态接口偶发返回空壳或被网关拦截时，回退到用户可直接打开的搜索页。
+                    if (parsed.isEmpty() && !searchBase.equals(resultsBase)) {
+                        URI searchUrl = URI.create(searchBase.toString()
+                                + URLEncoder.encode(queryKeyword, StandardCharsets.UTF_8));
+                        parsed = parse(fetch(searchUrl), searchUrl.toString(), queryKeyword, requestedType, 30);
+                    }
+                    return List.copyOf(parsed);
                 }, FETCH_EXECUTOR).thenApply(result -> {
                     long ttl = result.isEmpty() ? emptyCacheTtlMs : cacheTtlMs;
                     cache.put(key, new CacheEntry(result,
@@ -196,21 +220,46 @@ public class ExternalSearchService {
 
     private String fetch(URI uri) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                    .timeout(Duration.ofSeconds(15))
-                    .header("Accept", "text/html,application/xhtml+xml")
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/127 Safari/537.36")
-                    .GET()
-                    .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                return "";
+            long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+            for (int redirects = 0; redirects <= 3; redirects++) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) throw unavailable();
+                HttpRequest request = HttpRequest.newBuilder(uri)
+                        .timeout(Duration.ofNanos(remaining))
+                        .header("Accept", "text/html,application/xhtml+xml")
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/127 Safari/537.36")
+                        .GET()
+                        .build();
+                HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (Set.of(301, 302, 303, 307, 308).contains(response.statusCode())) {
+                    String location = response.headers().firstValue("Location").orElseThrow(ExternalSearchService::unavailable);
+                    URI next = uri.resolve(location);
+                    boolean sameOrigin = java.util.Objects.equals(uri.getScheme(), next.getScheme())
+                            && java.util.Objects.equals(uri.getHost(), next.getHost()) && uri.getPort() == next.getPort();
+                    boolean knownHost = "https".equalsIgnoreCase(next.getScheme()) && isYhdmHost(uri.getHost())
+                            && isYhdmHost(next.getHost()) && (next.getPort() == -1 || next.getPort() == 443);
+                    if (next.getUserInfo() != null || !(sameOrigin || knownHost)) throw unavailable();
+                    uri = next;
+                    continue;
+                }
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    throw unavailable();
+                }
+                String body = response.body() == null ? "" : response.body();
+                if (body.getBytes(StandardCharsets.UTF_8).length > maxBytes) throw unavailable();
+                return body;
             }
-            String body = response.body() == null ? "" : response.body();
-            return body.getBytes(StandardCharsets.UTF_8).length > maxBytes ? "" : body;
+            throw unavailable();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw unavailable();
         } catch (Exception ex) {
-            return "";
+            throw unavailable();
         }
+    }
+
+    private static BusinessException unavailable() {
+        return new BusinessException(ErrorCode.SEARCH_UNAVAILABLE, "外部搜索暂不可用，请稍后重试");
     }
 
     private boolean isDetailUrl(String href) {
@@ -283,12 +332,16 @@ public class ExternalSearchService {
 
     /** 同名多来源只展示一次，优先采用分类更明确的播放来源并保留先到的有效封面。 */
     private ExternalSearchHitView preferCandidate(ExternalSearchHitView existing, ExternalSearchHitView candidate) {
-        if (typeSpecificity(candidate.type()) <= typeSpecificity(existing.type())) {
-            return existing;
-        }
+        var preferred = typeSpecificity(candidate.type()) > typeSpecificity(existing.type()) ? candidate : existing;
+        var sources = new java.util.LinkedHashSet<String>();
+        sources.add(existing.sourceUrl());
+        sources.addAll(existing.alternativeSourceUrls());
+        sources.add(candidate.sourceUrl());
+        sources.addAll(candidate.alternativeSourceUrls());
+        sources.remove(preferred.sourceUrl());
         String cover = firstNonBlank(existing.coverUrl(), candidate.coverUrl());
-        return new ExternalSearchHitView(candidate.title(), candidate.sourceUrl(), cover,
-                candidate.summary(), candidate.type());
+        return new ExternalSearchHitView(preferred.title(), preferred.sourceUrl(), cover,
+                preferred.summary(), preferred.type(), sources.stream().limit(3).toList());
     }
 
     private int typeSpecificity(String type) {

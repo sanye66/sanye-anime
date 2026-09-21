@@ -28,6 +28,24 @@ class AnimeUrlImportServiceTest {
     private FakePageFetcher fetcher;
     private AnimeUrlImportService service;
 
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "sanye.media.live", matches = "true")
+    void livePreviewFollowsCanonicalRedirectAndExtractsPlayback() throws Exception {
+        var liveFetcher = new com.sanye.anime.sanye_anime.media.HttpMediaPageFetcher(30000, 2097152);
+        var media = new MediaImportService(catalogStore, mediaStore, liveFetcher, "yhdmtv.cc,www.yhdmtv.cc", 5);
+        var previewService = new AnimeUrlImportService(null, media, liveFetcher, null);
+        var preview = previewService.previewFrom("https://yhdmtv.cc/p/74487/153/0");
+        assertTrue(preview.title().contains("天气之子"));
+        assertEquals(1, preview.episodes().size());
+        assertTrue(preview.episodes().getFirst().playbackOptions().size() >= 2);
+        assertTrue(preview.episodes().stream().noneMatch(episode -> episode.playbackUrl().contains("v6.qrssv.com")));
+        assertTrue(preview.episodes().stream().anyMatch(episode -> episode.playbackUrl().contains(".m3u8")));
+        var report = java.nio.file.Path.of("target", "live-preview.json");
+        java.nio.file.Files.createDirectories(report.getParent());
+        new ObjectMapper().writeValue(report.toFile(), preview);
+        System.out.println("LIVE_PREVIEW_EPISODES=" + preview.episodes().size());
+    }
+
     @BeforeEach
     void setUp() {
         AnimeMemoryStore.resetForTest();
@@ -64,6 +82,18 @@ class AnimeUrlImportServiceTest {
         assertEquals("已发布", result.anime().status());
         assertEquals(2, result.episodesImported());
         assertEquals("https://media.example/one.m3u8", mediaStore.episodesOf(result.anime().id()).get(0).playbackUrl());
+    }
+
+    @Test
+    void previewCachesEpisodesButRetriesEmptyResults() {
+        String url = "https://example.com/p/900/";
+        fetcher.pages.put(url, "<title>测试作品</title>");
+        assertTrue(service.previewFrom(url).episodes().isEmpty());
+        fetcher.pages.put(url, "<title>测试作品</title><script>var player_aaaa={\"url\":\"https://media.example/one.m3u8\"};</script>");
+        var playable = service.previewFrom(url);
+        assertEquals(1, playable.episodes().size());
+        fetcher.pages.put(url, "<title>测试作品</title>");
+        org.junit.jupiter.api.Assertions.assertSame(playable, service.previewFrom(url));
     }
 
     @Test

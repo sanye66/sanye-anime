@@ -14,10 +14,86 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ExternalSearchServiceTest {
 
     private HttpServer server;
+
+    @Test
+    void fallsBackToSearchPageForEmptyAndFailedDynamicResults() throws Exception {
+        AtomicInteger status = new AtomicInteger(200);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/dynamic", exchange -> {
+            exchange.sendResponseHeaders(status.get(), -1);
+            exchange.close();
+        });
+        server.createContext("/search", exchange -> {
+            byte[] body = "<a href='https://www.yhdmtv.cc/p/123/' title='天气之子'>天气之子</a>".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort();
+        for (int code : new int[]{200, 503}) {
+            status.set(code);
+            var service = new ExternalSearchService(base + "/search?keyword=", base + "/dynamic?keyword=", 2097152);
+            assertEquals(1, service.search("天气之子", 20).size());
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "sanye.search.live", matches = "true")
+    void liveSourceReturnsMatchingTitlesAfterCanonicalHostRedirect() {
+        var hits = service().search("天气之子", 20);
+        assertTrue(hits.stream().anyMatch(hit -> hit.title().contains("天气之子")));
+        System.out.println("LIVE_SEARCH_MATCHES=" + hits.size());
+    }
+
+    @Test
+    void followsRelativeRedirectAndDoesNotCacheFailuresAsEmptyResults() throws Exception {
+        AtomicInteger status = new AtomicInteger(503);
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            exchange.getResponseHeaders().set("Location", "/results");
+            exchange.sendResponseHeaders(301, -1);
+            exchange.close();
+        });
+        server.createContext("/results", exchange -> {
+            byte[] body = "<a href='https://www.yhdmtv.cc/p/123/' title='天气之子'>天气之子</a>".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(status.get(), body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/search?keyword=";
+        ExternalSearchService service = new ExternalSearchService(base, base, 2097152);
+        assertThrows(com.sanye.anime.sanye_core.exception.BusinessException.class, () -> service.search("天气之子", 20));
+        status.set(200);
+        assertEquals(1, service.search("天气之子", 20).size());
+    }
+
+    @Test
+    void rejectsRedirectToAnotherOriginAndRedirectLoops() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> location = new java.util.concurrent.atomic.AtomicReference<>("http://localhost:1/private");
+        AtomicInteger requests = new AtomicInteger();
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/search", exchange -> {
+            requests.incrementAndGet();
+            exchange.getResponseHeaders().set("Location", location.get());
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
+        server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/search?keyword=";
+        ExternalSearchService service = new ExternalSearchService(base, base, 2097152);
+        assertThrows(com.sanye.anime.sanye_core.exception.BusinessException.class, () -> service.searchPreferred("天气之子", null, 20));
+        assertEquals(1, requests.get());
+        location.set("/search");
+        assertThrows(com.sanye.anime.sanye_core.exception.BusinessException.class, () -> service.search("天气之子", 20));
+        assertEquals(5, requests.get());
+    }
 
     @AfterEach
     void tearDown() {
@@ -182,6 +258,7 @@ class ExternalSearchServiceTest {
         assertEquals(1, all.size());
         assertEquals("剧场版", all.get(0).type());
         assertEquals("https://yhdmtv.cc/p/2/364/0", all.get(0).sourceUrl());
+        assertEquals(java.util.List.of("https://yhdmtv.cc/p/1/153/0"), all.get(0).alternativeSourceUrls());
         assertEquals("https://yhdmtv.cc/first.jpg", all.get(0).coverUrl());
         assertTrue(television.isEmpty());
     }
