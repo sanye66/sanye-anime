@@ -1,11 +1,13 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { writeFile, mkdir, cp } from 'node:fs/promises'
+import { writeFile, mkdir, cp, readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
-const root = path.join(path.dirname(fileURLToPath(import.meta.url)), 'runtime')
+const root = process.env.SANYE_DESKTOP_SEED_OUTPUT ? path.resolve(process.env.SANYE_DESKTOP_SEED_OUTPUT) : path.join(path.dirname(fileURLToPath(import.meta.url)), 'runtime')
+const bundleFiles = ['seed.sql']
 const pg = process.env.SANYE_DESKTOP_PG_HOME || 'C:/Program Files/PostgreSQL/18'
 const upload = process.env.SANYE_DESKTOP_COVER_ROOT || path.join(os.homedir(), '.sanye_anime/uploads')
 const ids = '127,128,133,135,136,137'
@@ -13,7 +15,7 @@ const args = ['-w', '-h', '127.0.0.1', '-p', process.env.SANYE_DESKTOP_SOURCE_PO
 async function query(sql) {
   const { stdout } = await promisify(execFile)(path.join(pg, 'bin/psql.exe'), [...args, '-c', sql], {
     windowsHide: true, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
-    env: { ...process.env, PGCLIENTENCODING: 'UTF8' },
+    env: { ...process.env, PGPASSWORD: process.env.SANYE_DESKTOP_SOURCE_PASSWORD || process.env.PGPASSWORD || '', PGCLIENTENCODING: 'UTF8' },
   })
   return JSON.parse(stdout.trim())
 }
@@ -28,6 +30,7 @@ for (const record of anime) {
   const destination = path.join(root, 'client', 'admin-profile/profile', relative)
   await mkdir(path.dirname(destination), { recursive: true })
   await cp(source, destination)
+  bundleFiles.push(path.relative(root, destination).split(path.sep).join('/'))
 }
 const literal = rows => "'" + JSON.stringify(rows).replaceAll("'", "''") + "'"
 const sql = `begin;
@@ -39,4 +42,9 @@ commit;
 `
 await mkdir(root, { recursive: true })
 await writeFile(path.join(root, 'seed.sql'), sql, 'utf8')
+if (process.env.SANYE_DESKTOP_SEED_OUTPUT) {
+  const files = []
+  for (const file of [...new Set(bundleFiles)].sort()) files.push({ path: file, sha256: createHash('sha256').update(await readFile(path.join(root, file))).digest('hex') })
+  await writeFile(path.join(root, 'manifest.json'), JSON.stringify({ version: 1, files }, null, 2))
+}
 console.log(`Prepared ${anime.length} fixed recommendations and ${episodes.length} episode metadata records; no account or activity data.`)

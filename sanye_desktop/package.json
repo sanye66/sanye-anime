@@ -2,17 +2,20 @@
   "name": "@sanye/sanye_desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "sanye_anime local desktop runtime",
   "author": "sanye_anime",
   "main": "main.cjs",
   "scripts": {
     "prepare:runtime": "node prepare.mjs",
     "start": "electron .",
-    "test": "node --test runtime.test.cjs packaging.test.cjs",
+    "test": "node --test main.test.cjs trayMedia.test.cjs runtime.test.cjs postgresTemplate.test.cjs nativeDependencies.test.cjs packaging.test.cjs seed-bundle.test.mjs install-package.test.cjs",
     "pack": "electron-builder --win dir",
+    "pack:portable": "node build-portable.cjs",
     "dist": "node build.cjs",
     "dist:unsigned": "electron-builder --win nsis",
     "dist:signed": "node build.cjs",
+    "dist:self-signed": "node build.cjs --self-signed",
     "verify:exe": "node verify-exe.cjs"
   },
   "devDependencies": { "electron": "44.0.0", "electron-builder": "26.15.3", "electron-builder-squirrel-windows": "26.15.3" },
@@ -20,11 +23,15 @@
     "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
     "appId": "com.sanye.sanye_desktop",
-    "productName": "sanye_anime",
+    "productName": "三叶动漫",
     "directories": { "output": "dist" },
-    "files": ["main.cjs", "runtime.cjs", "package.json", "assets/icon.ico", "assets/icon.png"],
-    "extraResources": [{ "from": "runtime", "to": "runtime" }],
-    "win": { "target": "nsis", "icon": "assets/icon.ico", "signAndEditExecutable": true },
-    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "deleteAppDataOnUninstall": false, "installerIcon": "assets/icon.ico", "uninstallerIcon": "assets/icon.ico" }
+    "files": ["main.cjs", "runtime.cjs", "postgresTemplate.cjs", "processEnvironment.cjs", "trayMedia.cjs", "package.json", "assets/icon.ico", "assets/icon.png"],
+    "extraResources": [
+      { "from": "runtime", "to": "runtime" },
+      { "from": "../LICENSE", "to": "LICENSE.sanye_anime.txt" },
+      { "from": "../docs/third-party-notices.md", "to": "THIRD_PARTY_NOTICES.md" }
+    ],
+    "win": { "target": "nsis", "artifactName": "sanye_anime Setup ${version}.${ext}", "icon": "assets/icon.ico", "signAndEditExecutable": true },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "deleteAppDataOnUninstall": false, "shortcutName": "三叶动漫", "createDesktopShortcut": "always", "createStartMenuShortcut": true, "menuCategory": "三叶动漫", "installerIcon": "assets/icon.ico", "uninstallerIcon": "assets/icon.ico" }
   }
 }

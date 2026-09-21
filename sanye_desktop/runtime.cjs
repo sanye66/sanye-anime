@@ -5,9 +5,23 @@ const path = require('node:path')
 const http = require('node:http')
 const net = require('node:net')
 const { randomBytes } = require('node:crypto')
+const { provisionDatabase, preparePostgresLayout } = require('./postgresTemplate.cjs')
+const { localProcessEnvironment } = require('./processEnvironment.cjs')
 
 const services = ['anime', 'search', 'favorite']
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+function postgresEnvironment(password) {
+  return {
+    PGPASSWORD: password,
+    PGCLIENTENCODING: 'UTF8',
+    LANG: 'C',
+    LC_ALL: 'C',
+    LC_CTYPE: 'C',
+    LC_MESSAGES: 'C',
+    TZ: 'Asia/Shanghai',
+  }
+}
 
 async function freePort() {
   const server = net.createServer()
@@ -34,10 +48,10 @@ class LocalRuntime {
     this.cookie = randomBytes(32).toString('hex')
   }
 
-  launch(name, executable, args, env = {}) {
+  launch(name, executable, args, env = {}, cwd = this.data) {
     const log = createWriteStream(path.join(this.data, 'logs', `${name}.log`), { flags: 'a' })
-    const base = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['systemroot', 'windir', 'temp', 'tmp', 'path', 'userprofile', 'appdata', 'localappdata', 'comspec', 'programdata'].includes(key.toLowerCase())))
-    const child = spawn(executable, args, { cwd: this.data, env: { ...base, ...env }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const base = localProcessEnvironment()
+    const child = spawn(executable, args, { cwd, env: { ...base, ...env }, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const entry = { name, child, log, error: null }
     child.stdout.pipe(log, { end: false }); child.stderr.pipe(log, { end: false })
     child.on('error', error => { entry.error = error; log.end() })
@@ -50,7 +64,9 @@ class LocalRuntime {
   }
 
   async command(name, executable, args, env) {
-    const entry = this.launch(name, executable, args, env)
+    // PostgreSQL tools resolve paths from their own location: keep the working
+    // directory next to the executable instead of the user data directory.
+    const entry = this.launch(name, executable, args, env, path.dirname(executable))
     const deadline = Date.now() + 120000
     while (entry.child.exitCode === null && entry.child.signalCode === null && !entry.error && Date.now() < deadline) await delay(100)
     if (entry.error || entry.child.exitCode !== 0) throw new Error(`${name} failed; see logs`)
@@ -68,9 +84,22 @@ class LocalRuntime {
     throw new Error(`${entry.name} readiness timed out; see logs`)
   }
 
+  async waitDatabase(args, env, timeout = 120000, interval = 500) {
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) {
+      const entry = this.pgEntry
+      if (this.stopping || entry.error || entry.child.exitCode !== null || entry.child.signalCode !== null) throw new Error('本地数据库启动失败，请查看 postgres.log')
+      try {
+        await this.command('database-ready', path.join(this.pgBin, 'pg_isready.exe'), [...args, '-t', '2'], env)
+        return
+      } catch { await delay(interval) }
+    }
+    throw new Error('本地数据库启动超时，请查看 postgres.log 和 database-ready.log')
+  }
+
   async start(port = 28710) {
     await fs.mkdir(path.join(this.data, 'logs'), { recursive: true })
-    for (const file of ['java/bin/java.exe', 'postgres/bin/postgres.exe', 'postgres/bin/initdb.exe', 'client/index.html', 'seed.sql', ...services.map(s => `jars/${s}.jar`)]) await fs.access(path.join(this.root, file))
+    for (const file of ['java/bin/java.exe', ...['postgres', 'pg_ctl', 'pg_isready', 'psql'].map(name => `postgres/bin/${name}.exe`), 'postgres-template/PG_VERSION', 'client/index.html', 'seed.sql', ...services.map(s => `jars/${s}.jar`)]) await fs.access(path.join(this.root, file))
     // Reserve the stable renderer origin before starting any owned data process.
     this.server = http.createServer((req, res) => { void this.serve(req, res).catch(() => { if (!res.headersSent) res.writeHead(500); res.end() }) })
     await new Promise((resolve, reject) => { this.server.once('error', reject); this.server.listen(port, '127.0.0.1', resolve) })
@@ -83,34 +112,36 @@ class LocalRuntime {
       await fs.writeFile(path.join(this.data, 'settings.json'), JSON.stringify(settings), { flag: 'wx' })
     }
     if (!/^[a-f0-9]{64}$/.test(settings.databasePassword)) throw new Error('Invalid local database configuration')
-    this.pgData = path.join(this.data, 'postgres')
-    this.pgBin = path.join(this.root, 'postgres', 'bin')
+    this.onStatus('准备本地运行环境')
+    // PostgreSQL on Windows can fail to resolve its own executable path when the
+    // package or user data path contains non-ASCII characters, so both run from
+    // an ASCII-only mirror whenever that is the case.
+    this.layout = await preparePostgresLayout({ root: this.root, data: this.data })
+    await fs.writeFile(path.join(this.data, 'runtime-layout.json'), JSON.stringify({ ...this.layout, at: new Date().toISOString() }, null, 2))
+    this.pgData = this.layout.database
+    this.pgBin = this.layout.bin
+    this.pgExecutable = this.layout.executable
+    this.pgSeed = this.layout.seed
+    this.pgCwd = path.dirname(this.pgExecutable)
     this.onStatus('初始化本地数据库')
-    const pgEnv = { PGPASSWORD: settings.databasePassword }
-    try { await fs.access(path.join(this.pgData, 'PG_VERSION')) }
-    catch {
-      const pwfile = path.join(this.data, 'init-password.tmp')
-      await fs.writeFile(pwfile, settings.databasePassword, { mode: 0o600 })
-      try { await this.command('initdb', path.join(this.pgBin, 'initdb.exe'), ['-D', this.pgData, '-U', 'sanye', '--auth=scram-sha-256', '--encoding=UTF8', '--no-locale', `--pwfile=${pwfile}`], pgEnv) }
-      finally { await fs.rm(pwfile, { force: true }) }
-    }
+    const pgEnv = postgresEnvironment(settings.databasePassword)
+    await provisionDatabase(this.root, this.pgData, settings.databasePassword, this.pgExecutable)
     const pgPort = await freePort()
     this.pgPort = pgPort
-    this.pgEntry = this.launch('postgres', path.join(this.pgBin, 'postgres.exe'), ['-D', this.pgData, '-p', String(pgPort), '-h', '127.0.0.1'], pgEnv)
+    this.pgEntry = this.launch('postgres', this.pgExecutable, ['-D', this.pgData, '-p', String(pgPort), '-h', '127.0.0.1'], pgEnv, this.pgCwd)
     const pgArgs = ['-h', '127.0.0.1', '-p', String(pgPort), '-U', 'sanye', '-d', 'postgres']
-    await this.command('database-ready', path.join(this.pgBin, 'pg_isready.exe'), pgArgs, pgEnv).catch(async () => {
-      await delay(1500)
-      await this.command('database-ready', path.join(this.pgBin, 'pg_isready.exe'), pgArgs, pgEnv)
-    })
+    await this.waitDatabase(pgArgs, pgEnv)
     // Each application uses its own Flyway schema inside this private database.
     const baseEnv = {
       SANYE_ENV: 'local', DB_URL: `jdbc:postgresql://127.0.0.1:${pgPort}/postgres`, DB_USERNAME: 'sanye', DB_PASSWORD: settings.databasePassword,
       NACOS_ENABLED: 'false', SENTINEL_ENABLED: 'false', HOME_CACHE_ENABLED: 'false',
       SANYE_MANAGE_TOKEN: randomBytes(32).toString('hex'), CATALOG_STORE: 'pg', MEDIA_STORE: 'pg', LEGAL_STORE: 'pg',
     }
-    for (const service of services) {
+    // The services do not depend on one another for readiness. Allocate their
+    // ports first, then start and probe them together to avoid additive waits.
+    await Promise.all(services.map(async service => { this.ports[service] = await freePort() }))
+    await Promise.all(services.map(async service => {
       this.onStatus(`启动 ${service}`)
-      this.ports[service] = await freePort()
       const args = ['-Xms64m', '-Xmx384m', '-jar', path.join(this.root, 'jars', `${service}.jar`),
         '--server.address=127.0.0.1', `--server.port=${this.ports[service]}`, '--management.server.port=' + this.ports[service],
         '--management.health.redis.enabled=false', '--management.health.rabbit.enabled=false',
@@ -124,11 +155,11 @@ class LocalRuntime {
         const marker = path.join(this.data, 'catalog-seeded')
         try { await fs.access(marker) }
         catch {
-          await this.command('fixed-catalog', path.join(this.pgBin, 'psql.exe'), [...pgArgs, '-v', 'ON_ERROR_STOP=1', '-f', path.join(this.root, 'seed.sql')], { ...pgEnv, PGCLIENTENCODING: 'UTF8' })
+          await this.command('fixed-catalog', path.join(this.pgBin, 'psql.exe'), [...pgArgs, '-X', '-w', '-v', 'ON_ERROR_STOP=1', '-f', this.pgSeed], pgEnv)
           await fs.writeFile(marker, '1')
         }
       }
-    }
+    }))
     this.ready = true
     return this.origin
   }
@@ -183,4 +214,4 @@ class LocalRuntime {
   }
 }
 
-module.exports = { LocalRuntime, routeService, freePort }
+module.exports = { LocalRuntime, routeService, freePort, postgresEnvironment }

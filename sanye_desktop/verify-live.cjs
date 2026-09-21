@@ -6,8 +6,9 @@ const { randomUUID } = require('node:crypto')
 
 async function main() {
   const data = path.resolve(__dirname, '../sanye_deploy/.local/desktop', randomUUID())
-  const root = path.join(__dirname, 'runtime')
+  const root = process.env.SANYE_DESKTOP_RUNTIME || path.join(__dirname, 'runtime')
   const checks = []
+  const report = { checks, data, root, status: 'running' }
   let runtime
   const request = async (url, method = 'GET') => {
     const res = await fetch(runtime.origin + url, { method, headers: { cookie: `sanyeDesktop=${runtime.cookie}`, 'X-Device-Id': 'desktop-acceptance-device' } })
@@ -58,10 +59,16 @@ async function main() {
     assert.ok(favorites.items.some(item => item.anime.id === anime.id))
     const history = await request('/api/v1/users/me/history')
     assert.ok(history.items.some(item => item.anime.id === anime.id)); checks.push('restart-retains-favorite-and-history')
+    report.status = 'passed'
+  } catch (error) {
+    report.status = 'failed'
+    report.error = error.message
+    throw error
   } finally {
-    await runtime?.stop()
+    try { await runtime?.stop() }
+    catch (error) { report.status = 'failed'; report.shutdownError = error.message; process.exitCode = 1 }
     await fs.mkdir(data, { recursive: true })
-    await fs.writeFile(path.join(data, 'report.json'), JSON.stringify({ checks, data }, null, 2))
+    await fs.writeFile(path.join(data, 'report.json'), JSON.stringify(report, null, 2))
     console.log(JSON.stringify({ checks, report: path.join(data, 'report.json') }))
   }
 }
