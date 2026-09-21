@@ -26,8 +26,9 @@ const navigation = [
   { label: '我的', path: '/mine', icon: '○' },
 ].filter((item) => !desktopMode || item.path !== '/ai')
 
-const theme = ref<'dark' | 'light'>(window.localStorage.getItem('sanyeThemeMode') === 'light' ? 'light' : 'dark')
-const collapsed = ref(false)
+const themeStorageKey = 'sanyeThemeModeV2'
+const theme = ref<'dark' | 'light'>(window.localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light')
+const collapsed = ref(window.matchMedia('(min-width: 701px) and (max-width: 1100px)').matches)
 const searchKeyword = ref('')
 
 /** 将主题值同步到根节点，供全局样式切换。 */
@@ -38,7 +39,7 @@ function applyTheme(value: 'dark' | 'light') {
 watch(
   theme,
   (value) => {
-    window.localStorage.setItem('sanyeThemeMode', value)
+    window.localStorage.setItem(themeStorageKey, value)
     applyTheme(value)
   },
   { immediate: true },
@@ -52,6 +53,16 @@ function toggleTheme() {
 /** 判断导航项是否匹配当前路由，支持业务子路由高亮。 */
 const isActive = (path: string) => route.path === path || (path !== '/' && route.path.startsWith(path))
 const pageTitle = computed(() => (route.meta.title as string | undefined) ?? 'sanye_anime')
+function goBack() {
+  const previous = router.options.history.state.back
+  if (typeof previous === 'string' && previous.startsWith('/') && !previous.startsWith('//') && previous !== route.fullPath) {
+    router.back()
+  } else {
+    void router.replace(route.path.startsWith('/anime/') ? '/anime-repository' : '/')
+  }
+}
+
+watch(() => route.query.keyword, value => { searchKeyword.value = typeof value === 'string' ? value : '' }, { immediate: true })
 
 /** 提交全局搜索并将关键词带入搜索结果页。 */
 function submitSearch() {
@@ -119,7 +130,7 @@ onUnmounted(() => {
     </div>
 
     <aside class="sidebar">
-      <button class="sidebar-collapse" type="button" :aria-label="collapsed ? '展开导航' : '收起导航'" :title="collapsed ? '展开导航' : '收起导航'" @click="collapsed = !collapsed">
+      <button class="sidebar-collapse" type="button" :aria-label="collapsed ? '展开导航' : '收起导航'" :title="collapsed ? '展开导航' : '收起导航'" :aria-expanded="!collapsed" aria-controls="main-navigation" @click="collapsed = !collapsed">
         <span aria-hidden="true">{{ collapsed ? '›' : '‹' }}</span>
       </button>
       <div class="brand">
@@ -130,11 +141,13 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <nav class="main-nav" aria-label="主导航">
+      <nav id="main-navigation" class="main-nav" aria-label="主导航">
         <RouterLink
           v-for="item in navigation"
           :key="item.path"
           :to="item.path"
+          :aria-label="item.label"
+          :title="collapsed ? item.label : undefined"
           class="nav-item"
           :class="{ 'is-active': isActive(item.path) }"
           @mouseenter="warmRoute(item.path)"
@@ -153,15 +166,18 @@ onUnmounted(() => {
 
     <main class="main-panel">
       <header class="topbar">
-        <div>
+        <div class="page-heading">
+          <button v-if="route.path !== '/'" type="button" class="page-back" aria-label="返回上一级" title="返回上一级" @click="goBack"><span aria-hidden="true">←</span></button>
+          <div>
           <span class="eyebrow">动漫发现工作区</span>
           <h1>{{ pageTitle }}</h1>
+          </div>
         </div>
         <div class="topbar-actions">
           <form class="topbar-search" role="search" @submit.prevent="submitSearch">
             <span class="topbar-search-icon" aria-hidden="true">⌕</span>
-            <input v-model="searchKeyword" aria-label="全局搜索" placeholder="搜索番剧、角色或标签" />
-            <kbd>⌘K</kbd>
+            <input v-model="searchKeyword" aria-label="全局搜索" placeholder="搜索作品" maxlength="50" />
+            <button type="submit" class="search-submit" aria-label="提交全局搜索" title="搜索" :disabled="!searchKeyword.trim()">搜索</button>
           </form>
           <button
             class="theme-toggle"

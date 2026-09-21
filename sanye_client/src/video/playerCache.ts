@@ -99,10 +99,13 @@ export function writeCachedEpisodes(animeId: string | number, data: AnimeEpisode
 }
 
 export function readSelectedEpisodeId(animeId: string | number) {
-  const store = storage()
-  const value = store?.getItem(selectedEpisodeKey(animeId))
-  const id = Number(value)
-  return Number.isFinite(id) && id > 0 ? id : null
+  try {
+    const value = storage()?.getItem(selectedEpisodeKey(animeId))
+    const id = Number(value)
+    return Number.isFinite(id) && id > 0 ? id : null
+  } catch {
+    return null
+  }
 }
 
 export function writeSelectedEpisodeId(animeId: string | number, episodeId: string | number) {
@@ -142,6 +145,14 @@ export function writeEpisodeProgress(animeId: string | number, episode: AnimeEpi
     storage()?.setItem(progressKey(animeId, episode.id), JSON.stringify(entry))
   } catch {
     // 观看进度缓存失败不阻断播放器。
+  }
+}
+
+export function clearEpisodeProgress(animeId: string | number, episodeId: string | number) {
+  try {
+    storage()?.removeItem(progressKey(animeId, episodeId))
+  } catch {
+    // 清理观看进度失败不阻断播放器。
   }
 }
 

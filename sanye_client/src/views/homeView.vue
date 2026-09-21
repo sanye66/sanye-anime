@@ -127,6 +127,8 @@ const suppressHeroClick = ref(false)
 const currentHero = computed(() => heroSlides[currentHeroIndex.value])
 const currentHeroCover = computed(() => resolveAssetUrl(currentHero.value.cover) ?? '/covers/anime-placeholder.svg')
 const heroTrackStyle = computed(() => ({
+  '--hero-slide-count': heroSlides.length,
+  width: `${heroSlides.length * 100}%`,
   transform: `translate3d(calc(-${currentHeroIndex.value * (100 / heroSlides.length)}% + ${heroDragOffset.value}px), 0, 0)`,
 }))
 /** 切换首页卡片的本地收藏展示状态。 */

@@ -19,6 +19,7 @@ export interface SearchHit {
 export interface ExternalSearchHit {
   title: string
   sourceUrl: string
+  alternativeSourceUrls?: string[]
   coverUrl?: string
   summary?: string
   type?: string
@@ -32,6 +33,23 @@ export interface SearchParams {
   yearBefore?: number
   page?: number
   size?: number
+}
+
+const externalCache = new Map<string, { expiresAt: number; hits: ExternalSearchHit[] }>()
+
+async function externalSearch(query: URLSearchParams, options?: RequestOptions): Promise<ExternalSearchHit[]> {
+  options?.signal?.throwIfAborted()
+  const key = query.toString()
+  const cached = externalCache.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.hits
+  externalCache.delete(key)
+  const hits = await http.get<ExternalSearchHit[]>(`/search/external?${query}`, options)
+  // Only successful, nonempty public results are reusable; failures remain retryable.
+  if (hits.length && !options?.signal?.aborted) {
+    externalCache.set(key, { expiresAt: Date.now() + 30_000, hits })
+    if (externalCache.size > 64) externalCache.delete(externalCache.keys().next().value!)
+  }
+  return hits
 }
 
 export const searchApi = {
@@ -49,12 +67,12 @@ export const searchApi = {
   external: (keyword: string, size = 20, type?: string, options?: RequestOptions) => {
     const qs = new URLSearchParams({ keyword, size: String(size) })
     if (type) qs.set('type', type)
-    return http.get<ExternalSearchHit[]>(`/search/external?${qs}`, options)
+    return externalSearch(qs, options)
   },
   /** 只读取别名对应的最高相关结果，完整原词结果由 external 随后补齐。 */
   externalPreferred: (keyword: string, size = 20, type?: string, options?: RequestOptions) => {
     const qs = new URLSearchParams({ keyword, size: String(size), preferredOnly: 'true' })
     if (type) qs.set('type', type)
-    return http.get<ExternalSearchHit[]>(`/search/external?${qs}`, options)
+    return externalSearch(qs, options)
   },
 }

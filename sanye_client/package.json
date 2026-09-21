@@ -14,9 +14,13 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
     "anime4k.js": "1.1.3",
     "artplayer": "5.4.0",
     "hls.js": "1.6.15",
+    "jsfeat": "0.0.8",
+    "m3u8-parser": "7.2.0",
     "pinia": "2.3.0",
     "vue": "3.5.13",
     "vue-router": "4.5.0"

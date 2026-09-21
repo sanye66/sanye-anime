@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { scheduleApi, type ScheduleDayKey } from '@/api/schedule'
 import { isSupportedAnimeId } from '@/data/animeCatalog'
+import { desktopMode } from '@/desktop'
 
 type ScheduleItem = {
   animeId: number
@@ -25,16 +26,6 @@ const DAY_META: Array<Omit<DayMeta, 'date'>> = [
   { key: 'saturday', label: '周六' },
   { key: 'sunday', label: '周日' },
 ]
-
-const LOCAL_DATES: Record<ScheduleDayKey, string> = {
-  monday: '09 月 15 日',
-  tuesday: '09 月 16 日',
-  wednesday: '09 月 17 日',
-  thursday: '09 月 18 日',
-  friday: '09 月 19 日',
-  saturday: '09 月 20 日',
-  sunday: '09 月 21 日',
-}
 
 const LOCAL_SCHEDULE_MAP: Record<ScheduleDayKey, ScheduleItem[]> = {
   monday: [
@@ -72,7 +63,7 @@ function copyLocalSchedule(): Record<ScheduleDayKey, ScheduleItem[]> {
 /** 根据服务端生成日期计算当前周一至周日的展示日期。 */
 function weekDatesFrom(iso: string): Record<ScheduleDayKey, string> {
   const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return LOCAL_DATES
+  if (Number.isNaN(date.getTime())) return weekDatesFrom(new Date().toISOString())
   const mondayOffset = (date.getDay() + 6) % 7
   const monday = new Date(date)
   monday.setDate(date.getDate() - mondayOffset)
@@ -87,16 +78,20 @@ function weekDatesFrom(iso: string): Record<ScheduleDayKey, string> {
 
 const loading = ref(true)
 const apiError = ref(false)
-const scheduleMap = ref<Record<ScheduleDayKey, ScheduleItem[]>>(copyLocalSchedule())
-const weekDates = ref<Record<ScheduleDayKey, string>>(LOCAL_DATES)
+const scheduleMap = ref<Record<ScheduleDayKey, ScheduleItem[]>>(desktopMode ? emptySchedule() : copyLocalSchedule())
+const weekDates = ref<Record<ScheduleDayKey, string>>(weekDatesFrom(new Date().toISOString()))
 
-/** 加载服务端周排期；失败时保留本地排期并提示接口异常。 */
+function emptySchedule(): Record<ScheduleDayKey, ScheduleItem[]> {
+  return Object.fromEntries(DAY_META.map(({ key }) => [key, [] as ScheduleItem[]])) as Record<ScheduleDayKey, ScheduleItem[]>
+}
+
+/** 加载服务端周排期；网页模式失败时展示演示排期，桌面模式展示错误。 */
 async function loadSchedule() {
   loading.value = true
   apiError.value = false
   try {
     const data = await scheduleApi.week()
-    const next = copyLocalSchedule()
+    const next = emptySchedule()
     for (const day of data.days) {
       const supportedItems = day.items.map((item) => ({
         animeId: item.animeId,
@@ -107,19 +102,29 @@ async function loadSchedule() {
         description: item.description,
         tone: item.tone,
       })).filter((item) => isSupportedAnimeId(item.animeId))
-      if (supportedItems.length) next[day.day] = supportedItems
+      if (day.day in next) next[day.day] = supportedItems
     }
     scheduleMap.value = next
     weekDates.value = weekDatesFrom(data.generatedAt)
   } catch {
     apiError.value = true
+    scheduleMap.value = desktopMode ? emptySchedule() : copyLocalSchedule()
+    weekDates.value = weekDatesFrom(new Date().toISOString())
   } finally {
     loading.value = false
   }
 }
 
 const selectedDay = ref<ScheduleDayKey>('thursday')
-const remindedItems = ref<string[]>([])
+const markerKey = 'sanye:schedule:watch-marks:v1'
+function readMarkers(): string[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(markerKey) || '[]')
+    return Array.isArray(saved) ? saved.filter((item): item is string => typeof item === 'string').slice(-200) : []
+  } catch { return [] }
+}
+const markedItems = ref(readMarkers())
+const markerError = ref(false)
 const days = computed<DayMeta[]>(() =>
   DAY_META.map((meta) => ({ ...meta, date: weekDates.value[meta.key] })),
 )
@@ -128,17 +133,21 @@ const totalScheduleCount = computed(() =>
   Object.values(scheduleMap.value).reduce((total, items) => total + items.length, 0),
 )
 
-/** 切换单个节目的本地提醒标记。 */
-function toggleReminder(item: ScheduleItem) {
-  const key = `${selectedDay.value}-${item.title}-${item.episode}`
-  remindedItems.value = remindedItems.value.includes(key)
-    ? remindedItems.value.filter((entry) => entry !== key)
-    : [...remindedItems.value, key]
+/** 保存本地想看标记，不宣称已发送或安排系统通知。 */
+function toggleMarker(item: ScheduleItem) {
+  const key = `${item.animeId}:${item.episode}`
+  const next = markedItems.value.includes(key)
+    ? markedItems.value.filter(entry => entry !== key)
+    : [...markedItems.value, key].slice(-200)
+  markerError.value = false
+  try {
+    localStorage.setItem(markerKey, JSON.stringify(next))
+    markedItems.value = next
+  } catch { markerError.value = true }
 }
 
-/** 判断当前节目是否已经加入提醒。 */
-function hasReminder(item: ScheduleItem) {
-  return remindedItems.value.includes(`${selectedDay.value}-${item.title}-${item.episode}`)
+function hasMarker(item: ScheduleItem) {
+  return markedItems.value.includes(`${item.animeId}:${item.episode}`)
 }
 
 onMounted(() => {
@@ -160,21 +169,23 @@ onMounted(() => {
 
     <div v-if="loading" class="schedule-status-hint" aria-live="polite">排期加载中…</div>
     <div v-else-if="apiError" class="schedule-status-hint schedule-status-error" role="status">
-      接口暂不可用，当前展示本地演示数据
+      {{ desktopMode ? '排期加载失败，请稍后重试。' : '接口暂不可用，当前展示本地演示数据' }}
       <button class="schedule-retry" type="button" @click="loadSchedule">重试</button>
     </div>
 
     <div class="schedule-day-tabs" role="tablist" aria-label="排期日期">
       <button v-for="day in days" :key="day.key" class="schedule-day-tab" :class="{ active: selectedDay === day.key }" type="button" role="tab" :aria-selected="selectedDay === day.key" @click="selectedDay = day.key"><strong>{{ day.label }}</strong><span>{{ day.date }}</span></button>
     </div>
+    <p v-if="markerError" class="schedule-status-hint schedule-status-error" role="alert">标记保存失败，请重试。</p>
 
     <section class="schedule-list-panel" aria-label="排期列表">
       <article v-for="item in scheduleItems" :key="`${selectedDay}-${item.title}-${item.episode}`" class="schedule-detail-row" :class="`detail-${item.tone}`">
         <div class="schedule-detail-time"><strong>{{ item.time }}</strong><span>{{ item.state }}</span></div>
         <div class="schedule-detail-pin" aria-hidden="true"></div>
         <div class="schedule-detail-copy"><strong>{{ item.title }} <em>· {{ item.episode }}</em></strong><p>{{ item.description }}</p></div>
-        <div class="schedule-detail-actions"><RouterLink class="text-button" to="/ai">问 AI</RouterLink><button class="schedule-reminder" type="button" :aria-pressed="hasReminder(item)" @click="toggleReminder(item)">{{ hasReminder(item) ? '已提醒' : '加入提醒' }}</button></div>
+        <div class="schedule-detail-actions"><RouterLink class="text-button" :to="desktopMode ? `/anime/${item.animeId}` : '/ai'">{{ desktopMode ? '查看作品' : '问 AI' }}</RouterLink><button class="schedule-reminder" type="button" :aria-pressed="hasMarker(item)" @click="toggleMarker(item)">{{ hasMarker(item) ? '已标记' : '标记想看' }}</button></div>
       </article>
+      <div v-if="!loading && !scheduleItems.length && !apiError" class="repository-empty" role="status">当天暂无排期</div>
     </section>
   </div>
 </template>

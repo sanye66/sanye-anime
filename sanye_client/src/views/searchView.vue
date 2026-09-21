@@ -21,13 +21,28 @@ interface ResultEntry {
 const route = useRoute()
 const router = useRouter()
 const keyword = ref(String(route.query.keyword ?? ''))
-const chip = ref('全部')
 const chips = ['全部', '原创动画', '电视动画', '剧场版', '网络动画'] as const
-const page = ref(1)
+const chip = ref(chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部')
+function routePage(): number {
+  const requested = Number(route.query.page)
+  return Number.isSafeInteger(requested) && requested > 0 ? requested : 1
+}
+const page = ref(routePage())
 // 首屏只取必要结果，减少 ES 高亮、响应体和图片布局成本。
 const size = 20
 const results = ref<ResultEntry[]>([])
 const externalResults = ref<ExternalSearchHit[]>([])
+function watchLocation(hit: ExternalSearchHit) {
+  const sources = [...new Set([hit.sourceUrl, ...(hit.alternativeSourceUrls ?? [])])]
+  return { name: 'externalWatch', query: { sourceUrl: hit.sourceUrl, alternatives: sources.filter(source => source !== hit.sourceUrl).slice(0, 3), keyword: keyword.value } }
+}
+function versionCaption(title: string) {
+  if (/国语|国配|中文配音/.test(title)) return '国语版'
+  if (/粤语/.test(title)) return '粤语版'
+  if (/英语|英文/.test(title)) return '英语版'
+  if (/日语|原声/.test(title)) return '原声版'
+  return '语言待确认'
+}
 const totalPages = ref(0)
 const loading = ref(false)
 const externalLoading = ref(false)
@@ -36,6 +51,7 @@ const externalError = ref(false)
 const importingUrl = ref('')
 const importError = ref('')
 const fallback = ref(false)
+const searchError = ref('')
 let requestController: AbortController | null = null
 let externalController: AbortController | null = null
 const coverFallbackTimers = new Map<HTMLImageElement, number>()
@@ -68,7 +84,9 @@ function isPlaceholderCover(value?: string): boolean {
     || /\/covers\/anime-\d+\.svg(?:$|\?)/.test(value)
 }
 
-const query = computed(() => normalizeSearchInput(keyword.value))
+const query = computed(() => normalizeSearchInput(String(route.query.keyword ?? '')))
+let loadedQuery = query.value
+let loadedChip = chip.value
 const filteredExternalResults = computed(() => chip.value === '全部'
   ? externalResults.value
   : externalResults.value.filter((anime) => anime.type === chip.value))
@@ -98,18 +116,23 @@ const filteredInternalResults = computed(() => chip.value === '全部'
   : classifiedInternalResults.value.filter((anime) => anime.type === chip.value))
 const resultCount = computed(() => filteredInternalResults.value.length + filteredExternalResults.value.length)
 
-watch(
-  () => route.query.keyword,
-  (value) => {
-    keyword.value = String(value ?? '')
-    page.value = 1
-    void load()
-  },
-)
-
-watch(chip, () => {
-  page.value = 1
+watch(() => route.fullPath, () => {
+  const nextKeyword = String(route.query.keyword ?? '')
+  const nextChip = chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部'
+  const onlyPageChanged = loadedQuery === normalizeSearchInput(nextKeyword) && loadedChip === nextChip
+  loadedQuery = normalizeSearchInput(nextKeyword)
+  loadedChip = nextChip
+  keyword.value = nextKeyword
+  chip.value = nextChip
+  page.value = routePage()
+  if (onlyPageChanged) void loadInternal(query.value)
+  else void load()
 })
+
+function selectChip(type: string): void {
+  if (chip.value === type) return
+  void router.push({ path: '/search', query: { keyword: route.query.keyword, type: type === '全部' ? undefined : type } })
+}
 
 /** 将高亮 HTML 转成纯文本，避免兜底展示时把标记当作内容。 */
 function plainText(highlight?: string): string {
@@ -174,7 +197,6 @@ function mergeMushokuResults(entries: ResultEntry[]): ResultEntry[] {
 
 /** 同时发起站内和樱花源搜索，分类切换直接复用已返回的外部候选。 */
 async function load(): Promise<void> {
-  page.value = 1
   const queryText = query.value
   externalController?.abort()
   externalResults.value = []
@@ -192,6 +214,8 @@ async function loadInternal(queryText: string): Promise<void> {
   requestController = controller
   loading.value = true
   fallback.value = false
+  searchError.value = ''
+  results.value = []
   try {
     if (!queryText) {
       if (desktopMode) {
@@ -206,15 +230,17 @@ async function loadInternal(queryText: string): Promise<void> {
     }
     const result = await searchApi.search({
       keyword: queryText,
+      type: chip.value === '全部' ? undefined : chip.value,
       page: page.value,
       size,
-    }, { signal: controller.signal, timeout: 3_000, retries: 0 })
+    }, { signal: controller.signal, timeout: 10_000, retries: 0 })
+    if (requestController !== controller) return
     results.value = mergeMushokuResults(result.items.map(toEntry))
     totalPages.value = result.totalPages
   } catch (cause) {
-    if (isAbortError(cause)) return
+    if (isAbortError(cause) || requestController !== controller) return
     fallback.value = true
-    if (desktopMode) { results.value = []; totalPages.value = 0; return }
+    searchError.value = cause instanceof Error ? cause.message : '搜索失败，请稍后重试'
     const local = animeCatalog.filter((anime) => {
       const matchesQuery = !queryText || comparable(anime.title).includes(comparable(queryText))
       const matchesChip = chip.value === '全部' || anime.type === chip.value
@@ -252,34 +278,38 @@ async function loadExternal(queryText: string): Promise<void> {
   externalSupplementLoading.value = true
   externalError.value = false
   const options = { signal: controller.signal, timeout: 18_000, retries: 0 }
-  const completeRequest = searchApi.external(queryText, 20, undefined, options)
+  const type = chip.value === '全部' ? undefined : chip.value
+  const completeRequest = searchApi.external(queryText, 20, type, options)
     .then((value) => ({ value, error: null as unknown }))
     .catch((error: unknown) => ({ value: null, error }))
-  const preferredRequest = searchApi.externalPreferred(queryText, 20, undefined, options)
+  const preferredRequest = searchApi.externalPreferred(queryText, 20, type, options)
     .then((value) => ({ value, error: null as unknown }))
     .catch((error: unknown) => ({ value: null, error }))
-  const preferred = await preferredRequest
-  if (externalController !== controller) return
-  if (preferred.value) {
-    externalResults.value = preferred.value
-  } else if (isAbortError(preferred.error)) {
-    return
-  }
-  externalLoading.value = false
-  const complete = await completeRequest
-  if (externalController !== controller) return
-  if (complete.value) {
-    externalResults.value = complete.value
-  } else if (!preferred.value && !isAbortError(complete.error)) {
-    externalResults.value = []
-    externalError.value = true
-  }
+  let completeDisplayed = false
+  const [preferred, complete] = await Promise.all([
+    preferredRequest.then((result) => {
+      if (externalController === controller && result.value?.length && !completeDisplayed) {
+        externalResults.value = result.value
+        externalLoading.value = false
+      }
+      return result
+    }),
+    completeRequest.then((result) => {
+      if (externalController === controller && result.value) {
+        completeDisplayed = true
+        externalResults.value = result.value
+        externalLoading.value = false
+        externalSupplementLoading.value = false
+      }
+      return result
+    }),
+  ])
   if (externalController === controller) {
+    externalLoading.value = false
     externalSupplementLoading.value = false
     externalController = null
-    if (!preferred.value && !complete.value) {
-      externalLoading.value = false
-    }
+    externalError.value = !preferred.value && !complete.value
+      && !isAbortError(preferred.error) && !isAbortError(complete.error)
   }
 }
 
@@ -287,9 +317,10 @@ async function loadExternal(queryText: string): Promise<void> {
 function submitSearch(): void {
   const routeKeyword = String(route.query.keyword ?? '')
   if (keyword.value.trim() !== routeKeyword) {
-    void router.push({ path: '/search', query: { keyword: keyword.value.trim() } })
+    void router.push({ path: '/search', query: { keyword: keyword.value.trim(), type: chip.value === '全部' ? undefined : chip.value } })
     return
   }
+  if (loading.value || externalLoading.value || externalSupplementLoading.value) return
   void load()
 }
 
@@ -344,8 +375,9 @@ async function importAndOpen(hit: ExternalSearchHit): Promise<void> {
   try {
     const result = await animeApi.importUrlFallback(hit.sourceUrl)
     await router.push(`/anime/${result.anime.id}`)
-  } catch {
-    importError.value = `《${hit.title}》导入失败，请稍后重试。`
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : '请稍后重试'
+    importError.value = `《${hit.title}》导入失败：${reason}`
   } finally {
     importingUrl.value = ''
   }
@@ -354,16 +386,14 @@ async function importAndOpen(hit: ExternalSearchHit): Promise<void> {
 /** 在搜索结果页码大于一时向前翻页。 */
 function prevPage() {
   if (page.value > 1) {
-    page.value -= 1
-    void loadInternal(query.value)
+    void router.push({ path: '/search', query: { ...route.query, page: page.value - 1 === 1 ? undefined : String(page.value - 1) } })
   }
 }
 
 /** 在未到最后一页时向后翻页。 */
 function nextPage() {
   if (page.value < totalPages.value) {
-    page.value += 1
-    void loadInternal(query.value)
+    void router.push({ path: '/search', query: { ...route.query, page: String(page.value + 1) } })
   }
 }
 
@@ -380,11 +410,11 @@ void load()
 <template>
   <div class="page-stack search-page">
     <section class="search-panel">
-      <div class="large-search">
+      <form class="large-search" role="search" @submit.prevent="submitSearch">
         <span aria-hidden="true">⌕</span>
-        <input v-model="keyword" aria-label="搜索作品" placeholder="搜索作品名称或粘贴樱花动漫搜索 URL" autofocus @keyup.enter="submitSearch" />
-        <kbd>⌘ K</kbd>
-      </div>
+        <input v-model="keyword" aria-label="搜索作品" placeholder="输入作品名称" autofocus />
+        <button type="submit" class="search-submit" :disabled="!keyword.trim()">搜索</button>
+      </form>
       <div class="filter-row">
         <button
           v-for="item in chips"
@@ -392,7 +422,7 @@ void load()
           type="button"
           class="filter-chip"
           :class="{ 'is-active': chip === item }"
-          @click="chip = item"
+          @click="selectChip(item)"
         >
           {{ item }}
         </button>
@@ -401,26 +431,26 @@ void load()
     </section>
 
     <section class="search-results">
+      <div v-if="searchError" class="search-request-error" role="alert"><span>{{ searchError }}</span><button type="button" class="secondary-button" :disabled="loading" @click="loadInternal(query)">重试片库搜索</button></div>
       <div class="section-heading">
         <div>
           <span class="eyebrow">搜索结果</span>
           <h2>{{ query ? `关于“${query}”` : '推荐作品' }}</h2>
         </div>
-        <span v-if="externalLoading" class="sort-label">正在查询樱花动漫</span>
+        <span v-if="externalLoading" class="sort-label">正在搜索</span>
         <span v-else-if="externalSupplementLoading" class="sort-label">高相关结果已显示，正在补充原词结果</span>
-        <span v-else-if="externalError" class="sort-label">樱花源响应超时，站内结果仍可使用</span>
-        <span v-else-if="externalResults.length" class="sort-label">樱花候选与片库结果已分开显示</span>
+        <span v-else-if="externalError" class="sort-label">外部搜索暂不可用 <button type="button" class="secondary-button" @click="loadExternal(query)">重试外部搜索</button></span>
         <span v-else-if="fallback" class="sort-label">{{ desktopMode ? '搜索服务暂不可用，请重试' : '搜索服务暂不可用，已展示本地演示数据' }}</span>
         <span v-else class="sort-label">按相关度排序 ⌄</span>
       </div>
 
       <div v-if="externalLoading" class="search-source-block">
-        <div class="search-source-heading"><h3>樱花动漫候选</h3><span>来源搜索中</span></div>
-        <div class="feed-skeleton" aria-label="正在查询樱花动漫"><span></span><span></span><span></span></div>
+        <div class="search-source-heading"><h3>匹配作品</h3><span>搜索中</span></div>
+        <div class="feed-skeleton" aria-label="正在搜索"><span></span><span></span><span></span></div>
       </div>
 
       <div v-else-if="filteredExternalResults.length" class="search-source-block">
-        <div class="search-source-heading"><h3>樱花动漫候选</h3><span>{{ filteredExternalResults.length }} 部{{ externalSupplementLoading ? '，补充中' : '' }}</span></div>
+        <div class="search-source-heading"><h3>匹配作品</h3><span>{{ filteredExternalResults.length }} 部{{ externalSupplementLoading ? '，补充中' : '' }}</span></div>
         <div class="result-list">
           <article
             v-for="(anime, index) in filteredExternalResults"
@@ -431,14 +461,13 @@ void load()
             <img :ref="watchCover" class="search-cover" :src="resolveAssetUrl(anime.coverUrl) ?? fallbackCover" :alt="`${anime.title} 封面`" loading="eager" decoding="async" referrerpolicy="no-referrer" @load="handleCoverLoad" @error="handleCoverError" />
             <span class="result-copy">
               <strong>{{ anime.title }}</strong>
-              <small :title="anime.sourceUrl">{{ anime.sourceUrl }}</small>
               <p>{{ anime.summary || '可直接打开来源播放，也可以导入简介、封面和视频资源后在站内观看。' }}</p>
-              <span class="tag-list"><em>{{ anime.type || '未分类' }}</em><em>樱花候选</em></span>
+              <span class="tag-list"><em>{{ anime.type || '未分类' }}</em><em>{{ versionCaption(anime.title) }}</em></span>
             </span>
             <span class="external-result-actions">
               <RouterLink
                 class="secondary-button"
-                :to="{ name: 'externalWatch', query: { sourceUrl: anime.sourceUrl } }"
+                :to="watchLocation(anime)"
               >直接观看</RouterLink>
               <button
                 class="primary-button"
@@ -484,11 +513,11 @@ void load()
 
       <p v-if="importError" class="search-import-error" role="alert">{{ importError }}</p>
 
-      <div v-else-if="!loading && !externalLoading && !filteredInternalResults.length && !filteredExternalResults.length" class="empty-state">
+      <div v-else-if="!searchError && !loading && !externalLoading && !externalSupplementLoading && !filteredInternalResults.length && !filteredExternalResults.length" class="empty-state">
         <span class="empty-mark" aria-hidden="true">⌕</span>
-        <h3>还没有找到匹配作品</h3>
-        <p>换一个关键词，或者让 AI 帮你找到更合适的作品。</p>
-        <RouterLink class="primary-button" to="/ai">让 AI 帮我找番 →</RouterLink>
+        <h3>{{ query ? '还没有找到匹配作品' : '输入作品名称开始搜索' }}</h3>
+        <p>{{ desktopMode ? '可以搜索“你的名字”或“无职转生”，也可以尝试其他作品名称。' : '换一个关键词，或者让 AI 帮你找到更合适的作品。' }}</p>
+        <RouterLink v-if="!desktopMode" class="primary-button" to="/ai">让 AI 帮我找番 →</RouterLink>
       </div>
 
       <nav v-if="totalPages > 1 && !fallback" class="repository-pagination" aria-label="分页">
