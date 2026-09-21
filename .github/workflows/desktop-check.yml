@@ -35,6 +35,8 @@ jobs:
         shell: bash
         run: bash sanye_deploy/setup-ci-maven.sh
       - run: pnpm install --frozen-lockfile
+      - name: 安装桌面托盘回归所需的 Chromium
+        run: pnpm --filter @sanye/sanye_e2e exec playwright install chromium
       - run: pnpm test:desktop
       - run: pnpm typecheck
       - run: pnpm build

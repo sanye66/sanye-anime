@@ -55,13 +55,16 @@ test('NSIS signs its temporary generator before attempting to run it', async () 
   const { NsisTarget } = builderRequire('app-builder-lib/out/targets/nsis/NsisTarget.js')
   const calls = []
   const failedSigning = new Error('test signing rejected')
+  // 26.15.x 的签名入口是 signIf，26.0.x 是 sign；两者都落到同一条断言。
+  const rejectSigning = async file => { calls.push(['sign', file]); throw failedSigning }
   const context = {
     name: 'nsis', outDir: __dirname,
     options: {},
     packager: {
       appInfo: { sanitizedName: 'sanye_anime' },
       getResource: async () => null,
-      sign: async file => { calls.push(['sign', file]); throw failedSigning },
+      sign: rejectSigning,
+      signIf: rejectSigning,
     },
     computeFinalScript: async () => '',
     executeMakensis: async () => { calls.push(['compile']) },
