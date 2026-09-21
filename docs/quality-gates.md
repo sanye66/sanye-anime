@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.2 |
+| 文档版本 | v1.3 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-09-16 |
+
+更新记录：2026-09-16，v1.3，增加 D-027 播放质量专项门禁：执行 `node --test e2e/player-quality.test.cjs` 与 `node --test e2e/realtime-interpolation.test.cjs`，分别检查运动像素、增强实际输出与成本、目标帧率及回退、播放器操作与资源释放。受控 GPU 吞吐量不替代真实高刷屏、长片和跨显卡验收，证据见[播放器报告](./media-player-test-report.md)。
 
 ## 当前核对（2026-09-10）
 

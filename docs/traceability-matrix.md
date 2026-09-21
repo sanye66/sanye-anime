@@ -2,10 +2,14 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.7 |
+| 文档版本 | v1.9 |
 | 文档状态 | 基线（需求 → 任务 → 实现 → 测试 → 验收 追溯） |
 | 关联文档 | [产品需求](../product/product-requirements.md)、[功能规格](../product/feature-specification.md)、[开发任务](./development-tasks.md)、[接口契约](./api-contract.md)、[测试策略](./testing-strategy.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-09-16 |
+
+更新记录：2026-09-16，v1.8，补充专项追溯：[播放质量与实时补帧要求](../product/feature-specification.md) → [实时补帧专项任务](./development-tasks.md) → [播放器实现设计](./media-player-development.md) → [像素、性能与交互验收](./media-player-test-report.md)。高刷新率设备与已安装客户端验收仍待环境。
+
+更新记录：2026-09-16，v1.9，D-027 与[播放质量要求](../product/feature-specification.md)关联[质量改进任务](./development-tasks.md)、[双向光流与增强设计](./media-player-development.md)、`e2e/player-quality.test.cjs` 和[验证证据](./media-player-test-report.md)。高刷物理呈现、RIFE 与长片质量保留待环境。
 
 ## 当前核对（2026-09-10）
 

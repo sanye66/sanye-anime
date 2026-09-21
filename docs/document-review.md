@@ -2,24 +2,204 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v5.25 |
+| 文档版本 | v5.94 |
 | 文档状态 | 基线 |
 | 关联文档 | [开发任务清单](./development-tasks.md)、[开发待办事项](./development-todo.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-09-21 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
+
+更新记录：2026-09-21，v5.95，登记交付基线对齐：桌面打包链维持 `electron-builder` 26.15.3/Squirrel，签名补丁记为 `patches/app-builder-lib@26.15.3.patch`（26.0.12 因 high/critical 依赖告警不满足 `pnpm audit --audit-level high`），并同步[版本基线](./version-baseline.md) v0.11 与[本地桌面专项](./local-desktop.md) v1.48；按维护者授权在 [README](../README.md) v0.4 增加 MIT 许可与第三方许可边界。依据 `package.json`、`pnpm-lock.yaml`、`sanye_desktop/package.json`、`LICENSE`、[第三方许可说明](./third-party-notices.md)、`pnpm audit --audit-level high` 与 `pnpm docs:check`。既有交付分支的 CI 工具链、Tomcat 与 AMQP 补丁结论不变，未新增业务验收。
+
+更新记录：2026-09-21，v5.94，登记 VQ-31 高刷与物理呈现的实施与验证：新增 `sanye_client/src/video/presentationLayers.ts`（`PresentationLedger` 累计四层计数，`foldPresentationLayers` 折算窗口结论），把源帧（媒体元素 `requestVideoFrameCallback` 的 `presentedFrames` 增量）、生成帧（渲染 Worker 的 GPU 完成计数，含补间帧）、合成器提交（每次实际 `render` 调用）与可观察呈现（画布作为可见层时的主线程动画帧数）分开记录，另记「刷新边界上被呈现帧的内容陈旧度」P95；`classifyPresentation` 分「刷新对齐 / 受刷新上限约束 / 计时器节拍 / 未确认」四类口径，`generationOnTarget` 与 `presentationGap` 保持独立，每个窗口固定带 `physical: 'unverified'`。`PresentationScheduler` 新增 `PresentationAlignment`：默认 `refresh` 在目标高于刷新能力时改在刷新边界回调里提交，并把边界前已到期时隙按各自理想时刻补齐（`takeDueSlots`，一个边界内最多 4 个时隙，超过上界仍按跳过处理并交由既有帧率稳定逻辑降档），未定相位用 `NaN` 表示并在首次取时隙时锚定；渲染 Worker 增加边界交付确认（连续三个边界回调后确认，确认期内挂一次有界计时器，未交付时取消回调、退回截止时刻计时器并保留只读边界探针），`startRealtimeInterpolation` 与播放偏好新增 `presentationAlignment`（默认 `refresh`，`deadline` 为隔离对照，不进入播放器菜单），统计新增 `presentation`、`presentationAlignment`、`boundaryTicks`。新增入口 `e2e/high-refresh-presentation.test.cjs`（2 项通过）：判定语义覆盖四类口径、生成达标与呈现差额、物理呈现标记与窗口清空；真实 60Hz 链路上 120 目标窗口为源帧 30 · 生成帧 120（补间 120） · 提交 120 · 呈现 60、结论文本 `（59.9Hz 上限，提交超出呈现 60）`，被呈现帧相对刷新边界的陈旧度 P95 为 6.5ms（隔离对照 17.3ms）。同一改动使 `e2e/realtime-interpolation.test.cjs` 的 1080p / 30 FPS → 120 目标锐化门禁由改动前 111/111/96 FPS 且末窗降档到 60，变为 120/120/119 FPS、帧间隔 P95 恒为 8.33ms、长帧 0、跳过期时隙 0；`e2e/player-quality.test.cjs` 的 1080p 高刷矩阵 17 组全部通过（144 为 146/143、165 为 167/164、240 按极帧率口径平衡到性能档后为 233/227，改动前本机 144/165 在负载窗口内降档）；`e2e/worker-generations.test.cjs` 新增「边界回调不交付时退回计时器」用例，`e2e/presentation-scheduling.test.cjs` 与 `e2e/interpolation-stability.test.cjs` 的唤醒口径断言同步更新为「计时器时钟 + 刷新边界驱动提交」。回归 `realtime-interpolation`（4 项）、`presentation-scheduling`/`frame-cadence-policy`/`worker-generations`（18 项）、`interpolation-stability`、`interpolation-bypass`（9 项）、`enhancement-recovery`（6 项）、`interpolation-delay-adaptive`（5 项）、`startup-quality-timeline`（3 项）、`quality-observability`（4 项）、`quality-fluctuation`、`progress-seek-latency`（四配置）、`playback-pipeline`、`playback-experience`（2 项）、`frame-menu-state`、`anime4k-scheduling`（2 项）、`p1-playback-lifecycle`、`p2-processing-order`、`p2-gpu-pipeline`、`p2-motion-cpu`、`motion-naturalness`、`seek-performance`、`adaptation-notice`、`interpolation` 与清晰度专项 `e2e/e2e-media-quality.mjs`（4/4，生产构建预览）通过，`pnpm --filter @sanye/sanye_client typecheck`、`build` 与 `pnpm docs:check`（1313 项）通过。同步[功能规格](../product/feature-specification.md) v0.18、[决策记录](./decision-log.md) D-029、[进阶计划](./player-quality-development-plan.md) 6.2.7、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；本机显示能力为 60Hz，120/144/165Hz 物理呈现、整片观感、跨显卡、能耗与桌面安装物保持待环境。
+
+更新记录：2026-09-21，v5.93，登记 VQ-30 画质可观测性的实施与验证：新增汇总模块 `qualityObservability.ts`，按一秒窗口把实际清晰度档位（生效档位序号/高度/码率、阶梯最高档、比当前高一档的档位 `nextHeight` 与按 `abrBandWidthUpFactor` 换算的升档需求 `nextRequiredBps`、`autoLevelCapping` 对应的窗口尺寸上限 `capHeight`、`manualLevel` 表示的手动来源、`bandwidthEstimate`、VQ-25 记忆回落说明）与渲染 Worker 的 `stallFrames`、`analysisWidth`、`effectiveProfile`/`requestedProfile`、`qualityFallbacks` 以及页面累计的媒体等待次数合并成画质窗口；原因按「手动选择 → 记忆档位回落 → 播放窗口尺寸上限 → 带宽不足 → 播放中停顿 → 带宽自适应」归纳，说明固定为「当前 XP（最高 YP）：原因」。档位变化给一次瞬时提示（同一高度在回到最高档前不重复、最小间隔 5 秒、被拦下的降档在下一窗口补齐，起播低档起步与手动选择不提示），清晰度菜单新增「当前清晰度说明」入口读取同一份汇总且不改变档位与控件标签，最近 30 个窗口挂在播放器实例 `sanyeQualityWindows` 上作为诊断通道，不新增常驻面板。新增入口 `e2e/quality-observability.test.cjs`（4 项通过，开发服务 `5173` 与生产构建预览 `4173` 各一次）：三项判定语义覆盖窗口汇总、原因优先级与提示去重/补齐；真实链路为大窗口升到 720P 后给高档分片加 3 秒延迟，观察到回落窗口 `当前 360P（最高 720P）：带宽自适应：估算 3.2Mb/s`，同窗口带宽估计 3.225–3.238Mb/s（升档需求 3.059Mb/s）、落后帧 21–25、运动分析宽度 128、回退历史为空，界面提示与窗口汇总逐字一致、可查询说明等于最新窗口摘要。回归 `quality-fluctuation`、`startup-quality-timeline`（2 项）、`progress-seek-latency`（四配置）、`interpolation-delay-adaptive`（5 项）、`interpolation-bypass`（9 项）、`enhancement-recovery`（6 项）、`realtime-interpolation`（4 项）、`playback-pipeline`（3 项）、`playback-experience`（2 项）、`frame-menu-state` 与清晰度专项 `e2e/e2e-media-quality.mjs`（4/4）通过，`pnpm typecheck`、`pnpm --filter @sanye/sanye_client build` 与 `pnpm docs:check`（1284 项）通过。同步[功能规格](../product/feature-specification.md)、[决策记录](./decision-log.md) D-028、[进阶计划](./player-quality-development-plan.md) 6.2.6、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；真实网络降档预测准确率、真实显卡与片源、跨设备与桌面安装物保持待环境。
+
+更新记录：2026-09-21，v5.92，登记 VQ-29 补帧延迟自适应收缩的实施与验证：新增判定模块 `interpolationDelayPolicy.ts`（下限取 `max(2 个源帧间隔, 40ms)`、上限仍为页面传入的 150ms；播放段起点按上次证明可用的延迟起播；未接管呈现前按「最新源帧老化时间 + 1.5 个源帧间隔」加宽且单调不减；播放段首个窗口为预热窗口；连续两个干净窗口、窗口内最坏实测需要仍留 ≥ 15ms 余量且距上次变化 ≥ 1 秒时收缩 20ms；目标越过最新源帧时按步恢复余量 40ms，受 1 秒冷却与上限约束），渲染 Worker 在起播、定位、暂停恢复、缓冲、换源与时间轴跳变等播放段边界重新定档延迟，帧队列保留深度改按会话上限计算（收缩只改变展示时刻、不减少可回退缓冲，保持 VQ-24 与 VQ-27 门禁），页面用 40ms 斜坡让音频延迟跟随生效视频延迟，超分纹理预算同样改按会话上限计算以保持 VQ-26 语义，新增 `interpolationDelay: 'adaptive' | 'fixed'` 隔离对照开关与 `interpolationDelay` 统计（`awaitingMs`、`neededMs`、`neededMaxMs`、`neededP90Ms`、`widens`、`shrinks`、`restores`、`inEpochRestores`、`rewinds`、`resumeRewinds`）。新增入口 `e2e/interpolation-delay-adaptive.test.cjs`（5 项通过）：三项判定语义与一项每种口径三轮取中位数的真实链路对照，三次连续运行下首帧 → 补间层就绪由 192.9/211.7/196.6ms 降到 114.4/119.5/116.9ms、定位后原画窗口由 262.0/267.6/257.4ms 降到 176.1/181.3/175.1ms、`ready-data` → `interpolation-active` 由 339.8/333.8/344.8ms 降到 253.4/266.5/249.3ms，起播生效延迟 150 → 66.7ms，音画绝对偏差 0ms（门禁 ≤ 40ms），正常推进回跳 0，恢复余量只出现在停顿窗口且次数不超过恢复次数，输出 640×360 与生效档位不变；`quality-fluctuation`、`interpolation-bypass`（9 项）、`progress-seek-latency`（四配置）、`realtime-interpolation`（4 项）、`startup-quality-timeline`（2 项）、`enhancement-recovery`（6 项）与 `pnpm typecheck`、`pnpm docs:check`（1255 项）通过。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；真实显卡、真实片源、跨设备窗口、长片累计漂移与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.91，登记 VQ-28 仅增强路径移入渲染 Worker 的实施与验证：新增档位链路唯一定义 `profileShaderChain`（主线程 `anime4kRuntime` 与渲染 Worker 共用，`FrameEnhancer` 放大倍率改读链路 `magnification()`），渲染 Worker 新增 `interpolation: false` 执行模式（不创建运动估计线程、无插值延迟与音频路由、`forceBypass` 固定不补帧、关闭自动降档与恢复）与仅增强专用绘制路径，新增 `enhancementPath` 开关与 Worker 初始化握手失败时的自动回退，统计新增 `enhancementOnly`。新增 `e2e/enhancement-thread-migration.test.cjs`（5 项通过）：五档同源同尺寸 RGB 像素对照逐字节一致（性能/均衡/锐化/修复各 172,800 个通道、超分 691,200 个，最大偏差 0；性能档 alpha 差异单独记录），640×360 30 FPS 受控窗口主线程长任务由原路径 61 次（最长 65ms）降为 0、帧间隔中位数 33.3ms、合成帧 0、停顿帧 0，Worker 模块不可用时回退主线程路径且播放不中断。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；Worker 运行期上下文丢失路径、真实显卡、片源与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.90，登记 VQ-27 源帧率达标跳过光流补帧的实施与验证：新增 `interpolationDemandPolicy.ts`（源帧率取最近 16 个画面间隔中位数，`≥ 目标 × 0.92` 进入旁路、`≤ 目标 × 0.8` 才恢复，进入 400ms / 6 样本、恢复 700ms / 8 样本，改档只清空连续证据），主线程按媒体时间上报相邻画面间隔，渲染 Worker 旁路时不再缩放、投递光流分析与上传运动场，只保留增强与原帧呈现并以 `interpolationNeed`、`flowSkippedFrames`、`interpolationDemand` 上报。新增 `e2e/interpolation-bypass.test.cjs`（9 项通过）：真实 60 FPS HLS 播放每窗跳过 45–49 次光流分析、分析 0、合成帧 0、停顿帧 0；同源强制补帧对照每帧纹理上传中位数 3.05 对旁路 1.0；源降到 24 FPS 恢复补帧、回到 60 FPS 再旁路且不超过 3 次模式变化；旁路输出最近原帧并与对照在相位端点逐字节一致。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；本机 1080p 120 FPS 门禁改动前后都未通过（既有本机负载相关失败），真实片源、跨显卡与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.89，登记 VQ-26 增强档位有界恢复的实施与验证：降档由“连续 3 个慢帧”（约 100ms）改为墙钟持续压力判定（覆盖 800ms、不少于 3 个样本，连续两个有余量样本才结束压力段），恢复加入 5 秒冷却、3 秒稳定样本门槛、恢复失败冷却翻倍（5→10→20→40→60 秒）与可恢复上限（默认等于请求档位，240 FPS 平衡与结构性降档锁定实际档位）；`enhancementBudgetPolicy.ts` 承载判定，`e2e/enhancement-recovery.test.cjs` 覆盖判定语义与真实渲染 Worker。本机受控夹具（640×360、2× 超分、34 秒、29 个窗口）观测到两次降档与两次有界恢复，恢复间隔分别 8081.6ms 与 13019.1ms，未出现同一档位反复升降。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；真实显卡、真实片源、跨设备与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.88，登记 VQ-25 起播清晰度记忆的实施与验证：按播放地址记录上次成功的实际档位与阶梯签名（自动 7 天、手动 30 天强偏好），起播优先定档，首片超过 2 秒未出画或命中致命错误时作废记录并回落低档，播放期只在实际档位变化时写回。`e2e/startup-quality-timeline.test.cjs` 增加记忆、过期与带宽不足三类场景，`e2e/playback-experience.test.cjs` 增加存储语义断言；本机受控夹具四次运行下高档与首帧同时到位（137.2–244.7ms，冷启动 2291.6–2388.0ms）。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；真实片源、跨网络与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.87，登记「从搜索到播放」画质与帧率方案 P6（VQ-25～VQ-31）：起播清晰度记忆、增强档位有界恢复、源帧率达标跳过补帧、仅增强路径移入 Worker、原画窗口自适应、画质可观测性与高刷复测。新增起播时间线测量入口 `e2e/startup-quality-timeline.test.cjs` 并记录本机基线（高档到位约 2.3 秒、补间层就绪 0.33–0.72 秒）。同步[进阶计划](./player-quality-development-plan.md)、[任务清单](./development-tasks.md)、[测试计划](./media-player-test-plan.md)与[文档地图](./README.md)；条目均为待执行，两项产品口径待确认。
+
+更新记录：2026-09-20，v5.86，登记画质波动修正（VQ-24）：`receiveFrame` 不再把采集间隔当作时间轴跳变重建管线，目标落在帧窗口外时改用最近可用帧维持增强与补间层，只有内容停止推进 800ms 才回到原画；新增 `e2e/quality-fluctuation.test.cjs` 并收紧 `e2e/interpolation-stability.test.cjs`。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)。软件渲染下的长绘制提交与持续落后时的音画偏差保留为待设备复测。
+
+更新记录：2026-09-20，v5.85，登记播放体验修正（VQ-22、VQ-23）：进度条改用播放器播放期动画帧逐帧写入并取消 120ms 宽度过渡，四类配置下写入次数与渲染帧数一致、最长静止为 0；新增 `e2e/progress-seek-latency.test.cjs` 测量拖动定位时间线、主线程长任务、呈现与捕获节奏。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)。定位后原画窗口与仅增强路径的主线程执行保留为未解决项，不写成已修复。
+
+更新记录：2026-09-20，v5.84，登记播放器刷新对齐与长帧治理（VQ-19～VQ-21）：`PresentationScheduler` 取代 1ms 心跳与消息脉冲，非整数倍刷新也按刷新边界呈现，刷新回调不交付时回退截止时间计时器；取消逐帧同步回读，新增绘制耗时、长绘制与长帧比例口径。同步[进阶计划](./player-quality-development-plan.md)、[播放器设计](./media-player-development.md)、[测试计划](./media-player-test-plan.md)、[任务清单](./development-tasks.md)、[测试报告](./media-player-test-report.md)与[文档地图](./README.md)；脉冲测试入口由刷新对齐入口取代。证据为受控无头浏览器与单元测试，物理高刷、整片、跨显卡与桌面安装物保持待环境。
+
+更新记录：2026-09-20，v5.82，登记[本地桌面运行与打包](./local-desktop.md)的接收方非英文路径数据库启动修复：确认 `0x00000001` 来自 `getInstallationPaths()` 的自身路径校验，废止 v1.36 的 8.3 短路径方案，改为把随包 PostgreSQL 运行库与数据目录镜像到纯英文目录，并记录候选、数据迁移、镜像校验、运行库来源和交付 ZIP 摘要。桌面测试 40 项、真实 PostgreSQL ASCII 镜像验收和交付包首次启动复验通过；接收方电脑与干净 Windows 环境保持 `待环境`。
+
+更新记录：2026-09-20，v5.83，登记[本地桌面运行与打包](./local-desktop.md)对当前交付包 `20260920-143138-510` 的本机隔离环境复验：非英文与英文数据目录两条分支的首次启动、重启、进程与模块来源、回环监听和非空截图全部通过，报告为 `sanye_deploy/.local/first-run-09YxwJ/report.json` 与 `sanye_deploy/.local/first-run-9V3qr7/report.json`。未修改产物，接收方电脑与干净 Windows 环境保持 `待环境`。
+
+更新记录：2026-09-18，v5.81，登记第四步 P3 RIFE v4.6/ncnn Vulkan：代码与权重许可分别核实，固定版本/摘要，六类场景五个时间步及同源光流质量比较，1080p 连续文件实验与暂不采用决策。同步进阶计划、设计、任务清单、测试计划、报告和文档地图。文件式成本不冒充常驻实时推理，工作集不冒充显存；保留质量退化、传输和目标设备待验证，P4 条件未满足。命令与证据见[播放器测试报告](./media-player-test-report.md)。
+
+更新记录：2026-09-18，v5.80，登记[画质进阶计划](./player-quality-development-plan.md)第三步 P2：有限运动置信度修正、GPU 存储及程序复用、稠密流和处理顺序隔离比较、十七种组合预算及实际画质菜单同步。沿用既有产品要求；实现、收益、取舍与未达项目见播放器设计和[测试报告](./media-player-test-report.md)。
+
+更新记录：2026-09-18，v5.79，登记[画质进阶计划](./player-quality-development-plan.md)第二步 P1，同步调度与生命周期设计、设备持久化评估、任务清单和测试计划。实际 CPU、帧间隔及失败记录集中见[播放器测试报告](./media-player-test-report.md)，不由本机生成帧率推定物理显示、能耗或桌面安装物表现。
+
+更新记录：2026-09-18，v5.78，登记[画质进阶计划](./player-quality-development-plan.md) P0 执行，同步任务清单、播放器设计、测试计划、专项报告与文档地图。新增合成样本、分阶段观测和四类对照基线入口，保留真实素材授权、供电、显存、功耗及物理呈现边界；实际命令和结果集中见[播放器测试报告](./media-player-test-report.md)。
+
+更新记录：2026-09-18，v5.77，登记[本地桌面运行与打包](./local-desktop.md)的新包验收后清理规则：新包验证成功后按绝对路径核对，仅清理 Windows 桌面和本项目 `sanye_desktop\dist` 下的旧安装包、压缩包及解压发布目录；保留本次新产物，源码、依赖和运行数据不纳入清理。本轮仅文档变更，验证入口为 `pnpm docs:check`。
+
+更新记录：2026-09-18，v5.76，新增[画质与帧率进阶优化开发计划](./player-quality-development-plan.md)草案并同步文档地图：拆分六阶段、十八个工作包，明确当前实现、建议门禁、工期假设、模型接入决策、CPU/功耗与物理呈现证据。既有能力与验证引用播放器设计和报告，实施状态仍由任务清单维护；本轮仅文档变更，验证入口为 `pnpm docs:check`。
+
+更新记录：2026-09-18，v5.75，登记[无需预装环境的免安装交付](./local-desktop.md)：统一最小子进程环境、独立用户数据与配置验证、全进程原生模块来源检查，以及最终 ZIP 逐项校验。完整解压后双击即可使用，不要求接收方安装 Java、数据库、VC++ 或开发工具；保留受控本机验收与干净 Windows 真机验证的区别。
+
+更新记录：2026-09-18，v5.74，登记[播放器设计](./media-player-development.md)及[画质帧率专项](./media-player-test-report.md)的五项改进与模型实测。保留本地受控媒体、GPU 完成成本、屏幕呈现及桌面交付的区别；RIFE 经 GitHub API 完成上游方案与代码许可核对，未接入权重或推理。全量构建发现排期空数组类型错误，补充元素类型后通过；具体命令及结果见专项报告。
+
+更新记录：2026-09-18，v5.73，登记[接收方数据库错误排查](./local-desktop.md)：旧包 PostgreSQL 实际依赖构建机系统 VC++ DLL，原离线配置缺少错误诊断。补齐随包运行库、构建检查与脱敏日志，并验证实际包加载路径、首次启动及重启；具体结果见运行文档，接收方环境保持 `待环境`。
+
+更新记录：2026-09-17，v5.72，登记[客户端布局复验](./layout-regression-report.md)及[交互修正](../product/feature-specification.md)：搜索按钮内嵌对齐、空数据与错误状态、收藏回滚和本地想看标记。60 组布局、13 项专项回归及类型检查通过；按用户最新指令取消本轮打包、桌面更新和旧包清理，保留当前桌面版本及所有已有工作区改动。
+
+更新记录：2026-09-17，v5.71，登记[桌面新版交付](./local-desktop.md) `20260917-161633-055`：归档及桌面文件校验、包内前端一致性、隔离首次启动和重启通过，桌面旧版移入回收站，固定入口指向新版。保留首次截图超时及原生窗口截图复验记录，区分本机启动、可信签名与外部片源验证；个人数据和仓库历史产物未删除。
+
+更新记录：2026-09-17，v5.70，补充[播放器设计](./media-player-development.md)和[专项报告](./media-player-test-report.md)：搜索分类分页、详情与剧集并行请求、后台刷新连续性、单线重试状态、菜单原位更新、清晰度平滑切换和独立增强故障恢复。登记当前工作区的受控测试、生成与显示帧率区别、在线片源及已安装客户端未验证范围；保留其他既有改动和历史记录。
+
+更新记录：2026-09-17，v5.69，同步[功能规格](../product/feature-specification.md)与[播放器报告](./media-player-test-report.md)：搜索隐藏自动选源控制，详情折叠线路入口，默认浅色并修正窄屏和播放器提示对比度。浏览器测试覆盖自动回退参数、主题持久化和详情手动换线，截图与命令见报告；本次没有替换桌面发行物。
+
+更新记录：2026-09-17，v5.68，登记[播放体验](../product/feature-specification.md)、[专项验收](./media-player-test-report.md)和[固定桌面入口](./local-desktop.md)：偏好与线路记忆、语言一致换线、状态和重试操作、搜索来源选择、帧率滞回、校验后桌面交付及旧版回收。工作区保留原有无关改动。
+
+更新记录：2026-09-17，v5.67，登记[直接观看渐进加载](./media-player-test-report.md)与[交互要求](../product/feature-specification.md)：首个有效来源立即展示、后台补线、空资源明确失败和首帧超时切线。两项浏览器测试覆盖九类故障与等待场景，类型检查通过。
+
+更新记录：2026-09-17，v5.66，登记[修复候选交付](./local-desktop.md) `141732-133`：28 项桌面测试、专项回退与帧率测试通过，包内真实《铃芽之旅》备用线路播放通过；记录中间候选失败与一次有界重试修复，保留正在运行旧版，桌面交付最终候选。
+
+更新记录：2026-09-17，v5.65，同步[播放器设计](./media-player-development.md)与[播放器测试报告](./media-player-test-report.md)：首帧驱动定位恢复、遮挡锐化来源、生成节奏与持续过载回退。保留本地受控媒体、GPU 完成帧率和已安装客户端的证据边界；测试命令和结果见专项报告。
+
+更新记录：2026-09-17，v5.64，登记[备用来源契约](./api-contract.md)、[播放交互](../product/feature-specification.md)与[验证结果](./media-player-test-report.md)：同名电影保留备用来源，失败后切线；帧率降档与恢复同步菜单选中态。保留真实短时播放与整片内容验收的区别。
+
+更新记录：2026-09-17，v5.63，登记[新版桌面交付](./local-desktop.md)：候选 `20260917-112625-168` 构建与 28 项桌面测试通过，桌面实际解压 EXE 首次启动和重启通过；按用户要求将两个旧版目录与旧 ZIP 移入回收站，保留用户数据和仓库历史产物。
+
+更新记录：2026-09-17，v5.62，依据用户要求完善[安卓开发计划](./android-development-plan.md)与[安卓需求草案](../product/android-requirements.md)至 v0.2。对照 Windows 搜索、预览、导入、播放器、收藏历史、首页及排期，拆分 12 个板块与 8 条工程链路，补充直接观看不强制导入、来源解析异常样例、iframe 能力限制、数据恢复和升级边界。保留草案与建议取舍，不变更 Windows 冻结范围；验证命令 `pnpm docs:check`，不作为 APK 或真机结果。保留其他并行工作记录。
+
+更新记录：2026-09-17，v5.61，登记[功能规格](../product/feature-specification.md)中的帧率、画质两栏交互。`node e2e/player-menus.cjs` 使用当前 Vue 页面、真实 ArtPlayer 与本地测试媒体验证桌面及窄屏菜单、选择后栏目名保持不变；截图在 `sanye_deploy/.local/player-menus/`，不作为外部视频源或桌面发行包更新证据。`pnpm --dir sanye_client typecheck` 通过。
+
+更新记录：2026-09-17，v5.60，登记[安卓独立版开发计划](./android-development-plan.md)与[产品需求草案](../product/android-requirements.md)：两端运行时、数据及交付解耦，设备端迁移搜索解析与持久存储。普通 Preferences 不视为加密存储，原生 HTTP 成功不视为 HLS 全链路通过。区分确认边界与建议取舍，产品和技术分开记录，已有冻结范围不变。检查命令 `pnpm docs:check`；尚未生成安卓工程或 APK。
+
+更新记录：2026-09-17，v5.59，登记[数据库模板交付](./local-desktop.md)：用户端移除 `initdb` 与临时资源路径绕行，构建模板并校验摘要、离线设置随机密码、原子落盘和恢复 ZIP 空目录；新增不完整目录与损坏模板保护测试。候选 `20260917-105403-001` 已构建并放到桌面，真实 EXE 首次启动与重启通过。外部电脑和可信发布签名边界保持 `待环境`。
+
+更新记录：2026-09-17，v5.58，登记[中文路径初始化修复](./local-desktop.md)：固定 PostgreSQL locale/编码、增加资源完整性校验和数据库就绪重试；中文应用目录与中文数据目录完整启动重启实测通过。外部电脑验证为 `待环境`，当时尚未重建发行包。
+
+更新记录：2026-09-16，v5.50，登记[天气之子完整修复](./local-desktop.md)：历史集数线路误选、失效域名复现、当前线路 ID 匹配和有界页面读取；同步[HttpClient 许可](./third-party-notices.md)。27 项 Java 测试含真实预览通过，包内真实搜索到直接播放达到 1080p、3 秒进度，发布候选编号 `20260916-163426-295`。保留旧进程未替换、整片持续播放与跨电脑未验证边界。
+
+更新记录：2026-09-16，v5.48，登记[直接观看修复](./local-desktop.md)的真实 `5002/HTTP 301` 复现、受限重定向与 24 项测试通过证据。外网预览测试及独立网络探测均连接超时，真实视频播放仍为 `待环境`；当前运行服务与打包产物未更新。
+
+更新记录：2026-09-16，v5.46，登记[搜索等待优化](./local-desktop.md)及[默认外部源配置](./environment-config.md)：完整结果独立展示、成功非空结果短时缓存和去除默认跳转。浏览器六项检查、后端 17 项通过，外网 Java 测试跳过；保留完整前端构建在播放器类型处失败、桌面包与生产环境未更新的边界。
+
+## 托盘暂停更新交付核对（2026-09-16）
+
+更新记录：2026-09-16，v5.56，登记[免安装候选](./local-desktop.md) `20260916-174318-492` 的桌面交付。24 项桌面测试、本候选启动预检及 2,283 项归档校验通过，包内主进程及暂停模块与源码一致；桌面解压文件校验后更新快捷方式，不生成独立 `.sha256` 文件。保留上一候选受系统策略拦截的历史证据，不将本轮启动探测等同于可见窗口、跨电脑或可信签名验收。
+
+## 托盘视频暂停核对（2026-09-16）
+
+更新记录：2026-09-16，v5.55，按用户要求同步[窗口行为](../product/feature-specification.md)和[桌面实现证据](./local-desktop.md)：隐藏到托盘保留页面及后台服务，只暂停视频，恢复不自动续播；真正退出才停止服务。`pnpm test:desktop` 24 项通过，包含浏览器真实视频暂停与恢复测试。打包清单加入媒体处理模块；系统签名策略阻塞未解除，当前旧客户端未替换。
+
+## 最小化行为修正核对（2026-09-16）
+
+更新记录：2026-09-16，v5.54，按用户纠正同步[窗口产品行为](../product/feature-specification.md)与[桌面实现证据](./local-desktop.md)：最小化留在任务栏，只有 × 隐藏托盘。七项主进程生命周期测试通过，包内主进程源码一致；候选 `20260916-173533-517` 被 Windows Code Integrity 3077/3033 阻止启动，更新为 `blocked-external`，桌面入口和运行实例仍为旧版。保留模拟测试与实际系统操作之间的边界，未生成独立 `.sha256` 文件。
+
+## 打包输出简化核对（2026-09-16）
+
+更新记录：2026-09-16，v5.53，按用户要求移除免安装脚本的独立 `.sha256` 文件写入，并同步[一键脚本说明](../sanye_tools/README.md)。后续交付不复制该文件，内部逐文件验证和构建报告摘要保持有效；验证为 PowerShell 语法解析及 `pnpm docs:check`，未重新构建或删除历史产物。
+
+## 播放质量更新包核对（2026-09-16）
+
+更新记录：2026-09-16，v5.52，登记[本地更新包](./local-desktop.md) `20260916-172427-738`：21 项桌面测试、EXE 启动预检及 2,283 项归档验证通过；包内运行时真实搜索、1080p 播放和新增质量与帧率菜单检查通过。桌面提供新 ZIP、解压目录和快捷方式，保留旧包与个人数据。明确 Java 测试跳过、当前实例未启动、无可信签名，以及短时后台播放不等同于高刷物理呈现、可见 EXE 或跨电脑验收。
+
+## 播放质量改进核对（2026-09-16）
+
+更新记录：2026-09-16，v5.51，登记 D-027 与产品需求、功能规格、MVP 范围、任务和追溯同步；实现与测试分别以[播放器设计](./media-player-development.md)和[报告](./media-player-test-report.md)为准，质量门禁与发布评估同步专项边界。四项质量分项、四项完整补帧回归、生产资源交互、类型检查和构建通过。保留重增强核显回退、240 未达标、高刷物理呈现和 RIFE 待环境，记录 Anime4K 许可随包分发。
+
+## 导入观看专项核对（2026-09-16）
+
+更新记录：2026-09-16，v5.49，登记[播放器报告](./media-player-test-report.md)与[桌面包记录](./local-desktop.md)。区分旧运行包的 HTTP 301 失败、当前源码受限跳转处理及新候选交付；新增具体导入错误展示。24 项 Java 测试、前端重试测试和独立数据库真实来源导入、详情、剧集、搜索按钮跳转通过。较早直接观看记录中的网络超时保留为历史证据，本轮样本恢复可达不代表全部来源、影片流持续播放与跨电脑验收通过。
+
+## 播放器拖动专项核对（2026-09-16）
+
+更新记录：2026-09-16，v5.47，登记[播放器设计](./media-player-development.md)、[测试报告](./media-player-test-report.md)和[免安装候选](./local-desktop.md)。区分播放列表缓存与实际视频分片缓存；记录一次拖动 31 次定位降至一次、桌面与触屏实际定位、缓存边界及详情页 HLS 缓冲清空后复用分片的证据。播放器构造类型错误已修正，完整前端构建通过；保留受控片源、无可信签名及未执行外网和跨电脑验收的边界。
+
+## 一键操作脚本核对（2026-09-16）
+
+更新记录：2026-09-16，v5.45，登记 [sanye_tools 使用说明](../sanye_tools/README.md)与[桌面构建证据](./local-desktop.md)。完整一键免安装流程实际生成 `20260916-154359-288` 候选，21 项桌面测试、图标七尺寸比对、启动预检及 2,282 个归档条目校验通过；补充跨工作目录入口、错误图标和并发构建拒绝证据。文档地图新增统一入口，明确固定种子、构建环境、输出和日志位置；保留 Java 测试跳过、无可信签名、未执行可见窗口与跨电脑验收边界。
+
+更新记录：2026-09-16，v5.38，登记 Windows Code Integrity 3077/3033/3089 事件及 Smart App Control 根因；补充分发硬门禁，明确自签名包不再作为可安装发行物，可信签名身份仍为 `blocked-external`。桌面测试 15 项通过；检查仅覆盖已知 Smart App Control 注册表状态，不作为任意 WDAC 放行证明。
+
+更新记录：2026-09-16，v5.37，登记桌面固定封面随包缺失修复及真实 EXE 封面、详情、播放和退出通过证据；保留跨电脑安装卸载未执行边界。
 | 评审方式 | 逐文档通读 + 交叉引用核对 + 自动化检查（链接、阶段表述、文档边界、优先级、任务一致性） |
+
+## 托盘暂停专项核对（2026-09-16）
+
+更新记录：2026-09-16，v5.44，登记[桌面运行](./local-desktop.md)的最小化与关闭暂停、页面卸载、本地服务停止及串行恢复。`pnpm test:desktop` 21 项通过，其中五项主进程测试使用模拟生命周期；明确恢复重新加载页面、启动中隐藏等待清理，以及真实托盘资源占用与安装程序尚未验收的边界。
+
+## 免安装主程序图标核对（2026-09-16）
+
+更新记录：2026-09-16，v5.43，登记[桌面运行](./local-desktop.md)的图标修正版。根因为关闭签名编辑同时跳过 EXE 图标写入；新增本地免安装构建入口，保留资源编辑。新 EXE 七种尺寸图标与指定 ICO 图像字节一致，Windows 图标提取、十九项桌面测试和无窗口启动预检通过；归档校验报告为 `sanye_desktop/dist/portable-20260916-iconfix/report.json`。保留无可信签名、未执行可见窗口与跨电脑验收的边界。
+
+## 本地免安装包核对（2026-09-16）
+
+更新记录：2026-09-16，v5.42，登记[桌面运行](./local-desktop.md)的 `20260916-1524` 免安装候选交付。桌面 ZIP 的 2,282 项文件摘要比对通过，十八项桌面测试及包内运行时后台验证通过；明确无可信发布签名、未执行可见窗口或跨电脑验收，不将此候选等同于安装器分发门禁通过。
+
+## 实时补帧专项核对（2026-09-16）
+
+更新记录：2026-09-16，v5.41，同步产品需求、功能规格、MVP 范围、决策来源、任务与追溯记录，以及播放器设计、专项报告、桌面说明和 JSFeat 第三方许可。证据入口为[播放器报告](./media-player-test-report.md)及 `e2e/realtime-interpolation.test.cjs`；明确 GPU 生成帧率、显示调度和物理呈现之间的边界，保留 60Hz 当前环境、失败优化实验及安装客户端尚未更新的限制。
+
+## 窗口关闭与托盘修复核对（2026-09-16）
+
+更新记录：2026-09-16，v5.40，登记[桌面运行](./local-desktop.md)的关闭隐藏、托盘恢复、再次启动唤回和明确退出流程。`pnpm test:desktop` 十八项通过，其中三项主进程事件测试覆盖本次变更；保留真实系统托盘和安装包未验收、已安装客户端未替换的边界。
+
+## 搜索与质量修复核对（2026-09-16）
+
+更新记录：2026-09-16，v5.39，登记[桌面运行](./local-desktop.md)的搜索 301 跳转根因、受限跳转和错误恢复验证，以及“质量”文案和 GPU 处理链减负。真实 Java 外部搜索返回匹配结果，三项浏览器回归、类型检查和构建通过；保留真实片源帧率、已安装客户端更新及安装分发尚未验证的边界。具体命令与环境见该文档本次记录。
+
+## 桌面重新打包核对（2026-09-16）
+
+更新记录：2026-09-16，v5.36，登记[桌面运行](./local-desktop.md)的 Java 21 运行时修复、安装器名称和摘要自动同步、Windows PowerShell 5.1 编码修复，以及 14 项测试、归档检查和实际 EXE 启动证据。保留四张封面加载失败、播放未执行、安装卸载及其他电脑未验证的边界，未将启动成功写成完整发布验收通过。
+
+## 安装后清理专项核对（2026-09-15）
+
+更新记录：2026-09-15，v5.35，登记[桌面运行](./local-desktop.md)的一键安装后清理策略，同步随包安装说明。当前工作区 `node --test sanye_desktop/install-package.test.cjs` 六项通过，覆盖成功删除、取消和失败保留、仅检查、摘要失败及清理失败；验证采用模拟安装进程，真实安装与重新分发未执行。确认只删除本次运行的 EXE，直接运行 EXE 和既有分发包不受新脚本影响。
 
 ## 当前核对（2026-09-10）
 
-更新记录：2026-09-10，v5.25，登记 [版本基线](./version-baseline.md) 的远端 Trivy 安全补丁修正：Tomcat 10.1.59、AMQP 客户端 5.33.1 以及已验证的桌面打包链更新。安全扫描、后端回归和环境发布保持独立判定。
+更新记录：2026-09-11，v5.34，登记桌面自动构建脚本、Java 17 与自签名证书基线，以及搜索专项测试通过；构建命令为 `pnpm desktop:build -- -SelfSigned`，自签名仅用于本机验证，见[桌面运行](./local-desktop.md)。
 
-更新记录：2026-09-10，v5.24，登记 [CI/CD](./ci-cd.md) 的 Maven 下载超时与官方镜像回退调整；固定版本和摘要校验保持启用，远端作业成功与分支同步按提交核对。
+更新记录：2026-09-11，补充安装策略：所有桌面安装方式统一使用当前用户证书库自签名证书，自动构建脚本不再提供可信签名分支。
 
-更新记录：2026-09-10，v5.23，登记 [CI/CD](./ci-cd.md) 的远端首轮失败、JDK 下载源差异、GNU tar 夹具修复及分支保护回读。保留本机工具链和候选发布严格门禁，后续 CI 结果按实际提交核对。
+更新记录：2026-09-11，补充本次自签名重建结果：前端构建通过，运行时准备因本机 PostgreSQL 5433 未启动失败，未将未生成的安装器标记为完成。
 
-更新记录：2026-09-10，v5.22，登记 GitHub 交付入口调整：[根说明](../README.md) 新增持续集成徽章、文档导航和分支用途，问题表单要求提交与环境证据。基于独立交付工作区整理既有代码，不将本地 HEAD、历史隔离报告或仓库首页更新视为正式发布。文档验证使用 `pnpm docs:check`；远端运行结果以 GitHub Actions 对应提交为准。
+更新记录：2026-09-11，v5.33，登记用户选择的真正 120fps 预处理功能，逐帧校验 12fps 输入生成 120 帧且保留声音与时长，HLS 与取消测试通过，实际 EXE 界面闭环通过；明确短片段测试、256 MiB 输入限制、GPL 核心许可及非实时边界，见[桌面运行](./local-desktop.md)。
 
-同轮交付复核：[性能报告](./performance-test-report.md) 六处本机证据改为路径说明，避免干净检出出现失效链接；[桌面专项](./local-desktop.md) 同步打包依赖安全更新、签名补丁与测试接口。原工作区保留既有修改，交付修正位于独立工作区。
+更新记录：2026-09-11，v5.32，登记候选 20260911.1 的返回、搜索、折叠和画质控件修复；前端检查与浏览器专项通过，真实 EXE 八项通过，安装成功。性能测试存在最小化窗口及运行中断，未声称达到目标帧率，详见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-11，v5.31，登记桌面开发模式错误代理导致封面加载失败的问题，改为受路径约束的本地封面读取；浏览器十张图片加载成功，未将模拟接口或预览页面当作安装包业务验收。
+
+更新记录：2026-09-11，v5.30，登记侧栏按钮裁切、网格折叠和响应式修复，浏览器专项、类型检查和构建通过；审核失败直接发布及种子来源风险留为审查问题。API 替身测试和旧安装包不作为新 EXE 实测，见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-11，v5.29，登记[保留作品的体积优化](./local-desktop.md)：全部 Java 模块压缩并恢复同版本供应商原生文件，PostgreSQL 仅删开发目录；125 个客户端文件和种子 SQL 不变。真实服务八项及桌面回归七项通过，首次失败原因与最终方案分别记录。
+
+收口：安装器从 532.02 MiB 降到 431.25 MiB，优化版 EXE 真实播放及退出通过，ZIP 六文件核对通过；最终安装器启动仍遭 Windows 应用控制拦截，安装卸载保留待环境，不改变策略绕过。
+
+更新记录：2026-09-11，v5.28，将随包安装说明改为面向普通用户的操作步骤，保留高级手动方式，新增稳定源文件并由打包脚本同步。新版 ZIP 六文件内容摘要验证通过，原有安装器内容未修改；见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-11，v5.27，补齐一键安装器与证书摘要校验、真实 cmd 检查模式和缺失文件失败验证，生成六文件 ZIP 及逐项摘要核对。公开 Release 尚未上传，GitHub 身份、源码对应及素材授权缺口见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-10，v5.26，将测试证书生成器默认到期日调整为 `9999-12-31`，实际生成并安装新的当前用户测试证书；保留旧版验收为历史，要求新产物重新签名和核对，见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-11，v5.26，新证书安装器构建和签名有效性通过，新 EXE 六项检查、真实播放和退出码 0 复验通过；公开证书、安装说明及摘要同步。保留首次关闭失败记录，未将旧版本安装卸载结果当作新版本实测。
+
+更新记录：2026-09-10，v5.25，登记维护者授权后的真实测试证书创建及当前用户信任安装，新增 Windows 原生自签名构建入口，保留第三方运行时原字节。五项桌面测试通过；安装包与系统启动验证不从证书安装成功推断，见[桌面运行](./local-desktop.md)。
+
+本轮收口：七项桌面回归通过，最终自签名 NSIS 安装器完成安装、安装后 EXE 实际播放与退出、卸载清理验证；日志和摘要见桌面运行文档。修复文档检查误扫构建副本的问题。另一台电脑、公开可信签名及升级回滚仍未验收。
+
+更新记录：2026-09-10，v5.24，登记[自签名测试证书](./local-desktop.md)生成、安装和卸载入口；私钥不可导出，安装需要公开证书 SHA-256，信任仅限当前用户。未自动修改信任库，不宣称解决 Smart App Control 或公开签名。
+
+更新记录：2026-09-10，v5.23，登记[无证书桌面构建准备](./local-desktop.md)：增加 Windows 源码工作流、离线种子完整性校验和产物摘要，明确远端 CI、种子分发许可、完整安装包及证书尚未验收；更新申请已尝试但未确认成功的状态。
+
+更新记录：2026-09-10，v5.22，登记[免费签名申请准备](./local-desktop.md)：GitHub 初始查询无根许可证、公开发行接口为空；维护者授权后加入自有代码 MIT 许可和[第三方许可说明](./third-party-notices.md)，桌面包携带许可文件。现有桌面构建依赖本机数据库，托管来源验证仍待实现；未注册账户或提交申请，证书状态保留 `blocked-external`。
 
 更新记录：2026-09-10，v5.21，登记[桌面启动与打包阻塞修复](./local-desktop.md)：通过系统 3077/3118 事件确认 Smart App Control 拦截，修正临时安装器签名顺序并补齐签名门禁与失败报告，四项桌面测试通过；本机缺少可信签名身份，最新产物启动及安装验收仍为 `blocked-external`。
 

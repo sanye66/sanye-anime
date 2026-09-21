@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.15 |
+| 文档版本 | v2.16 |
 | 文档状态 | 基线（环境变量与中间件连接唯一基准） |
 | 唯一基准 | 是（环境变量、连接配置） |
 | 关联文档 | [数据库设计](./database-design.md)、[安全设计](./security-design.md)、[部署说明](../sanye_deploy/README.md)、[CI/CD](./ci-cd.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-09-16 |
+
+更新记录：2026-09-16，v2.16，外部搜索默认模板改用 `www.yhdmtv.cc`，减少裸域到规范域的一次跳转；显式环境变量仍优先，受限重定向校验保留。实测与验证边界见[桌面运行记录](./local-desktop.md)。
 
 ## 当前核对（2026-09-10）
 
@@ -187,8 +189,8 @@ pwsh -ExecutionPolicy Bypass -File .\sanye_deploy\configure-middleware.ps1 `
 | AI_POOL_CORE / MAX / QUEUE | 4 / 8 / 64 | AI 生成线程池 |
 | QUOTA_STORAGE | redis | 额度存储（redis/memory） |
 | ES_HOST / ES_INDEX / RAG_TOP_K | http://127.0.0.1:9200 / sanye_anime / 3 | ES 搜索与 RAG |
-| SANYE_SEARCH_EXTERNAL_BASE | https://yhdmtv.cc/search/index.html?keyword= | 外部搜索页面模板；仅用于解析和校验用户粘贴的搜索 URL |
-| SANYE_SEARCH_EXTERNAL_RESULTS_BASE | https://yhdmtv.cc/public/auto/search1.html?keyword= | 外部搜索公开动态结果接口模板；服务端只读取公开候选元数据 |
+| SANYE_SEARCH_EXTERNAL_BASE | https://www.yhdmtv.cc/search/index.html?keyword= | 外部搜索页面模板；仅用于解析和校验用户粘贴的搜索 URL |
+| SANYE_SEARCH_EXTERNAL_RESULTS_BASE | https://www.yhdmtv.cc/public/auto/search1.html?keyword= | 外部搜索公开动态结果接口模板；服务端只读取公开候选元数据，默认直接访问规范域 |
 | MANAGE_ALLOWED_CALLER | sanye-admin-server | 受控接口调用方名称（仅作附加校验） |
 | SANYE_MANAGE_TOKEN | 空（本地脚本自动注入） | 受控管理接口共享令牌；生产必须使用外部密钥管理并轮换 |
 | CAS_SERVER_URL | http://localhost:8095 | CAS 服务器地址（dev 指向本地 Mock CAS，正式替换真实 CAS） |
