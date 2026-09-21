@@ -153,8 +153,8 @@ try {
   record('清晰度切换更新 HLS level', runtimeState?.currentLevel === 0,
     `manualLevel=${runtimeState?.currentLevel ?? 'null'}`)
   record('HLS 缓冲与重试优化生效', runtimeState?.preload === 'auto'
-    && runtimeState.maxBufferLength === 60
-    && runtimeState.maxMaxBufferLength === 120
+    && runtimeState.maxBufferLength === 90
+    && runtimeState.maxMaxBufferLength === 180
     && runtimeState.fragLoadingMaxRetry === 4
     && runtimeState.fragLoadingTimeOut === 20_000,
   JSON.stringify(runtimeState))

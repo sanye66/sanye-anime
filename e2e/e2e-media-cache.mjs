@@ -15,6 +15,9 @@ let failEpisodes = false
 let episodeRequests = 0
 
 try {
+  await page.addInitScript(() => {
+    localStorage.setItem('artplayer_settings', JSON.stringify({ times: { 'sanye-anime-127': 75 } }))
+  })
   await page.route('**/api/v1/users/me/history/127', async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ code: 0, message: 'ok', data: null }) })
   })
@@ -83,6 +86,9 @@ try {
 
   await page.locator('.episode-button').nth(1).click()
   await page.locator('.anime-player-frame video').waitFor({ timeout: 15000 })
+  const builtInResumeLayers = await page.locator('.art-auto-playback').count()
+  record('禁用跨剧集共用的 ArtPlayer 续播记录', builtInResumeLayers === 0,
+    `layers=${builtInResumeLayers}`)
   const liveProgress = await page.evaluate(async () => {
     const video = document.querySelector('.anime-player-frame video')
     if (!video) return null
@@ -95,9 +101,18 @@ try {
     video.dispatchEvent(new Event('pause'))
     await new Promise((resolve) => window.setTimeout(resolve, 50))
     const paused = localStorage.getItem('sanye:player:progress:127:402')
+    video.currentTime = 42
+    video.dispatchEvent(new Event('seeked'))
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+    const seeked = localStorage.getItem('sanye:player:progress:127:402')
+    video.currentTime = 0.25
+    video.dispatchEvent(new Event('seeked'))
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
     return {
       timeupdate: first ? JSON.parse(first).currentTime : 0,
       paused: paused ? JSON.parse(paused).currentTime : 0,
+      seeked: seeked ? JSON.parse(seeked).currentTime : 0,
+      reset: localStorage.getItem('sanye:player:progress:127:402'),
     }
   })
   const selectedCache = await page.evaluate(() => localStorage.getItem('sanye:player:selected:127'))
@@ -108,6 +123,8 @@ try {
   record('播放器选集写入缓存', selectedCache === '402' && episodeCacheLength === 2,
     `selected=${selectedCache}, length=${episodeCacheLength}`)
   record('播放进度由媒体事件实时写入', liveProgress?.timeupdate === 12 && liveProgress?.paused === 18,
+    JSON.stringify(liveProgress))
+  record('拖动进度立即保存且回到开头会清除旧记录', liveProgress?.seeked === 42 && liveProgress?.reset === null,
     JSON.stringify(liveProgress))
   record('下一集 HLS 清单预取', hlsRequests.includes('/two.m3u8'), [...new Set(hlsRequests)].join(', ') || '未请求')
 
