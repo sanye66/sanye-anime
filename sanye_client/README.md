@@ -1,6 +1,19 @@
 # sanye_client
 
+| 项目 | 内容 |
+| --- | --- |
+| 文档版本 | v1.0 |
+| 文档状态 | 基线 |
+| 关联文档 | [当前审计](../docs/current-status-audit.md) |
+| 更新时间 | 2026-09-10 |
+
 这是项目的 Vue 前端工程，承载 `sanye_anime` 客户端和 `official` 官网两类路由。它是三个核心工程中的 Vue 工程，不与 `official` 另建技术项目。客户端提供作品详情、AI 对话、收藏和个人历史；官网页面提供产品介绍、公开信息、法律信息和客户端入口。
+
+## 当前核对（2026-09-10）
+
+仅启动 Web、不启动桌宠时使用根命令 `pnpm dev:client-only`；`pnpm dev:client` 会联动桌宠。登录需独立 Mock CAS 和对齐后的 Vite 配置，见[环境矩阵](../docs/environment-config.md)。静态页面、回退数据及 dev AI 不代表完整服务可用，当前证据见[审计](../docs/current-status-audit.md)。
+
+更新记录：2026-09-10，v1.0，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 常用命令
 

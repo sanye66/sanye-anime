@@ -2,10 +2,22 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.6 |
+| 文档版本 | v1.11 |
 | 文档状态 | 基线（需求 → 任务 → 实现 → 测试 → 验收 追溯） |
 | 关联文档 | [产品需求](../product/product-requirements.md)、[功能规格](../product/feature-specification.md)、[开发任务](./development-tasks.md)、[接口契约](./api-contract.md)、[测试策略](./testing-strategy.md) |
-| 更新时间 | 2026-08-24 |
+| 更新时间 | 2026-09-22 |
+
+更新记录：2026-09-21，v1.10，[功能规格](../product/feature-specification.md) 的「补帧（预处理生成）」关联 D-030、P7 任务（VQ-33～VQ-36）、实现模块 `sanye_desktop/neuralInterpolation.cjs` 与 `sanye_client/src/video/neuralInterpolation.ts`；本轮按用户要求只接线未验证，证据列写作待验证，真实显卡包内运行与接收方电脑保持待环境。
+
+更新记录：2026-09-16，v1.8，补充专项追溯：[播放质量与实时补帧要求](../product/feature-specification.md) → [实时补帧专项任务](./development-tasks.md) → [播放器实现设计](./media-player-development.md) → [像素、性能与交互验收](./media-player-test-report.md)。高刷新率设备与已安装客户端验收仍待环境。
+
+更新记录：2026-09-16，v1.9，D-027 与[播放质量要求](../product/feature-specification.md)关联[质量改进任务](./development-tasks.md)、[双向光流与增强设计](./media-player-development.md)、`e2e/player-quality.test.cjs` 和[验证证据](./media-player-test-report.md)。高刷物理呈现、RIFE 与长片质量保留待环境。
+
+## 当前核对（2026-09-10）
+
+下表是需求到实现的历史追溯，不是全部需求当前环境验收通过的证明。当前基础回归见[审计](./current-status-audit.md)，可靠事件、XXL-JOB、独立恢复和交付状态见[任务清单](./development-tasks.md) T-R-02 至 T-R-07。真实 CAS、模型及媒体、桌宠系统验收仍各自待环境。
+
+更新记录：2026-09-10，v1.7，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 使用说明
 
@@ -18,7 +30,7 @@
 | 产品项 | 功能规格 | 任务 | 实现 | 测试证据 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | C-P0-02 首页 | AI-0xx/首页 | T-C-02、T-D-01、T-D-05 | GET /api/v1/home（Redis 缓存+单飞+TTL 抖动）、/schedule/week | 冒烟、接口体检 B、E2E 首页/排期 | 已完成 |
-| C-P0-03 搜索 | 搜索 | T-D-03 | GET /api/v1/search（ES 降级 4002）、前端回退 | 冒烟 4002、体检 C、E2E 搜索命中/降级 | 已完成（本地 ES 已验证，正式环境待验收） |
+| C-P0-03 搜索 | 搜索 | T-D-03 | GET /api/v1/search（ES 空或失败回源公开目录）、外部候选 | 当前 SearchService 测试、外部候选自包含 E2E；旧 4002 为历史证据 | 已完成（本地 ES 已验证，正式环境待验收） |
 | C-P0-04 番剧仓库 | 仓库 | T-D-02 | GET /api/v1/anime（组合筛选+分页，PG 数据面） | 单测 7、冒烟、体检 B、E2E 仓库 | 已完成 |
 | C-P0-05 作品详情 | 详情 | T-D-04 | GET /api/v1/anime/{id}（角色/相似/排期/来源） | 单测、冒烟、体检 B、E2E 详情 | 已完成 |
 | C-P0-06 AI 对话 | AI-0xx | T-C-03/04、T-E-01/02/04/07 | /api/v1/ai/*（会话/消息 SSE/额度/记忆/推荐/剧透） | 单测、冒烟、E2E AI 链路、体检 D | 进行中（真实模型额度待环境 GAP-006） |
@@ -39,6 +51,7 @@
 | 官网正文编辑 | O-P0-05 | T-D-07 | /api/v1/manage/legal + /public/legal | 单测 8、冒烟、E2E 闭环 | 已完成 |
 | AI 偏好配置 | AI-0xx | 模型配置页 | /api/v1/ai/model-info、/preferences | 单测 10、冒烟、E2E | 已完成 |
 | 排期真实绑定 | C-P0-02 | T-D-05 | /api/v1/schedule/week | 单测 7、冒烟、E2E | 已完成 |
+| 补帧（预处理生成） | **已下线并删除（2026-09-22）** | VQ-33～VQ-36、D-030 | 原实现 `sanye_client/src/video/neuralInterpolation.ts`、`sanye_desktop/neuralInterpolation.cjs`、`prepareInterp.cjs`（随包 RIFE v4.6/ncnn Vulkan）**均已删除** | 无（能力下线，相关测试与验收入口同时删除） | 不适用；播放期实时补帧由 `interpolationRenderer.worker.ts` 承担，运动估计见 P13（WebGPU/CPU 双路径） |
 
 ## 3. 待环境/待开始需求
 

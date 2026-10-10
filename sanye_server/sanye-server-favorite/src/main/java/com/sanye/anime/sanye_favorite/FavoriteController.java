@@ -6,16 +6,21 @@ import com.sanye.anime.sanye_core.web.PageResult;
 import com.sanye.anime.sanye_core.web.RequestIdFilter;
 import com.sanye.anime.sanye_favorite.model.FavoriteItem;
 import com.sanye.anime.sanye_favorite.model.HistoryItem;
+import com.sanye.anime.sanye_favorite.model.ContinueWatchingItem;
+import com.sanye.anime.sanye_favorite.model.ContinueWatchingRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * 收藏与历史接口（T-F-02），路由与前端 favorite.ts 对齐。
@@ -74,6 +79,27 @@ public class FavoriteController {
     public ApiResponse<Void> recordHistory(@PathVariable long animeId) {
         favoriteService.recordHistory(ownerKey(), animeId);
         return ApiResponse.ok(null, requestId());
+    }
+
+    /** 查询当前用户最近保存的继续观看进度。 */
+    @GetMapping("/continue-watching")
+    public ApiResponse<List<ContinueWatchingItem>> continueWatching(
+            @RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(favoriteService.continueWatching(ownerKey(), limit), requestId());
+    }
+
+    /** 保存观看进度；PUT 为幂等写入，兼容客户端使用 POST 的历史调用。 */
+    @PutMapping("/continue-watching")
+    public ApiResponse<ContinueWatchingItem> saveContinueWatching(
+            @RequestBody ContinueWatchingRequest body) {
+        return ApiResponse.ok(favoriteService.saveContinueWatching(ownerKey(), body), requestId());
+    }
+
+    /** 兼容使用 POST 保存观看进度的客户端。 */
+    @PostMapping("/continue-watching")
+    public ApiResponse<ContinueWatchingItem> postContinueWatching(
+            @RequestBody ContinueWatchingRequest body) {
+        return ApiResponse.ok(favoriteService.saveContinueWatching(ownerKey(), body), requestId());
     }
 
     /** 将当前认证上下文转换为数据库归属键。 */

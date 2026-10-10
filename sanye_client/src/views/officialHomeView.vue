@@ -11,7 +11,8 @@ const failed = ref(false)
 const picks = ref<AnimeCard[]>([])
 
 const displayPicks = computed(() => {
-  const supportedPicks = picks.value.filter((item) => isSupportedAnimeId(item.id))
+  // 接口返回结构异常时（例如成功响应里没有 picks）不能让页面渲染报错，退回本地演示数据。
+  const supportedPicks = (Array.isArray(picks.value) ? picks.value : []).filter((item) => isSupportedAnimeId(item.id))
   return supportedPicks.length
     ? supportedPicks.map((item) => ({ slug: String(item.id), title: item.title, tags: item.tags, score: item.score }))
     : animeCatalog
@@ -24,7 +25,8 @@ async function load() {
   loading.value = true
   failed.value = false
   try {
-    picks.value = (await publicApi.home()).picks
+    const response = await publicApi.home()
+    picks.value = Array.isArray(response?.picks) ? response.picks : []
   } catch {
     failed.value = true
     picks.value = []

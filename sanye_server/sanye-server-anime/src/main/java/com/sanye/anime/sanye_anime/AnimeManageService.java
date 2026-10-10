@@ -5,6 +5,10 @@ import com.sanye.anime.sanye_anime.model.AdminAnimeDetailView;
 import com.sanye.anime.sanye_anime.store.AnimeCatalogStore;
 import com.sanye.anime.sanye_core.exception.BusinessException;
 import com.sanye.anime.sanye_core.exception.ErrorCode;
+import com.sanye.anime.sanye_core.event.DomainEvent;
+import com.sanye.anime.sanye_core.event.OutboxRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -23,10 +27,17 @@ public class AnimeManageService {
     private static final Set<String> VALID_STATUSES = Set.of("草稿", "待审核", "已发布", "已下架");
 
     private final AnimeCatalogStore catalogStore;
+    private final OutboxRepository outbox;
 
     /** 注入目录存储，管理操作统一落到同一数据面。 */
     public AnimeManageService(AnimeCatalogStore catalogStore) {
+        this(catalogStore, null);
+    }
+
+    @Autowired
+    public AnimeManageService(AnimeCatalogStore catalogStore, OutboxRepository outbox) {
         this.catalogStore = catalogStore;
+        this.outbox = outbox;
     }
 
     /** 查询全部作品并补充管理状态与核验状态，供后台表格展示。 */
@@ -51,12 +62,14 @@ public class AnimeManageService {
      * 新建作品：数据面写入（初始管理状态草稿，公开不可见），
      * 发布由状态流转接口控制。title/type 必填，其余可空。
      */
+    @Transactional
     public AdminAnimeDetailView create(String title, String originalTitle, String type, Integer year,
                                        String summary, String tags, String updateText) {
         return create(title, originalTitle, type, year, summary, tags, updateText, null, null);
     }
 
     /** 创建带公开来源和封面的作品，封面只保存已上传的资源路径。 */
+    @Transactional
     public AdminAnimeDetailView create(String title, String originalTitle, String type, Integer year,
                                        String summary, String tags, String updateText,
                                        String sourceUrl, String coverUrl) {
@@ -77,15 +90,18 @@ public class AnimeManageService {
     /**
      * 编辑作品：只更新传入的非空字段；标题/类型清空视为不修改。
      */
+    @Transactional
     public AdminAnimeDetailView update(long animeId, String title, String originalTitle, String type, Integer year,
                                        String summary, String tags, String updateText) {
         return update(animeId, title, originalTitle, type, year, summary, tags, updateText, null, null);
     }
 
     /** 更新作品内容，并按需替换来源页和已上传封面。 */
+    @Transactional
     public AdminAnimeDetailView update(long animeId, String title, String originalTitle, String type, Integer year,
                                        String summary, String tags, String updateText,
                                        String sourceUrl, String coverUrl) {
+        if (outbox != null) outbox.lockAggregate(animeId);
         AnimeMemoryStore.AnimeCard current = catalogStore.cardOf(animeId);
         if (current == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
@@ -116,21 +132,47 @@ public class AnimeManageService {
         if (replaced == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
+        emitSnapshot(replaced, catalogStore.statusOf(animeId));
         return toDetailView(replaced);
     }
 
     /** 校验状态白名单并更新作品状态，返回更新后的管理摘要。 */
+    @Transactional
     public AdminAnimeView updateStatus(long animeId, String status) {
         if (status == null || !VALID_STATUSES.contains(status)) {
             throw new BusinessException(ErrorCode.PARAM_INVALID, "不支持的作品状态：" + status);
         }
+        if (outbox != null) outbox.lockAggregate(animeId);
         AnimeMemoryStore.AnimeCard card = catalogStore.cardOf(animeId);
         if (card == null) {
             throw new BusinessException(ErrorCode.NOT_FOUND);
         }
         catalogStore.updateStatus(animeId, status);
+        emitSnapshot(card, status);
         return new AdminAnimeView(card.id(), card.title(), card.originalTitle(), card.type(),
                 "已发布".equals(status) ? "已核验" : "待补充", status, LocalDate.now().toString());
+    }
+
+    private void emitSnapshot(AnimeMemoryStore.AnimeCard card, String status) {
+        long animeId = card.id();
+        long version = outbox == null ? 1L : outbox.nextVersion(String.valueOf(animeId));
+        java.util.Map<String, Object> snapshot = new java.util.HashMap<>();
+        snapshot.put("animeId", animeId); snapshot.put("id", animeId); snapshot.put("title", card.title());
+        snapshot.put("originalTitle", card.originalTitle()); snapshot.put("type", card.type());
+        snapshot.put("year", card.year()); snapshot.put("score", card.score()); snapshot.put("status", status);
+        snapshot.put("coverUrl", card.coverUrl()); snapshot.put("tags", card.tags());
+        snapshot.put("updateText", card.updateText()); snapshot.put("summary", catalogStore.summaryOf(animeId));
+        DomainEvent event = DomainEvent.of("anime.status.changed", String.valueOf(animeId), version, snapshot);
+        if (outbox != null) outbox.append(event);
+    }
+
+    @Transactional
+    public void compensate(long animeId) {
+        if (outbox == null) throw new IllegalStateException("Persistent events are required");
+        outbox.lockAggregate(animeId);
+        var card = catalogStore.cardOf(animeId);
+        if (card == null) throw new BusinessException(ErrorCode.NOT_FOUND);
+        emitSnapshot(card, catalogStore.statusOf(animeId));
     }
 
     /**

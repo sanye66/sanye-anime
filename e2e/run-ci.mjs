@@ -7,6 +7,7 @@ const workspaceRoot = path.resolve(root, '..')
 const base = 'http://127.0.0.1:4173'
 const scripts = [
   'e2e-season-order.mjs',
+  'e2e-search-external.mjs',
   'e2e-movie-playback-lines.mjs',
   'e2e-media-quality.mjs',
 ]

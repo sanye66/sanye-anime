@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 600" role="img" aria-labelledby="title desc">
+  <title id="title">无职转生 OAD 特别篇封面</title>
+  <desc id="desc">无职转生 OAD 特别篇的深夜森林与旅途封面。</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#1a2448" />
+      <stop offset="0.62" stop-color="#564c82" />
+      <stop offset="1" stop-color="#d58e89" />
+    </linearGradient>
+  </defs>
+  <rect width="420" height="600" fill="url(#sky)" />
+  <circle cx="304" cy="150" r="54" fill="#ffe8b0" opacity="0.86" />
+  <path d="M0 364 78 278l54 78 60-120 72 126 54-75 102 108v213H0Z" fill="#172039" />
+  <path d="M0 462c92-38 148-13 220-47 70-33 119-18 200-58v243H0Z" fill="#10182c" />
+  <path d="M200 600v-128l22-44 22 44v128Z" fill="#d2a06e" opacity="0.9" />
+  <path d="M222 429v-55M202 446l20-35 20 35" fill="none" stroke="#f2c98b" stroke-width="6" />
+  <circle cx="72" cy="128" r="3" fill="#fff3c9" />
+  <circle cx="354" cy="238" r="3" fill="#fff3c9" />
+  <text x="30" y="530" fill="#fff4df" font-family="sans-serif" font-size="25">无职转生</text>
+  <text x="31" y="557" fill="#f4c9b1" font-family="sans-serif" font-size="12" letter-spacing="3">OAD 特别篇</text>
+</svg>

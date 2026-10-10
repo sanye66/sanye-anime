@@ -215,7 +215,7 @@ public final class AnimeMemoryStore {
 
     /** 为连载作品构造三集联调排期。 */
     private static List<AnimeSchedule> buildSchedule(AnimeCard card) {
-        if (!card.updateText().contains("更新")) {
+        if (card.updateText() == null || !card.updateText().contains("更新")) {
             return List.of();
         }
         List<AnimeSchedule> schedule = new ArrayList<>();

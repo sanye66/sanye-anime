@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import path from 'node:path'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -15,7 +16,8 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: 'dist/renderer',
+    outDir: process.env.SANYE_RUNNER_ONLY === '1' ? 'dist/runner' : 'dist/renderer',
     emptyOutDir: true,
+    ...(process.env.SANYE_RUNNER_ONLY === '1' ? { rollupOptions: { input: path.resolve(__dirname, 'progress.html') } } : {}),
   },
 })

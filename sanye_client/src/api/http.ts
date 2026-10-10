@@ -1,5 +1,6 @@
 import { buildCasLoginUrl, clearSession, getAccessToken, getDeviceId, getRefreshToken, setSession } from '@/auth/session'
 import { ErrorCode } from './types'
+import { desktopMode } from '@/desktop'
 
 export class ApiError extends Error {
   /** 保存业务错误码和请求编号，供页面提示与问题追踪使用。 */
@@ -39,6 +40,7 @@ export function resolveAssetUrl(path?: string): string | undefined {
   if (!path) return path
   if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) return path
   if (!path.startsWith('/')) return path
+  if (desktopMode) return path
   // 正式目录的优化封面随客户端发布，避免每次从管理端下载原始大图。
   if (path === '/client-covers/your-name.jpg') return path
   const gateway = ((import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? 'http://localhost:8091').replace(/\/$/, '')
@@ -153,7 +155,7 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
     const body = parsed
     if (!res.ok || (body && body.code !== 0)) {
       const code = body?.code ?? res.status
-      if (code === ErrorCode.UNAUTHORIZED) {
+      if (code === ErrorCode.UNAUTHORIZED && !desktopMode) {
         if (!retriedAuth) {
           const outcome = await refreshOnce()
           if (outcome === 'refreshed') {

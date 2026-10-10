@@ -4,6 +4,7 @@ import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { ChatDotRound, Collection, DataAnalysis, Document, Key, List, Location, Memo, Menu, Timer, User } from '@element-plus/icons-vue'
 import { adminAuthApi } from '@/api/admin'
 import { useAuthStore } from '@/stores/auth'
+import { prefetchRoute } from '@/router'
 
 const navigation = [
   { label: '三叶观测台', path: '/dashboard', icon: DataAnalysis, permission: '' },
@@ -57,7 +58,7 @@ async function logout(): Promise<void> {
       <div class="admin-brand"><span class="brand-mark">三</span><div><strong>sanye_anime</strong><small>宫水三叶资料馆</small></div></div>
       <div class="archive-stamp"><span>宫水三叶</span><small>糸守町 · 2013</small></div>
       <nav class="admin-nav" aria-label="管理平台导航">
-        <RouterLink v-for="item in visibleNavigation" :key="item.path" :to="item.path" class="admin-nav-item"><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></RouterLink>
+        <RouterLink v-for="item in visibleNavigation" :key="item.path" :to="item.path" class="admin-nav-item" @mouseenter="prefetchRoute(item.path)" @focus="prefetchRoute(item.path)"><el-icon><component :is="item.icon" /></el-icon><span>{{ item.label }}</span></RouterLink>
       </nav>
       <div class="archive-people"><span class="archive-people-title">当前记录员</span><div class="person-row"><span class="person-avatar mitsuha">{{ operatorInitial }}</span><div><strong>{{ operatorName }}</strong><small>宫水神社 / 黄昏记录</small></div></div><div class="mitsuha-thread"><span class="thread-knot"></span><span>三叶的结绳记录持续中</span></div></div>
       <div class="admin-aside-foot"><span class="status-dot"></span>三叶记录正常</div>

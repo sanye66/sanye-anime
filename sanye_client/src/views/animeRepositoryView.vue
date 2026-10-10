@@ -4,8 +4,10 @@ import { RouterLink, useRoute } from 'vue-router'
 import { animeApi } from '@/api/anime'
 import { favoriteApi } from '@/api/favorite'
 import { isAbortError, resolveAssetUrl } from '@/api/http'
+import { handleCoverFallback, placeholderCover } from '@/data/coverFallback'
 import type { AnimeCard } from '@/api/types'
 import { animeCatalog, animeCatalogMap, compareAnimeCatalogOrder } from '@/data/animeCatalog'
+import { desktopMode } from '@/desktop'
 
 type YearFilter = '全部年份' | '2026' | '2025' | '2024' | '2023' | '2022及更早'
 
@@ -34,6 +36,8 @@ const loading = ref(false)
 const error = ref(false)
 const fallback = ref(false)
 const collectedIds = ref<string[]>([])
+const collectionPending = ref<string[]>([])
+const collectionError = ref(false)
 let requestController: AbortController | null = null
 
 const typeOptions = ['全部类型', '原创动画', '电视动画', '剧场版', '网络动画']
@@ -63,7 +67,7 @@ function toRepoCard(card: AnimeCard): RepoCard {
     meta: `${card.year ?? ''} · ${card.type} · ${card.updateText ?? ''}`,
     tags: card.tags ?? [],
     score: card.score,
-    cover: resolveAssetUrl(local?.cover) ?? resolveAssetUrl(card.coverUrl && !card.coverUrl.includes('anime-placeholder') ? card.coverUrl : undefined) ?? '/covers/mushoku-oad.svg',
+    cover: resolveAssetUrl(local?.cover) ?? resolveAssetUrl(card.coverUrl && !card.coverUrl.includes('anime-placeholder') ? card.coverUrl : undefined) ?? placeholderCover,
     finished: card.updateText === '已完结',
   }
 }
@@ -87,11 +91,19 @@ async function load(): Promise<void> {
       size,
     }, { signal: controller.signal })
     items.value = result.items.map(toRepoCard)
-    total.value = items.value.length
-    totalPages.value = 1
+    total.value = desktopMode ? result.total : items.value.length
+    totalPages.value = desktopMode ? result.totalPages : 1
     fallback.value = false
   } catch (cause) {
     if (isAbortError(cause)) return
+    if (desktopMode) {
+      error.value = true
+      fallback.value = false
+      items.value = []
+      total.value = 0
+      totalPages.value = 0
+      return
+    }
     fallback.value = true
     error.value = true
     items.value = filteredLocal.value.map((anime) => ({
@@ -135,6 +147,7 @@ const filteredLocal = computed(() => {
 
 /** 登录用户调用收藏接口，匿名用户仅切换本地展示标记。 */
 async function toggleCollection(id: string) {
+  if (collectionPending.value.includes(id)) return
   if (fallback.value) {
     collectedIds.value = collectedIds.value.includes(id)
       ? collectedIds.value.filter((item) => item !== id)
@@ -142,6 +155,8 @@ async function toggleCollection(id: string) {
     return
   }
   const target = !collectedIds.value.includes(id)
+  collectionError.value = false
+  collectionPending.value = [...collectionPending.value, id]
   collectedIds.value = target
     ? [...collectedIds.value, id]
     : collectedIds.value.filter((item) => item !== id)
@@ -152,7 +167,12 @@ async function toggleCollection(id: string) {
       await favoriteApi.remove(id)
     }
   } catch {
-    collectedIds.value = collectedIds.value.filter((item) => item !== id)
+    collectionError.value = true
+    collectedIds.value = target
+      ? collectedIds.value.filter((item) => item !== id)
+      : [...collectedIds.value, id]
+  } finally {
+    collectionPending.value = collectionPending.value.filter((item) => item !== id)
   }
 }
 
@@ -205,14 +225,15 @@ void load()
       <span v-else>完整片库</span>
     </div>
 
-    <div v-if="error && fallback" class="feed-error"><span>接口暂不可用，已展示本地演示数据。</span><button type="button" class="text-button" @click="void load()">重试</button></div>
+    <div v-if="error" class="feed-error"><span>{{ fallback ? '接口暂不可用，已展示本地演示数据。' : '片库加载失败，请稍后重试。' }}</span><button type="button" class="text-button" @click="void load()">重试</button></div>
+    <div v-if="collectionError" class="feed-error" role="status">收藏操作失败，请重试。</div>
 
     <section v-if="loading" class="feed-skeleton" aria-label="正在加载番剧列表"><span></span><span></span><span></span><span></span></section>
 
     <section v-else-if="items.length" class="repository-grid" aria-label="番剧列表">
       <article v-for="anime in repositoryCards" :key="anime.id" class="repository-card">
         <RouterLink class="repository-cover-link" :to="`/anime/${anime.id}`" :aria-label="`查看 ${anime.title} 详情`">
-          <img :src="anime.cover" :alt="`${anime.title} 动漫封面`" loading="lazy" decoding="async" />
+          <img :src="anime.cover" :alt="`${anime.title} 动漫封面`" loading="lazy" decoding="async" @error="handleCoverFallback" />
           <span class="cover-shade"></span>
           <span class="repository-status" :class="{ finished: anime.finished }">{{ anime.finished ? '已完结' : '连载中' }}</span>
           <span class="repository-popularity">{{ anime.score !== undefined ? `★ ${anime.score}` : '新作' }}</span>
@@ -221,14 +242,14 @@ void load()
         <div class="repository-card-body">
           <div class="repository-card-title">
             <div><strong>{{ anime.title }}</strong><span>{{ anime.meta }}</span></div>
-            <button class="repository-collect" type="button" :aria-label="isCollected(anime.id) ? `取消收藏 ${anime.title}` : `收藏 ${anime.title}`" :aria-pressed="isCollected(anime.id)" @click="toggleCollection(anime.id)">{{ isCollected(anime.id) ? '已收藏' : '收藏' }}</button>
+            <button class="repository-collect" type="button" :disabled="collectionPending.includes(anime.id)" :aria-label="isCollected(anime.id) ? `取消收藏 ${anime.title}` : `收藏 ${anime.title}`" :aria-pressed="isCollected(anime.id)" @click="toggleCollection(anime.id)">{{ isCollected(anime.id) ? '已收藏' : '收藏' }}</button>
           </div>
           <div class="repository-tags"><span v-for="tag in anime.tags" :key="tag">{{ tag }}</span></div>
         </div>
       </article>
     </section>
 
-    <section v-else class="repository-empty" aria-live="polite"><span class="mine-library-icon" aria-hidden="true">⌁</span><h3>没有找到匹配作品</h3><p>试试更换关键词、类型、状态或年份。</p></section>
+    <section v-else-if="!error || fallback" class="repository-empty" aria-live="polite"><span class="mine-library-icon" aria-hidden="true">⌁</span><h3>没有找到匹配作品</h3><p>试试更换关键词、类型、状态或年份。</p></section>
 
     <nav v-if="totalPages > 1 && !fallback" class="repository-pagination" aria-label="分页">
       <button type="button" class="secondary-button" :disabled="page <= 1" @click="prevPage">← 上一页</button>

@@ -19,7 +19,8 @@ class AdminControllerSecurityTest {
             AdminAnimeController.class,
             AdminDashboardController.class,
             AdminFeedbackController.class,
-            AdminLegalController.class
+            AdminLegalController.class,
+            com.sanye.admin.web.controller.monitor.XxlJobController.class
     );
 
     @Test

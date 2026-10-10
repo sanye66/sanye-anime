@@ -9,6 +9,7 @@
     "dev:pet": "pnpm build && electron .",
     "typecheck": "vue-tsc --noEmit",
     "build": "vue-tsc -b && vite build",
+    "build:runner": "vue-tsc -b && node build-runner.cjs",
     "start": "pnpm build && electron ."
   },
   "dependencies": {

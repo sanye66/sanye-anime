@@ -1,3 +1,5 @@
+import { desktopMode } from '@/desktop'
+
 export type AnimeTone = 'coral' | 'blue' | 'gold' | 'pink' | 'violet' | 'teal'
 
 export type AnimeCatalogItem = {
@@ -7,6 +9,7 @@ export type AnimeCatalogItem = {
   seasonOrder: number
   title: string
   subtitle: string
+  type: '原创动画' | '电视动画' | '剧场版' | '网络动画'
   cover: string
   tone: AnimeTone
   tags: string[]
@@ -26,6 +29,7 @@ export const SUPPORTED_ANIME_IDS = ['127', '133', '136', '135', '128', '137'] as
 
 /** 判断接口返回的作品是否属于当前客户端正式片库。 */
 export function isSupportedAnimeId(id: string | number): boolean {
+  if (desktopMode) return /^\d+$/.test(String(id))
   return SUPPORTED_ANIME_IDS.includes(String(id) as (typeof SUPPORTED_ANIME_IDS)[number])
 }
 
@@ -50,6 +54,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 100,
     title: '你的名字',
     subtitle: '关于相遇、记忆与约定的故事',
+    type: '剧场版',
     cover: '/client-covers/your-name.jpg',
     tone: 'coral',
     tags: ['剧场版', '爱情', '奇幻'],
@@ -70,6 +75,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 100,
     title: '无职转生 · 第一季',
     subtitle: '到了异世界就拿出真本事',
+    type: '电视动画',
     cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100607A039.jpg',
     tone: 'blue',
     tags: ['异世界', '冒险', '成长'],
@@ -90,6 +96,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 200,
     title: '无职转生 · 第二季',
     subtitle: '到了异世界就拿出真本事',
+    type: '电视动画',
     cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100612A042.jpg',
     tone: 'gold',
     tags: ['异世界', '冒险', '魔法'],
@@ -110,6 +117,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 201,
     title: '无职转生 · 第二季 Part.2',
     subtitle: '到了异世界就拿出真本事',
+    type: '电视动画',
     cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100611A041.jpg',
     tone: 'pink',
     tags: ['异世界', '冒险', '剧情'],
@@ -129,6 +137,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 300,
     title: '无职转生 · 第三季',
     subtitle: '到了异世界就拿出真本事',
+    type: '电视动画',
     cover: '/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100559A034.jpg',
     tone: 'violet',
     tags: ['异世界', '冒险', '奇幻'],
@@ -148,6 +157,7 @@ export const animeCatalog: AnimeCatalogItem[] = [
     seasonOrder: 900,
     title: '无职转生 · OAD 特别篇',
     subtitle: '到了异世界就拿出真本事',
+    type: '电视动画',
     cover: '/covers/mushoku-oad.svg',
     tone: 'teal',
     tags: ['异世界', '特别篇', '冒险'],

@@ -5,6 +5,8 @@ import com.sanye.anime.sanye_anime.store.InMemoryAnimeCatalogStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,14 +27,14 @@ class AnimeCatalogServiceTest {
     }
 
     @Test
-    void keywordMatchesTitleAndTags() {
+    void keywordMatchesTitleButNotTags() {
         PageResult<AnimeMemoryStore.AnimeCard> byTitle = service.list("星海", null, null, null, null, 1, 20);
         assertEquals(1, byTitle.items().size());
         assertEquals("星海回声", byTitle.items().get(0).title());
 
         PageResult<AnimeMemoryStore.AnimeCard> byTag = service.list("悬疑", null, null, null, null, 1, 20);
         assertTrue(byTitle.total() > 0);
-        assertTrue(byTag.total() >= 3);
+        assertEquals(0, byTag.total());
     }
 
     @Test
@@ -51,6 +53,18 @@ class AnimeCatalogServiceTest {
         PageResult<AnimeMemoryStore.AnimeCard> finished = service.list(null, null, "已完结", null, null, 1, 50);
         assertTrue(finished.total() >= 5);
         assertTrue(finished.items().stream().allMatch(card -> card.updateText().equals("已完结")));
+    }
+
+    @Test
+    void missingUpdateTextRemainsReadableWithoutInventingScheduleOrStatus() {
+        var card = new AnimeMemoryStore.AnimeCard(91004L, "recovery-null", "", "TV", 2026, 0,
+                "已发布", "", List.of(), null);
+        AnimeMemoryStore.addCard(card, "recovery");
+        assertEquals(1, service.list("recovery-null", null, null, null, null, 1, 50).total());
+        assertEquals(0, service.list("recovery-null", null, "连载中", null, null, 1, 50).total());
+        assertEquals(0, service.list("recovery-null", null, "已完结", null, null, 1, 50).total());
+        assertEquals(1, service.list("recovery-null", null, "已发布", null, null, 1, 50).total());
+        assertTrue(service.detail(card.id()).schedule().isEmpty());
     }
 
     @Test

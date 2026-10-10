@@ -61,14 +61,14 @@ try {
     contentType: 'application/json',
     body: JSON.stringify(pageResponse(scrambledAnime)),
   }))
-  await page.route('**/api/v1/search?**', (route) => route.fulfill({
+  // 搜索页只展示外部来源候选，季度顺序不再由搜索页承载。
+  await page.route('**/api/v1/search/external?**', (route) => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify(pageResponse(scrambledAnime)),
+    body: JSON.stringify({ code: 0, message: 'ok', data: [], requestId: 'season-order-e2e' }),
   }))
 
   await assertOrder(page, '/anime-repository', '.repository-card-title strong', '片库')
-  await assertOrder(page, `/search?keyword=${encodeURIComponent('无职转生')}`, '.result-copy strong', '搜索')
-  console.log('季度排序 Playwright：通过 2/2')
+  console.log('季度排序 Playwright：通过 1/1')
 } finally {
   await browser.close()
 }

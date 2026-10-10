@@ -4,6 +4,8 @@ import com.sanye.anime.sanye_favorite.client.AnimeBrief;
 import com.sanye.anime.sanye_favorite.client.AnimeClient;
 import com.sanye.anime.sanye_favorite.model.FavoriteItem;
 import com.sanye.anime.sanye_favorite.model.HistoryItem;
+import com.sanye.anime.sanye_favorite.model.ContinueWatchingItem;
+import com.sanye.anime.sanye_favorite.model.ContinueWatchingRequest;
 import com.sanye.anime.sanye_core.exception.BusinessException;
 import com.sanye.anime.sanye_core.exception.ErrorCode;
 import com.sanye.anime.sanye_core.web.ApiResponse;
@@ -15,6 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.Instant;
 
 /**
  * 收藏与历史服务（T-F-02，设备级过渡）：owner_key 维度增删查，作品信息经
@@ -101,6 +104,46 @@ public class FavoriteService {
         return PageResult.of(items, safePage, safeSize, total == null ? 0 : total);
     }
 
+    /** 查询当前归属人的继续观看进度，按最近更新时间倒序。 */
+    public List<ContinueWatchingItem> continueWatching(String ownerKey, int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 100);
+        return jdbc.query("select anime_id, episode_id, episode_title, position_seconds, duration_seconds, "
+                        + "completed, updated_at from " + continueWatchingTable()
+                        + " where owner_key = ? order by updated_at desc limit ?",
+                (rs, rowNum) -> new ContinueWatchingItem(
+                        rs.getLong("anime_id"), rs.getLong("episode_id"), rs.getString("episode_title"),
+                        rs.getLong("position_seconds"), rs.getLong("duration_seconds"),
+                        rs.getBoolean("completed"), rs.getTimestamp("updated_at").toInstant().toString()),
+                ownerKey, safeLimit);
+    }
+
+    /** 保存单集观看进度；同一归属人与作品/集号重复提交时幂等更新。 */
+    public ContinueWatchingItem saveContinueWatching(String ownerKey, ContinueWatchingRequest request) {
+        if (request == null || request.animeId() == null || request.episodeId() == null
+                || request.positionSeconds() == null || request.durationSeconds() == null) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "animeId、episodeId、positionSeconds、durationSeconds 不能为空");
+        }
+        requirePositive(request.animeId());
+        requirePositive(request.episodeId());
+        requireNonNegative(request.positionSeconds(), "positionSeconds");
+        requireNonNegative(request.durationSeconds(), "durationSeconds");
+        if (request.episodeTitle() != null && request.episodeTitle().length() > 255) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, "episodeTitle 长度不能超过 255");
+        }
+        fetchAnime(request.animeId());
+        long position = request.positionSeconds();
+        long duration = request.durationSeconds();
+        boolean completed = Boolean.TRUE.equals(request.completed());
+        jdbc.update("insert into " + continueWatchingTable()
+                        + " (owner_key, anime_id, episode_id, episode_title, position_seconds, duration_seconds, completed, updated_at) "
+                        + " values (?, ?, ?, ?, ?, ?, ?, now()) on conflict (owner_key, anime_id, episode_id) do update set "
+                        + "episode_title = excluded.episode_title, position_seconds = excluded.position_seconds, "
+                        + "duration_seconds = excluded.duration_seconds, completed = excluded.completed, updated_at = now()",
+                ownerKey, request.animeId(), request.episodeId(), request.episodeTitle(), position, duration, completed);
+        return new ContinueWatchingItem(request.animeId(), request.episodeId(), request.episodeTitle(),
+                position, duration, completed, Instant.now().toString());
+    }
+
     /** 调用动画服务确认作品可见，远程失败统一转为资源不存在。 */
     private AnimeBrief fetchAnime(long animeId) {
         try {
@@ -121,6 +164,12 @@ public class FavoriteService {
         }
     }
 
+    private void requireNonNegative(long value, String field) {
+        if (value < 0) {
+            throw new BusinessException(ErrorCode.PARAM_INVALID, field + " 不能为负数");
+        }
+    }
+
     /** 返回收藏关系表名。 */
     private String favoriteTable() {
         return schema + ".sanye_user_favorite";
@@ -129,5 +178,9 @@ public class FavoriteService {
     /** 返回观看历史表名。 */
     private String historyTable() {
         return schema + ".sanye_user_watch_history";
+    }
+
+    private String continueWatchingTable() {
+        return schema + ".sanye_user_continue_watching";
     }
 }

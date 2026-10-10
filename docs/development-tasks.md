@@ -2,11 +2,529 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.4 |
+| 文档版本 | v3.15 |
 | 文档状态 | 基线，P0 任务清单已拆分并持续记录实现与验收证据；CI 与依赖安全门禁已完成代码验证，外部发布事项保持待环境 |
 | 关联任务 | PRE-TODO-007（拆分开发任务并估时） |
 | 关联文档 | [开发计划](./development-plan.md)、[详细技术设计](./technical-design.md)、[MVP 冻结清单](../product/mvp-freeze.md)、[开发待办事项](./development-todo.md) |
-| 更新时间 | 2026-08-26 |
+| 更新时间 | 2026-10-09 |
+
+更新记录：2026-10-09，v3.15，安卓 VQ-61「样式与自然度、播放体验」收口（只改代码与文档，未重新打包）：按上一轮安卓前端样式与播放体验审计的结论逐条修复。样式与自然度四类：其一，兜底页令牌失效（唯一被量测确认的样式缺陷）——`--page-*` 只定义在 `.android-app` 上，挂载失败兜底页（写在 `.android-app` 之外）拿到的是未解析的 `var()`，实测卡面 `background rgba(0, 0, 0, 0)`、`border-width 0px`，整页只剩文字；现把主题令牌提到 `:root`（并补 `prefers-color-scheme: light` 覆盖与 `color-scheme`），兜底页与画布底色不再依赖应用根节点，门禁新增「卡面不得透明、边框不得 0px、浅色与深色卡面必须不同」。其二，图标系统混用——顶栏 `⌕／☀／☾／→` 与播放器 `▶／❚❚／🔊／🔇／⛶／⤢` 都是自带字形的符号字符，不同码位落到不同系统字体（emoji 字体还会接管），字重与基线在同一行里并不一致；现统一为 13 枚线性 SVG（`ICONS` + `.android-icon`，与底部导航同一套描边），主题切换与画质/静音等状态改用 `data-icon` 表达，门禁断言 HUD 与主题按钮的 `data-icon`。其三，颜色与字号令牌化——品牌色 `#eaf2c4`／`#283a55`／`#e7edf5`／`#172438` 收敛为 `--brand-*`（38 处引用），主题面与文字色走 `--app-*`（49 处引用），字号 64 处改走 8 个 `--font-*`、行高 7 处改走 `--leading-*`，替换逐项取原值（计算样式零变化）。量测口径（`sanye_deploy/.local/android-style-metrics.cjs` + `count-hardcoded-colors.cjs`）：「未出现在任何令牌声明里的 hex」由 84 种降到 81 种，仍有 27 处一次性字号（标题 `rem`／`clamp`／单点像素）与 12 处一次性行高留作字面量，未强行收敛；另补一条 `prefers-reduced-motion: reduce` 的统一收口（此前整表只有按钮一条规则，控制条与货架的过渡在系统「减少动态效果」下照旧播放）。其四，竖屏丢功能——`.android-player-tool--more` 整组在竖屏隐藏，连「下一集／选集／音量」都不可用（换集必须先横屏），现只有画质与帧率（`--advanced`）留在放大态，竖屏保留下一集、选集与音量；全量审计随后抓到这处改动自身的副作用——系统字体放大 ×2 时「下一集／选集」文字宽 66px，被 44px 固定方块加 `overflow: hidden` 裁掉一半，现给带文字的工具加 `--text`（宽度跟内容走、仍以工具尺寸为下限），并让紧凑条允许换行（加宽后最右「放大」在 ×2 下实测 353..395 已出屏，两行工具条比裁字或横向溢出都好）；这两处都改完后该场景问题种类 0。播放体验十类：其一，放大态信息不可见（最严重）——放大/全屏时舞台是 `position: fixed; inset: 0; z-index: 30`，舞台外的错误块与线路提示完全看不见，用户只看到黑屏且没有任何重试入口；现新增舞台内 `.android-player-alert`（错误／来源错误／缓冲／换线／后台恢复／线路提示六类合并为一条，带「切换线路／重试当前线路／继续播放」按钮），放大态不再渲染舞台外同类提示。其二，首帧之后卡顿无兜底——stall 看门狗的四个分支都带 `hasFirstFrame` 直接返回，首帧之后定格只能等 hls 的 `fragLoadingTimeOut`×重试（最坏 20s×4）才拿到 fatal；现 `waiting／stalled` 起 12 秒看门狗（每次 `timeupdate` 清表），超时按线路失败处理（走既有换线／随包接管），期间给「网络较慢，正在缓冲…」；非致命 `bufferStalledError／fragLoadError／fragLoadTimeOut` 也给出同一提示。其三，进度被覆盖与跨线路不续播——`persistProgress` 增加「秒级覆盖保护」（同一集已有 >60 秒进度且当前落后 60 秒以上时不写），`restorePosition` 精确匹配失败后取同集任意线路最靠前的进度、本地查不到记录时补一次 `reloadHistory(false)` 再落位。其四，取消拖动不回位——`beginSeek` 记下 `seekOriginSeconds`，`cancelSeek` 写回拖动前的位置并恢复增强档位预览（此前只改 UI 状态，画面停在被拖到的位置且随后会被当成真实进度保存）。其五，随包线路重试无效——`retryCurrentLine` 此前用 `episode.sourceUrl || episode.id`，而随包线路的 id 是 `bundled:<作品>:<线路>`，发给原生会被 `allowedDetail` 按「非公网主机」拒绝，用户点了没反应；现对没有来源页地址的随包线路直接用原直链重建会话。其六，HLS 移动端参数——补 `capLevelToPlayerSize: true`（清晰度不超过舞台实际像素）、`maxBufferSize: 40MB`（默认 60MB 与 64MB 分片缓存叠加时峰值内存偏高）、`startLevel: -1`，自动档位下降时提示「网络较慢，已自动降到 XP」。其七，音量不落盘——新增 `settings.volume`（0~1，原生 `validSetting`／`readSettings` 支持，键值表无需迁移），拖动 400ms 合并写入，启动时恢复，此前每次启动都跳回 100%。其八，监听器与计时器泄漏——`volumechange` 改为具名 handler 并在 `disposePlayer` 摘除（此前每次换集多挂一份），`onBeforeUnmount` 收掉 12 个在途计时器。其九，桥接调用缺 JS 侧期限——搜索两处与预览补 15 秒 `withNativeTimeout`，`previewPending` 的悬空记录随之清理。其十，缓存无清理入口——`clearMediaCache` 在桥接里声明了却从未被调用，现「我的 → 存储 → 清理媒体缓存」同时清原生缓存目录与内存分片表。证据：`pnpm typecheck`、`pnpm --filter @sanye/sanye_client build:android`、安卓浏览器门禁 15 个文件 55 项 55 通过 0 跳过 0 失败（新增 `e2e/android-playback-resilience.test.cjs` 8 项：放大态错误可见且可重试、首帧后卡顿提示、后台恢复提示、拖动取消回位、音量落盘、清理缓存、跨线路续播与覆盖保护、随包重试与 HLS 参数；`android-ui.test.cjs` 与 `android-theme-parity.test.cjs` 同步改断言）、原生 JVM 单测 `gradlew --offline :app:testDebugUnitTest`（31 项 30 通过／1 跳过／0 失败，`SanyeCatalogPluginTest` 新增音量档位 0／0.35／1 合法与 1.5／-0.1／NaN／字符串非法断言）。边界：本轮无视觉模型可用，样式结论来自计算样式与像素量测（全量审计 234 个场景问题种类 0、12 个页面×外观截图与 `report.json` 存于 `sanye_deploy/.local/android-style-review/` 供人工复核），截图未经人工看图确认；真机触控、系统字体放大与真实来源站点仍未实测。
+
+更新记录：2026-10-09，v3.14，安卓 VQ-60「桥接响应方式与速度」优化（只改代码与文档，未重新打包）：按上一轮安卓接口审计的结论修六类问题。其一，搜索假空（最高优先级）：`SanyeSourcePlugin.searchBoth` 在两个入口都失败／超时时返回 `List.of()`，插件再 `resolve({hits:[]})`，界面显示「没有找到匹配作品」，而客户端的一次静默重试只对 reject 生效——重试永远不触发；现改为「只要有一个入口真的取到页面，空列表就是确实没有匹配；全失败才 `reject(E_SOURCE_UNAVAILABLE)`」。其二，线程池与期限：搜索从与详情预览共用的 6 线程池里独立出来（新 `searches` 池 2 线程，竞速池 2→4 线程以容纳两个并发搜索的两个入口），`REQUEST_DEADLINE_NANOS` 由任务体内改为入队前起算，池满时的排队时间计入 15 秒整体期限。其三，本地库（SQLite v6→v7）：新增 `saved_media_title (title)` 与 `watch_history_recent_full (updated_at DESC, media_url ASC, episode_id ASC, line_id ASC)`，前者让 v6 的封面回填不再逐行全扫片库（O(历史×片库)），后者与 `listHistory()` 排序完全一致、去掉临时 B 树；v7 标题索引在升级流程中先于 v6 回填执行；插件装载时用 daemon 线程预热一次数据库，把迁移从用户首次操作前移到启动。其四，写入成本与失败可诊断：`recordProgress` 改用 `INSERT OR REPLACE` 的返回行号判成败并直接组装返回项（去掉每 5 秒一次的回读）；`SanyeCatalog` 9 个方法与 `SanyePlayer` 3 个方法全部改为带错误码的 `reject(msg, code, exception)`（`E_CATALOG_PARAM`／`NOT_FOUND`／`READ`／`WRITE`／`DELETE`、`E_PLAYER_WINDOW`），Capacitor 只在 `ex != null` 时写日志，此前真实 SQLite 异常被完全吞掉。其五，其它响应方式：预览标题缺失不再让整次预览失败（降级为空串，由客户端用命中/已保存标题补齐）、首集探测保留已完成结果而不是第 0 条超时即丢弃、预览缓存超限只淘汰最快过期的一条（原先满 24 条整表清空）、`clearMediaCache` 的 `removed` 计入子目录、`SanyePlayer` 三方法加 try/catch 与 `handleOnDestroy` 复位、预览/搜索失败路径补 `Log.w`。其六，客户端：`list`／`listHistory`／`getSettings` 三个读取类桥接加 8 秒上限（原先只有 `recordProgress` 有），封面先按原生规则收敛（坏封面降级为空串而不是让整条进度被拒），预览标题缺省时回落到搜索命中或已保存作品标题。证据：原生 JVM 单测 `gradlew --offline :app:testDebugUnitTest`（30 通过／1 跳过／0 失败，其中 `SanyeSourcePluginTest` 22 项含新增的竞速语义与缓存淘汰断言）、`pnpm typecheck`、`pnpm --filter @sanye/sanye_client build:android`、安卓浏览器门禁 14 个文件 47 项通过 0 失败（新增 `e2e/android-search-retry.test.cjs` 的「来源不可用时静默重试一次并提示暂不可用」）、`pnpm docs:check` 1849/1849。边界：真机跨版本迁移、真实来源站点与真机耗时仍未实测。
+
+更新记录：2026-09-30，v3.13，按“文字与样式还是太过生硬，对所有页面进行优化，文字不要太多要求简洁，排版也要好看”做安卓端「减字 + 柔化」收口（本轮不重新打包）：删除 `pageDescription` 与页面说明段，标题区只留小标题与标题（实测 11–14 字）；「我的」页去掉所有设置行解释句、分组标题简化为「播放/数据/关于」；排期改「随包排期」+ 一句说明、空日期只显示「暂无」；片库说明压成一句、条目元信息合并为一行；新增 `--radius-card`（12px 18px）与 `--radius-pill`（999px），卡片与按钮分别统一，描边降到 `.15` 并加分组的柔和阴影，标题 40px→27–34px、按钮字重 700→600；详情页无封面时占位压成一行小标牌，浅色主题缺封面占位改米色系。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 11 个文件 19 项 19 通过 0 跳过 0 失败（`e2e/android-ui-polish.test.cjs` 新增“说明段为 0、标题区 ≤22 字、分区正文 ≤220 字、卡片圆角 12/18、按钮 999px、标题 ≤34px”断言并补详情页截图），`sanye_deploy/.local/android-ui-polish/` 下 11 张截图与 `report.json` 已刷新（标题 11–14 字、分区正文 39/58/97/56/90 字、标题 27.3px）。本轮未重新打包，现有交付仍为 `三叶动漫-安卓-2026-09-30-v46-GPU画质与稳定性版.apk`。真机触控与系统字体放大仍待环境。
+
+更新记录：2026-09-30，v3.12，按“我的里面要好好设计，把左上角的三删掉，新的设计排版还是不好看，要细心设计，尽量风格与排版统一”重做安卓「我的」页并统一版式（本轮不重新打包）：顶栏删除 `.android-brand-mark`（左上角「三」方块），品牌改为衬线应用名 + 副标题的纯文字锁定；「我的」页新增 `.android-setting-group`／`.android-setting-list`／`.android-setting-value`／`.android-setting-status`，按「播放偏好」「数据与诊断」「关于」三组组织，每组一张卡、行间细分隔线、行内左名称 + 右控件；播放偏好新增画质增强与补帧帧率两个下拉（`changeQualityProfile`／新增 `changeFrameTargetFromSelect`，与播放器菜单共用同一份落盘偏好）；页面小标题改由 `pageKicker` 按分区给出并去掉 01/02 编号，首页「推荐 / 02」改「三叶精选」，详情页动作与选集并入同一套芯片。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 11 个文件 19 项 19 通过 0 跳过 0 失败（`e2e/android-ui-polish.test.cjs` 新增：顶栏无品牌方块且品牌名不变、「我的」页 ≥3 分组且设置行为两列排版、在「我的」改画质与帧率会落盘、浅色主题详情页动作与选集非深色实心块），10 张分区截图与 `report.json` 已更新到 `sanye_deploy/.local/android-ui-polish/`。本轮未重新打包，现有交付仍为 `三叶动漫-安卓-2026-09-30-v46-GPU画质与稳定性版.apk`。真机触控与系统字体放大仍待环境。
+
+更新记录：2026-09-30，v3.11，按“除了正常的一些页面，像是主页与其他页面都做得太难看了，进行优化要求跟首页的标准一样”把安卓非首页分区统一到首页视觉标准（本轮不重新打包）：`android.css` 新增页面变量（`--page-accent`／`--page-card`／`--page-chip-*`／`--page-empty-*`／`--page-danger`，深色/浅色/跟随系统三套）与 `.android-page-section` 分区样式，取消搜索、片库、排期、历史、我的五个分区的面板边框与底色，改为「页面导语 + 分区标题 + 卡片列表」；列表行内动作改为首页卡片同款浅色芯片，多动作时只有第一个是行动作，清理历史/清缓存/复制诊断/翻页统一降为描边按钮；设置页拆成「播放偏好」与「缓存与诊断」并让每条偏好成为卡片；排期空日期用 `is-empty` 弱化；浅色主题 `--app-muted` 加深到 `#5c6f78` 并新增 `--page-danger`。`androidApp.vue` 新增 `pageDescription` 计算属性作为各页导语。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build`／`build:android`、安卓浏览器门禁 11 个文件 19 项 19 通过 0 跳过 0 失败（新增 `e2e/android-ui-polish.test.cjs`：五分区 × 深/浅主题 × 390/360 宽度断言分区无面板边框与底色、每页有导语、无横向溢出、动作不是实心亮色块、强调色与说明文字对比度 ≥4.5，并输出 10 张截图到 `sanye_deploy/.local/android-ui-polish/`）、`.github/workflows/android-check.yml` 已登记新用例。本轮未重新打包，现有交付仍为 `三叶动漫-安卓-2026-09-30-v46-GPU画质与稳定性版.apk`。真机触控与系统字体放大仍待环境。
+
+更新记录：2026-09-30，v3.10，按“优化并打新包到桌面，提升画质与帧率但是要在稳定性的前提下”实施 VQ-49 并交付安卓 v46（`versionCode 23`／`versionName 3.2`）：新增 `motionStabilityPolicy.ts`（GPU 窗口的内容倒退／跨周期跳变连续两个脏窗口才判定回退，干净窗口与 CPU 窗口清零），安卓端据此用 CPU 后端重启同一档位会话并在本次运行内不再尝试 GPU（用户重选档位重新给一次机会，定位与起播后 2.5 秒静默窗口不参与判定）；`FlowAnalysisPolicy` 新增运行期 `setMaxWidth`，渲染 Worker 在 GPU 后端被确认后才把运动网格上限由 192 放宽到 256（`analysisWidthCapOnGpu`），升档仍受实测余量门控、回到 CPU 立即收回；新增 `prewarmPlaybackModules` 空闲预热 `hls.js` 与实时增强模块、`warmPreviewHosts` 预热详情页前三条线路的媒体主机；诊断摘要补上画质档位、运动估计后端与回退原因、波动与源帧计数、屏幕刷新率实测。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 10 个文件 18 项 18 通过 0 跳过 0 失败（新增 `e2e/android-player-stability.test.cjs`，`e2e/android-enhancement-tiers.test.cjs` 增补 GPU 上限断言，两者已登记进 `.github/workflows/android-check.yml`）、原生 `gradlew --offline :app:testDebugUnitTest :app:assembleDebug` 退出码 0（23 项 1 跳过 0 失败）、包内 27 个 web 资源与 `dist-android` 逐项摘要一致、`aapt dump badging` 为 23／3.2；交付 `三叶动漫-安卓-2026-09-30-v46-GPU画质与稳定性版.apk`（12,416,644 字节，SHA-256 `5BE7592A5BE24A250EC42BDCAC2666BDEE484C77B84CC17C09063C266AB2726C`）到桌面，v45 归档。真机 GPU、温度、真实片源观感与弱网仍待环境。
+
+更新记录：2026-09-29，v3.09，按“进行优化，尽可能提高速度与画质帧率”实施安卓帧率与起播速度优化（代码与门禁完成，未重新打包）：帧率侧运动估计后端改为运行期可选（`realtimeInterpolation.ts` 新增 `flowBackend`，`motionFlow.worker.ts` 接受运行期 `backend` 指令，安卓 `applyEnhancement` 传 `webgpu`，设备不可用或设备丢失自动回退 `jsfeat`，不传选项的调用方行为不变）；速度侧新增画质与帧率偏好落盘（`AndroidSettings` + `SanyeCatalogPlugin` 白名单 + `androidApp.vue` 恢复与写回）、安卓 HLS 接入 `hlsFragmentCache`（64MB、跨会话复用）与缓冲窗口 60/120/60、`warmMediaHost`／`prefetchHlsManifest` 预连接与下一集清单预取。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 8 个文件 11 项 11 通过 0 跳过 0 失败（新增 `e2e/android-player-preferences.test.cjs`，`.github/workflows/android-check.yml` 已登记）、原生 `gradlew --offline :app:testDebugUnitTest` 退出码 0（23 项 1 跳过 0 失败）。本轮未重建 APK，现有交付仍为 `三叶动漫-安卓-2026-09-29-v45-按来源线路分表版.apk`（`versionCode 22`／`versionName 3.1`）。真机 GPU、真实片源观感、弱网与跨设备仍待环境。
+
+更新记录：2026-09-29，v3.08，按“线路还是没有区分开，而且快速点击两次搜索出现搜索不到的情况”修两处缺陷并交付 v45（`versionCode 22`／`versionName 3.1`）：其一，线路名来自来源页签（`#playSwiper .module-tab-item` 文本），而站点把同一部作品 3 条线路的选集链接都写成同一个 URL 线路段（`/p/<作品>/153/<条目id>`）；`SanyeSourcePlugin` 新增 `lineTabs`/`panelLineName`，面板选集一律带线路名并在合并 temLineList 时保留，客户端 `episodeGroupKey` 改为线路名优先、地址编号兜底、线路顺序保持来源面板顺序——真实页面核对无职转生 3 条线路 11/23/11 条、你的名字 3 条线路各 2 条。其二，搜索竞速不再与首集媒体探测共用线程池（新增 `searchRace` 2 线程，`requests` 4→6），客户端同一关键词重复搜索保留上次结果、换关键词才清空，消除“连点两次搜索搜不到”。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 18 项 14 通过 4 跳过 0 失败（新增 `e2e/android-search-retry.test.cjs`、`e2e/android-episode-order.test.cjs` 改为三条线路各自成组）、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`；原生 23 项 1 跳过 0 失败，含 `panelTabsNameTheLinesEvenWhenEpisodesShareOneUrlLine`、`searchRaceDoesNotShareTheHydrationPool`）、包内 27 个 web 资源与 `dist-android` 逐项摘要一致、`aapt dump badging` 为 22／3.1；交付 `三叶动漫-安卓-2026-09-29-v45-按来源线路分表版.apk`（12,413,152 字节，SHA-256 `C6C6F467078A6ECBFF4D40F008136CA5EA2B491AAC55F2D658007F66E29F4E88`）到桌面，v44 归档。真机仍待环境。
+
+更新记录：2026-09-29，v3.07，按“不同的线路从1开始，然后区分线路，不要把同一集的两个线路放在一起，而且降级做的不要那么快”修安卓选集分组与降级节奏并交付 v44（`versionCode 21`／`versionName 3.0`）：新增 `languageKey`，同一来源编号里混着多条语言/字幕线路时拆成独立列表、各自从第 1 集开始；随包行列只要媒体地址写出不同语言/字幕就拆线（《你的名字》→「线路 1」「中字」）；`lineLabel` 改为标题写出集数时用标题、线路名只进分组名；分组名按“共有语言/字幕 → 来源线路名 → 线路 N”，单线路统一「选集」；播放器浮层按组显示线路名。降级放缓：外站预览预算 4s→8s、有已有线路可接管时 10 秒提示/20 秒换线、画质降档压力段 0.8s→2s（保留收紧阈值 0.5/4）。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 17 项 13 通过 4 跳过 0 失败（`e2e/android-episode-order.test.cjs` 覆盖线路分表与浮层分组、`e2e/android-enhancement-tiers.test.cjs` 覆盖“瞬时超预算不降档、持续 2 秒才降档”）、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`）、包内 27 个 web 资源与 `dist-android` 逐项摘要一致、`aapt dump badging` 为 21／3.0；交付 `三叶动漫-安卓-2026-09-29-v44-线路分表与降级放缓版.apk`（12,412,204 字节，SHA-256 `A9691825FA687E9ACF661F8DEE5B6E1A2DCB6C61C0DF5901858FE736CD00A600`）到桌面，v43 归档。真机仍待环境。
+
+更新记录：2026-09-29，v3.06，按“带集数的选集没有从第一集开始排序，不同线路可以直接区分的，修复并重新打包”修安卓选集排序与线路识别并交付 v43（`versionCode 20`／`versionName 2.9`）：`compareEpisodes` 不再用来源播放页末段（条目 id，实测 4652475…55100）当集数，改由 `episodeSortNumber` 先读标题编号、再读 `/v/<作品>-<线路>-<集>`，两侧都有集数时升序、否则保持来源顺序；分组名改为单线路「选集」、多线路用语言/字幕标签或「线路 N」（不再出现「线路 153」）；多线路时按钮补线路名（「第 3 集 · 国语」）；随包作品默认从第一集起播。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 17 项 13 通过 4 跳过 0 失败（新增 `e2e/android-episode-order.test.cjs`：12 集按第01集…第12集渲染、两条线路标签可直接区分、播放器浮层顺序一致）、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`）、包内 27 个 web 资源与 `dist-android` 逐项摘要一致、`aapt dump badging` 为 20／2.9；交付 `三叶动漫-安卓-2026-09-29-v43-选集排序与线路标签版.apk`（12,411,960 字节，SHA-256 `4D68B08F90BEFEC62159672A36C63FAABB3C781E1BFE7FC2A757A863563DF154`）到桌面，v42 归档。真机仍待环境。
+
+更新记录：2026-09-29，v3.05，按“pc端没有出现过搜出来看不了的情况，不管什么方法都要解决你的名字搜出来看不了的情况”收口安卓失效线路处理并交付 v42（`versionCode 19`／`versionName 2.8`）：实时探测确认搜索命中 `/v/7880/155` 的外站线路在 `v8.qrssv.com` 且 85ms 内直接失败（PC 专项记录的“v8 线路不通”同条），而随包两条线路正常（200、CORS `*`、TS 为 H.264 + AAC-ADTS）；改动包括有已有线路可接管时 6 秒首帧预算、外站失败先回退已有线路、接管时详情页切换到随包选集、hls 超时与重试对齐 PC（12s/12s/20s、重试 2/3/4）、`bundledWorkFor` 按来源站作品编号识别同一作品（备选来源不参与身份匹配）。证据：`pnpm --filter @sanye/sanye_client typecheck`／`build:android`、安卓浏览器门禁 16 项 12 通过 4 跳过 0 失败（`e2e/android-bundled-fallback.test.cjs` 实测失效线路 456ms 完成静默接管、外站不返回场景在预算内接管）、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`）、包内 27 个 web 资源与 `dist-android` 逐项摘要一致、`aapt dump badging` 为 19／2.8；交付 `三叶动漫-安卓-2026-09-29-v42-你的名字可播版.apk`（12,411,776 字节，SHA-256 `65498D891E59E307F90ABB2100F91CC3665B6829F2545F8B79FC9FF42BC3C3BD`）到桌面，v41 归档。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v3.04，按“不管是已有的还是搜索的点击立即观看都很慢／速度优先／你的名字还是异常／外部线路不可用就直接回退已有线路”把安卓播放链路改为速度优先：来源接口超时收紧为单次 6s／单次调用 15s（`SanyeSourcePlugin`，搜索并发兜底与首集探测等待同为 6s）；`catalogSnapshot` 增加来自 PC 随包 `sanye_anime_episode` 的 `lines`（6 部作品 71 条公开 HLS），随包作品与同名搜索命中直接起播已有线路，外站超过 `BUNDLED_TAKEOVER_BUDGET_MS = 4000` 或不可用时静默接管；`parsePreview` 改为按选集编号对齐 `temLineList` 线路，修掉《你的名字》详情页选集无地址与标签串线；历史续播不属于随包作品时清空已有线路池。证据：`node sanye_android/generate-catalog.cjs`（6 条作品、6 张封面、71 条已有线路）、`pnpm --filter @sanye/sanye_client build:android`、安卓浏览器门禁 11 通过 4 跳过 0 失败（新增 `e2e/android-bundled-fallback.test.cjs`，`android-catalog-snapshot` 增加已有线路一致性用例）、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`；原生单元测试 20 项 0 失败、来源实测用例 1 项环境门控跳过）、真实页面复核 `/p/65395/153/0` 一次请求返回两条可用线路且 Range 探测 206、包内 27 个 web 资源与 `dist-android` 逐项摘要一致。交付 `三叶动漫-安卓-2026-09-29-v41-速度优先与已有线路版.apk`（12,411,576 字节，SHA-256 `CC88AA270578E7EB596FC5F683C3306CD5BAC6016611E207FE4858302D490853`，`versionCode 18`／`versionName 2.7`）到桌面，v40 归档。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v3.03，按“安卓之前说的要求都没有进行修改”把此前 PC 端提出的问题在安卓端逐条落实并交付 v40（`versionCode 17`／`versionName 2.6`）：观看历史改为带封面的小卡片货架（SQLite v4 增加 `watch_history.cover_url`，左右滑动 + 「查看全部／收起」+ 「继续播放」+ 进度，封面按记录 → 随包同名 → 占位图回退）；「继续观看」先进入作品详情再播放原选集/原线路，解析不到时留在详情页提示手动选集；随包已有线路在随包作品上直接起播、来源不可用或超出预算时静默接管，并统一按「选集」分组、按语言/字幕排序；线路标签在标题与线路名看不出语言时改从媒体地址解析；搜索页保持单一「立即观看」入口，封面缺失用占位图或「暂无封面」占位块。证据：安卓浏览器门禁 6 通过 1 跳过 0 失败，`npm run sync`、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0（项目 JDK 21 + `ANDROID_HOME`），包内 `assets/public` 与 `dist-android` 一致（12/12），`aapt dump badging` 为 17／2.6，`apksigner verify` 为调试 v2 签名；交付 `三叶动漫-安卓-2026-09-29-v40-历史卡片与随包线路版.apk`（12,411,568 字节，SHA-256 `7F2F40484546EE8ECD2EF30E860CF65928EF4B520D238A8351DDF269BD5F55A9`）到桌面。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v3.02，按“打安卓的到桌面”重新构建并交付 v39（`versionCode 16`／`versionName 2.5`）。构建链：`generate-catalog.cjs`（6 条作品 6 张封面）、`build:android`、`npm ci` + `npm run sync`、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0；安卓浏览器门禁 5 通过 2 跳过 0 失败，包内 `assets/public` 与 `dist-android` 一致（12/12），`aapt dump badging` 为 `com.sanye.sanye_anime`／16／2.5／SDK 29-36，`apksigner verify` 为调试 v2 签名。交付 `三叶动漫-安卓-2026-09-29-v39-重打包交付版.apk`（12,406,720 字节，SHA-256 `4A75FFDBDA8AD528AB52F89503B7B67B5C6B76CD4666FC8D1790C06C870074C9`）到桌面。环境备忘：Android 构建需项目 JDK 21 与 `ANDROID_HOME`。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v3.01，按“仔细检查所有板块看看是否有问题以及是否能优化，进行优化并重新打包”做全板块体检与优化：排期默认停在今天（原写死周四）；窄屏 AI 工作区把会话栏压成一行、消息区限制在可视高度内滚动，输入框回到首屏；剧场版线路名可从媒体地址解析；收藏补「查看全部／收起」；反馈/导入/模型配置三个表单支持回车提交；主按钮与浅色次要文字对比度达标、纯文字入口与返回链接热区补到 32px 级；官网首页与「继续观看」增加接口结构防御。证据：新增 `e2e/client-usability-optimization.test.cjs` 4/4，`client-browse-behavior` 3/3，客户端相关 13/13 与 10/10，`startup-quality-timeline` 等 5/5，`e2e-search-external` 14/14、`e2e-movie-playback-lines` 2/2、`e2e-season-order` 1/1，`pnpm typecheck`、`pnpm test:desktop` 69/69 通过；桌面免安装包按 `sanye_tools/package-portable.ps1 -PublishDesktop` 重建并发布，交付编号与 SHA-256 见[文档评审记录](./document-review.md)与[本地桌面运行与打包](./local-desktop.md)。
+
+更新记录：2026-09-29，v3.00，按“是什么 v8.com 线路不通，如果外部线路不通就直接用内部线路，但是不要显示”收口：撤掉搜索结果页的「站内已收录」标记、站内条目与「站内线路观看」按钮，撤掉详情页「改用站内线路」说明与失败浮层入口，结果行恢复「直接观看／导入观看」；站内作品仍只用随包封面；外站预览加载后预取随包片库中同名作品线路，来源线路失败时静默接管播放（保持加载态、无失败提示），可接管时起播等待由 15 秒收紧为 8 秒。证据：`e2e/bundled-line-entry.test.cjs` 2/2（自动改用随包线路且无提示、搜索结果只保留来源候选），客户端相关 `node --test` 19/19，`startup-quality-timeline`/`adaptation-notice`/`frame-menu-state` 5/5，`e2e-search-external` 14/14、`e2e-movie-playback-lines` 2/2、`e2e-season-order` 1/1，`typecheck`/`build`/`build:desktop` 通过。免安装包与安卓包未重建；来源站线路是否恢复待外部环境。
+
+更新记录：2026-09-29，v2.99，按“封面是天气之子／你的名字外部来源搜不到，那么为什么站内的地址生效／我统一配的应该只有一个，把这个矛盾解决”收口站内作品与外部来源的关系：搜索命中的随包作品改用随包封面（来源站的封面会串作品，实测《你的名字是玫瑰》条目挂着《你的名字》海报，播放页首图是当天轮换的其他电影海报），外部候选没有任何随包命中（只剩同名杂项、空列表或整站失败）时补出站内条目并保留「站内线路观看」，系列名（「无职转生」）按番剧仓库顺序列出站内篇章；外部预览页同样使用随包封面。站内《你的名字》两条线路实测 200（`c1.ddbbffcdn.com` 50806 字节、`c1.rrcdnbf6.com` 38391 字节）。证据：新增 `e2e/bundled-line-entry.test.cjs` 3/3，客户端相关 `node --test` 19/19，`e2e-search-external` 14/14、`e2e-movie-playback-lines` 2/2、`e2e-season-order` 1/1，`typecheck`/`build`/`build:desktop` 通过。免安装包与安卓包未重建，桌面端实际运行与来源站候选排序仍待环境。
+
+更新记录：2026-09-29，v2.98，按“观看历史做成带封面的小卡片、支持左右滑动与查看全部／《你的名字》外部搜索线路失效，改用本地已有线路／选集按相近字段排序／继续观看要进入带播放器和详情的页面／有的封面查不到／各页面排版不合理”调整 PC 个人中心、搜索入口、选集与封面降级：个人中心收藏、观看历史与继续观看改为封面小卡片横向货架（含左右滑动按钮与观看历史「查看全部／收起」，展开页长 20→60）；继续观看卡片带封面与进度，链接带 `episode`/`resume=1`/`t`，详情页按记录秒数续播而普通进入不自动播放；多线路剧集按线路分组、组内按集数、组间按默认选线优先级，选集按钮显示集数；外部候选命中随包作品（`titleKey` 归一化比较）时改用「站内线路观看」并标注「站内已收录」，外部预览页提供「改用站内线路」；补齐随包通用占位封面（与后端同名文件逐字节一致）并统一缺封面降级，不再借用其他作品封面；修正首页精选说明与翻页控件重叠、个人中心货架卡片拉伸与排期标签对比度。证据：新增 `e2e/continue-watching-shelf.test.cjs` 1/1，客户端相关 `node --test` 13/13，`startup-quality-timeline` 2/2，`e2e-movie-playback-lines` 2/2，`e2e-season-order` 1/1，`pnpm test:desktop` 69/69，`typecheck`/`build`/`build:desktop` 通过；后端与网关不可用时的本地封面复测破图 0。免安装包与安卓包未重建，桌面端实际运行与安卓端同为待环境。
+
+更新记录：2026-09-29，v2.97，按“推荐内容都显示找不到内容／你的名字线路不通／左右滑动无法控制进度／左边上下亮度、右边音量／进度条拖动慢”修安卓三项并交付 v38：其一，随包来源生成时探测可访问性（配置来源 `yinghuadongman.org.cn` 现在 522），6 部作品全部改指 `yhdmtv.cc` 可用来源并各带 1-3 条备选，播放页主来源失败自动切换备用来源，手动切换按钮同源；其二，画面手势改为左右=进度（含节流预览与 `⏩ 时间` 提示）、左半屏上下=亮度、右半屏上下=音量；其三，进度条拖动缓存几何、按帧合并事件、280ms 节流预览、松手提交。证据：`generate-catalog.cjs`、安卓前端构建、7 项安卓门禁 5 通过 2 跳过 0 失败、`npm run sync`、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0、`aapt dump badging` 15/2.4、`apksigner verify` 调试 v2 签名、包内资源与 `dist-android` 一致（12/12）；交付 `三叶动漫-安卓-2026-09-29-v38-推荐来源与手势版.apk`（12,405,537 字节，SHA-256 `D9F8EC088939AB4A2315DDE7D1EC68DABEC598DB945FF622FCC62715E2DF1BB0`）到桌面，v37 移入 `sanye_deploy/.local/android-retired/`。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v2.96，按“打新包到桌面”交付安卓 v37：`versionCode 14`／`versionName 2.3`，内容为本轮三项改动（搜索页只展示外部来源、线路名统一解析并默认优先国语中字、随包封面按归一化标题匹配）。门禁与核对：`build:android`、`generate-catalog.cjs`（6 条作品 6 张封面）、6 项安卓浏览器门禁 4 通过 2 跳过 0 失败、`npm run sync`、`gradlew --offline :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` 退出码 0，`aapt dump badging` 为 `com.sanye.sanye_anime` / 14 / 2.3 / SDK 29·36，`apksigner verify` 为调试 v2 签名，包内 web 资源与 `dist-android` 逐项一致（12/12）。交付 `三叶动漫-安卓-2026-09-29-v37-搜索外链与线路治理版.apk`（12,404,777 字节，SHA-256 `A488516B034DBD69063B0760328FD4A291E2A717955EC54F6ACAE67D769E4FA8`）到桌面，v36 移入 `sanye_deploy/.local/android-retired/`。真机与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v2.95，按“上面的所有改动安卓端也要改动”把本轮 PC 三项改动同步到安卓前端：搜索页只展示外部来源（本机作品改在「片库」页筛选，删除分区说明与空分区提示）；线路名复用 `video/playbackLines.ts` 统一解析并按「国语中字 → 国语 → 中字 → 粤语/原声 → 英语」排序（自动起播、选集排序、同类线路补序号共用）；随包封面改用 `data/titleKey.ts` 归一化标题匹配。证据：`generate-catalog.cjs` 6 条作品 6 张封面、`build:android`、6 项安卓浏览器门禁 4 通过 2 跳过 0 失败（`android-ui` 新增“搜索页只展示外部来源”“线路标签 `国语`/`中字`”“默认优先解析国语线路”断言）、`npm run sync`、`gradlew --offline :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` 退出码 0（调试包 12,462,993 字节）、`pnpm typecheck`／`pnpm build`／`pnpm docs:check` 通过。真机安装、触控与第三方 CDN 持续可用仍待环境，本轮未把 APK 交付到桌面。
+
+更新记录：2026-09-29，v2.94，按“还有封面问题，有的加载不出来这不合理”修复随包封面缺失：真实运行时复现到唯一网络层失败是 `/admin-profile/profile/upload/2026/08/24/anime-cover_20260824100635A046.jpg → 404`（《你的名字》封面），`seed.sql` 引用 5 张 `/admin-profile/...` 封面而包内只有 4 张、`seed-manifest.json` 也只登记 4 张。修复：从 `.local/desktop-seed-verified/` 的已校验副本还原缺失封面并补登摘要；新增 `sanye_desktop/seedCoverage.test.cjs` 双向门禁（引用必须随包并登记、登记文件必须存在且摘要一致）纳入 `pnpm test:desktop`；客户端新增 `sanye_client/src/data/coverFallback.ts`，封面降级统一为「来源封面 → 随包同名精修封面 → 通用占位图」，首页/番剧仓库/搜索/详情不再留破图。证据：`pnpm test:desktop` 69/69（删掉该封面时门禁确实失败）、同一运行时复测网络层失败 0 条、搜索《你的名字》占位图 0、`e2e/cover-fallback.test.cjs` 2/2、搜索与播放相关 15/15、`e2e/e2e-search-external.mjs` 14/14、`pnpm typecheck`／`pnpm build`／`pnpm docs:check` 通过。随包免安装包需重建后才带上该封面。
+
+更新记录：2026-09-29，v2.93，按“线路管理太凌乱，进行优化，看看存在国语中字的默认播放这个”收敛 PC 播放线路：新增 `sanye_client/src/video/playbackLines.ts` 统一解析线路名（语言、中文字幕、画质），「中字」只表示字幕、不再当作配音语言；`rankPlaybackOptions` 在未指定语言偏好时按「国语中字 → 国语 → 中字 → 粤语/原声 → 英语」排序（显式语言与近期成功线路仍优先）；`animeDetailView.vue` 先解析成规范标签再排序与展示，同一标签多条补序号（国语、国语 2），`searchView.vue` 语言标签复用同一解析。真实来源核对：`/p/65395/153/0` 由“默认中字”变为“默认国语并实际请求国语线路”，`/p/318532/153/0` 由 `HD中字` 变为 `中字`；新增 `e2e/playback-line-management.test.cjs` 2/2，`e2e-movie-playback-lines.mjs` 2/2、`e2e-search-external.mjs` 14/14、搜索/播放相关用例 12/12、`pnpm e2e:ci` 通过；随包免安装包需重建后才生效。
+
+更新记录：2026-09-29，v2.92，按“有些画质在手机端太卡，删减承受不了的挡位并适配剩余档位”改（画质专项 VQ-46）：画质菜单只留「性能/均衡」，删掉超分 2×（4 倍着色像素）、锐化（CNN_M）与和均衡同链路的修复；帧率显式档位改按实测屏幕刷新率过滤（`frameRateTargetsForDisplay` + 页面 rAF 实测），自动档仍按刷新能力定档；剩余档位加安卓上限（分析网格 ≤192、超预算阈值 0.5/4、允许中间档回退到性能），控制条按钮显示生效档位并给瞬时降档提示。新增 `e2e/android-enhancement-tiers.test.cjs`（4 项）与 `android-ui` 档位断言；安卓门禁 8 通过 2 跳过 0 失败，`enhancement-recovery` 5/5 与 `realtime-interpolation` 4/4 复跑通过。本轮未打包 APK，真机帧率与功耗仍待环境；见[安卓开发计划](./android-development-plan.md)与[画质与帧率进阶优化开发计划](./player-quality-development-plan.md)。
+
+更新记录：2026-09-29，v2.91，按“搜索就只展示外部来源，不要过多的文字提示”收敛 PC 搜索结果页：`searchView.vue` 删除站内片库分区、站内分页与站内失败提示，只保留外部来源候选；删除分区标题与数量、“正在搜索/补充原词结果/按相关度排序”、来源摘要、“未分类/语言待确认”占位标签和空状态说明段落；失败与无结果各保留一行结论，失败另给重试入口。用例同步为外部来源口径：`e2e/e2e-search-external.mjs` 14/14（新增“搜索页不请求站内片库接口”“不渲染摘要与语言占位”断言）、`search-experience` 2/2、`search-navigation` 1/1、`search-latency` 与 `search-source-choice` 2/2、`e2e-movie-playback-lines.mjs` 2/2；`pnpm typecheck`、`pnpm build` 通过；真实来源搜索页已在桌面运行时截图确认只剩 8 条外部候选。产品口径见[功能规格](../product/feature-specification.md) v0.26。
+
+更新记录：2026-09-29，v2.90，按“浮层展开时点屏幕收不掉列表、手势要在画面任意位置而不是控制条、放大后画面没占满屏幕”改安卓播放器：新增覆盖整个画面区域的透明手势层，点画面任意位置（含控制条空白处）一次收起浮层且控制条保持可见、再点一次才收控制条；在画面任意位置左右滑动调亮度（黑场叠加 20%–100%）、上下滑动调音量（5% 粒度，拖到底静音），滑动时显示 `☀`／`🔊` 数值提示，横向滑动仍不改变播放进度；手势层关闭选中与原生拖拽，避免连续第二次滑动被 `pointercancel` 打断（原先表现为只吃到第一步）；放大/全屏下补帧画布与首屏封面由 `contain` 改为 `cover` 铺满整屏。回归新增浮层一次收起、控制条保持可见、画面手势改亮度/音量且进度不变、放大态图层 `cover` 断言；客户端 4 通过 2 跳过 0 失败，本机 844×390 放大态核对脚本输出见[安卓开发计划](./android-development-plan.md)。本轮未打包 APK，真机触控与第三方 CDN 仍待环境。
+
+更新记录：2026-09-29，v2.89，按 PC 端反馈“你的名字离线的线路都是通的，搜出来的就看不了”修复直接观看线路归并：真实来源复现显示搜索合并把 `/p/7880/155/0`（动画电影→剧场版）当主来源，其唯一线路 `https://v8.qrssv.com/...` 的 DNS 已不存在，而可用来源 `/p/65395/153/0` 的两条 HLS 线路正是随包片库 `anime_id=127` 的线路；`animeDetailView.vue` 原先只在标题字符串完全相等时才并入备用来源线路，「你的名字。」与「你的名字」被判为不同作品后可用线路被丢弃。现改为归一化标题比较（忽略空白、标点与全半角），预览首次超时 20s→30s 并把客户端超时并入一次重试。桌面运行时（真实后端＋内置 PostgreSQL）冷启动 3/3 起播、当前线路由 `HD` 变为 `HD国语`，`e2e/external-source-fallback.test.cjs` 2/2、`e2e/e2e-movie-playback-lines.mjs` 2/2、`pnpm typecheck`、`pnpm build` 通过；免安装包需重建才包含该修复，接收方机器与来源站点持续可用性待环境。见[播放器设计](./media-player-development.md)。
+
+更新记录：2026-09-29，v2.88，按“画质列表与文字等宽、下面按钮也这样做；删除旧包并打新包到桌面”收尾：选集/画质/帧率选项改为 `inline-flex` 与文字等宽、统一左边界，当前项只在文字上高亮，控制条按钮同规则；画质档位名精简为分辨率、浮层高度调到 `min(60dvh,262px)`；竖屏只保留播放/时间/放大（`下一集` 归入放大后）。回归新增“高亮宽度−文字宽度 ≤ 12px”与“竖屏无下一集、放大后有”断言。已打 `versionCode 11`／`versionName 2.0` 调试包到桌面，旧 v33 移入 `sanye_deploy/.local/android-retired/`。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.87，按“音量要能拖动的条而不是百分比、只有《你的名字》看不了”处理：音量改回可拖动竖条（12×116，5% 粒度，拖到底部静音，支持方向键/Home/End），仍放在与画质同一套贴进度条上沿的面板里；来源取数超时全面放宽（单次 7s→15s、单次调用 20s→45s、搜索并发兜底等待 8s→15s），首集媒体探测仍 1s。实测搜索入口 19s/53s/超时，而《你的名字》两条线路的 m3u8 与首个分片正常，故超时放宽是这轮针对“只有某部作品打不开”的主要修复。回归断言同步改为拖条验证。本轮不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.86，按“光暗按钮反了、首页只保留推荐、底部图标大小不一”修：主题按钮改为按实际外观判断（跟随系统时监听 `prefers-color-scheme`，浅色显示 ☾、深色显示 ☀）；首页删除“精选片库/最近保存/我的收藏/最近观看”四个区块，只留推荐横幅与折叠的直链入口；底部导航六颗图标换成统一 22×22 线性 SVG。回归用例改用推荐区确认首页并进入随包作品。本轮按“只出效果图”口径不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.85，按“放大后不要 ✕、音量改成跟画质一样的竖排、去掉放映室与各页解释文字、放大要铺满、《你的名字》还是看不了”处理：关闭 ✕ 仅在未放大时显示；音量改为竖排档位列表（静音/100/75/50/25，当前档高亮，无勾选），删除旧音量滑条面板；删除“放映室”与各页解释性文案（首页/片库引导句、随包目录说明、设置页说明、空状态收敛为一行）；放大/全屏改为 `cover` 铺满、不再留黑边。真实来源探测结论：两条线路的 m3u8 与首个分片均 200、带 `access-control-allow-origin: *`，媒体与跨域正常，站点自身出现一次连接超时；仍需设备端错误文案定位。本轮按“只出效果图”口径不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.84，按“点画面出/隐控制条、自动隐藏也要有、关闭按钮删掉”收口：恢复点画面切换显隐与播放中 3.2 秒自动隐藏（暂停/出错/浮层/拖动进度条时保持可见），作废上一版“常显”判断；删除标题行的「关闭」文字按钮，改为画面右上角 30px 的 ✕（跟随控制条显隐，`aria-label="关闭播放器"`），标题行只留作品名，返回键退出优先级不变。覆盖安装版本 `versionCode 10`／`versionName 1.9`，本轮已打包 v33 到桌面并把 v32 移入 `sanye_deploy/.local/android-retired/`；回归断言同步更新（点按 opacity 0→1、播放 6 秒内归 0、暂停回 1，6 处关闭改用 ✕）。证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.83，按“首屏要有合理封面、删掉一开始播放器里的文字、点屏幕不要隐藏选择栏、左右滑不要改进度”改：首屏封面改为按原比例居中、不再模糊压暗；删除选集说明行与“正在连接线路…”提示及其样式；控制条改为常显（取消 3.2 秒自动隐藏与点按切换，点画面只收起浮层）；补回归断言锁定“画面横向滑动不改变进度”。本轮按用户口径只出效果图、不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.82，按真机反馈修四处：竖屏控制条不再换行、放大键补 `margin-left:auto` 恒定最右；放大/全屏舞台改用 `inset:0` 精确铺满并把页面底色压黑，消除白边；选集排序补“集数→地址末段编号→标题”的稳定次序；自动起播跳过 `/p/.../0` 与“立即播放”占位页，解析失败自动再试下一条选集（历史续播仍只认原线路）。视频校验放宽：来源解析出的地址不再要求 `.m3u8/.mp4` 后缀、插件侧同样不再因后缀丢弃地址、详情路径放宽为白名单站点下任意 `/p/`、`/v/`；保存直链校验与页面白名单、封面白名单保持不变。证据（含真实来源探测与 360×740／844×390 布局核对）见[安卓开发计划](./android-development-plan.md)；本轮按用户口径只出效果图、不打包。
+
+更新记录：2026-09-28，v2.81，按“不用打勾，直接高亮，否则对不齐”去掉安卓播放器浮层里的勾选列：选项不再渲染勾号，当前项改为整行高亮（浅绿底＋浅绿文字），文字左边界统一；删除已无用的 `.android-player-list-item i` 与旧卡片式高亮规则。覆盖安装版本 `versionCode 8`／`versionName 1.7`，本轮已打包 v31 到桌面并把 v30 移入 `sanye_deploy/.local/android-retired/`；回归断言新增“无勾选标记、当前项唯一且底色为 rgba(234,242,196,0.18)”。证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.80，按“框要和文字对齐、宽度也要对齐、不要上面的文字”收敛安卓播放器浮层：删除浮层内全部分组与说明文字（画质增强/片源清晰度/实时补帧/片源帧率/线路 1 及帧率提示长句），只留选项与必要错误提示；浮层右缘与触发按钮文字右缘对齐（点击时按 `getBoundingClientRect` 计算并写入 `margin-right`），宽度随文字自适应，位置仍贴进度条上沿、不压按键；连带移除失效的 `playerFormat` 与 `androidPerformanceHint`。回归断言同步更新。本轮按用户要求只出效果图、不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.79，按“列表还是太大、没有贴到下面、不要完成直接贴着文字、就是贴着进度条、全屏按钮放最右、立即观看/搜索/封面太慢”继续收敛安卓播放器与来源请求：浮层去掉标题栏与“完成”，改为控制条内的流式布局、渲染在进度条正上方并右对齐到最右按键（宽度随文字、上限 196px、行高 24px、无阴影，实测约 151×148 且不遮按键），点画面收起；放大键保持最右并收紧右侧内边距。响应侧：原生 `preview` 不再等首集探测（1s 预算），新增 20s/24 条预览缓存，搜索两个入口并发取先返回结果，前端进入观看页先显示命中标题/封面/简介占位与“正在读取选集与线路…”，封面补 `decoding="async"`。本轮按用户要求只出效果图、不打包；证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.78，按“下一集按钮放在左边、这个矩形还是太大”继续收敛安卓播放器：控制条新增「下一集」（只在有下一集时出现，固定在播放键与时间之后、弹性空隙之前的左侧组）；选集/画质/帧率浮层由整宽抽屉改为贴在控制条上沿的自适应宽度矩形（上限 240px、行高 28px、面板内边距 5px 8px、6px 圆角、1px 边框、无阴影、最大高度 232px），实测横屏约 143×162；顺带修正回归用例稳定性（示例媒体主机保持挂起，避免误触发自动换线路导致播放状态漂移）。覆盖安装版本 `versionCode 7`／`versionName 1.6`，本轮已生成桌面 v30 包，证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.77，按用户“检查整体和细节后继续优化，并优化接口响应速度”的要求收尾安卓播放器：修复播完后拖动进度条或重新起播时“本集播放结束”遮罩不消失的状态缺陷（`commitSeekTo` 与本集起播都清除结束态）；触摸命中区提高到工具键 36px、播放键 34px、进度条 38px，同时竖屏控制条由 90px 收到 76px，按键视觉仍保持无底板的极简样式；浮层补 `role="dialog"` 与 `aria-haspopup`；移除设置里无效的“进入作品后自动播放”开关。来源访问加速：详情页请求 gzip 传输、正常读完保留 keep-alive 连接复用、并发探测最多三条首集候选线路并按原始顺序采纳、搜索/预览线程池由 2 提到 4、搜索成功后预热第一条来源详情。证据与边界见[安卓开发计划](./android-development-plan.md)，本轮已生成 v29 调试包。
+
+更新记录：2026-09-28，v2.76，按真机反馈修复安卓播放器可用性：进度条（30px 触控高度、时长未知时按已缓冲范围）与按需展开的音量滑条可拖动；竖屏播放器铺满卡片宽度、16:9、控制条单行不换行；画质/帧率改底部浮层竖排列表并显示勾选，清单解析后立即套用所选档位；首帧前显示封面，线路报错或 12 秒无画面自动切换同作品候选线路并提示。3 项安卓门禁、隔离桥接复核与 `versionCode 5`／`versionName 1.4` 调试包已登记；真机触控与第三方 CDN 仍待环境。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.75，按“搜索能直接观看、播放器更简约（可参考 B 站）、优化观看体验”复核安卓播放器：确认《你的名字》搜索后“立即观看”可直接起播并命中来源线路；控件改为画面内单行控制条并支持点按唤出、播放中自动隐藏，选集/画质/帧率改为画面内浮层；新增播放结束下一集/继续与重播、播放中屏幕常亮、横屏隐藏系统栏（原生 `setImmersive`／`setKeepAwake`）。3 项安卓门禁、真实来源播放、隔离桥接与 `versionCode 4`／`versionName 1.3` 调试包已登记；真机触控、系统栏与第三方 CDN 仍待环境。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.74，修复安卓“搜到《你的名字》点开不能播”和播放器控件遮挡标题/“关闭”按钮两处缺陷：选集解析改为按来源编号与标题兜底并保存可续播线路，续播仍只认原线路；控件条收进画面内自动换行并裁剪溢出。3 项安卓门禁、真实来源浏览器播放推进与含本轮样式的 `versionCode 3`／`versionName 1.2` 调试包已登记，真机与第三方 CDN 仍待环境。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.73，在既有公开来源内核对同一作品备用详情与选集，真实 HLS 在本机浏览器推进播放时间；安卓观看页仍按原始选集显示，增加用户主动切换来源与返回入口。浏览器和真实片源检查不替代设备播放验收；用户授权生成新调试包并删除桌面旧包，证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.72，按用户纠正撤销安卓电影语言标签与排序，保留来源原始选集和线路呈现；后续仅内部核对片源和选集播放，在结果可验证后按本轮授权生成新桌面 APK 并移走旧包。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.71，《你的名字》来源三种版本在安卓观看页明确标注配音与未确认音轨，初始选择不落入明示的国语配音；已知字幕版媒体请求返回 404，不能冒充日语原声可播，详见[安卓开发计划](./android-development-plan.md)。不生成新 APK。
+
+更新记录：2026-09-28，v2.70，安卓播放器改进 WebView 放大退路、画面内档位/选集菜单与来源实际档位标识；来源解析保留多线路及后段选集，首页、搜索、片库入口统一到播放器置顶、详情后接选集的观看页，亮暗主题可快捷切换。浏览器和原生单元覆盖，Android 设备与真实 CDN 仍待环境；本轮不打包，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.69，安卓横屏播放器将选集、帧率和画质入口合并至右下角弹出式控件；浏览器样例验证实际 HLS 档位及全屏切集，真实 Android 设备交互仍待环境。调试 APK 按本轮请求重新打包，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.57，安卓首页增加 PC 品牌视觉和随包推荐卡，修复动态搜索详情 URL 优先级及 PC 随包来源无包装选集解析；真实来源 HTML 快照测试和网页隔离检查通过，真机播放及全量对等继续待环境和开发，证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.58，安卓独立详情页接入来源选集刷新、保存后收藏及返回原入口；防止异步 HLS 在切集后挂载旧地址。网页隔离交互覆盖新增路径，完整 PC 前后端仍需继续开发及真机验收，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.59，来源封面图片白名单与页面获取白名单分离，安卓收藏作品可在 SQLite 事务内保存元数据；隔离回归覆盖未保存来源的一键收藏。设备兼容、完整 PC 功能及发行门禁保持未完成。
+
+更新记录：2026-09-24，v2.60，播放器覆盖层接入当前来源选集及线路切换，补异常时覆盖层错误提示；隔离浏览器验证跨集地址改变，真机首帧、连续播放及 PC 全量体验仍未验收。
+
+更新记录：2026-09-24，v2.61，同 URL 来源封面在详情缺失时回退到搜索/本地元数据；移动视口浏览器配真实 CDN 的 HLS 播放和首页→选集→播放器可选测试 2/2 未跳过，Android WebView 真机与全量 PC 功能依旧未验收。
+
+更新记录：2026-09-24，v2.62，PC 随包封面按精确 URL 回退至详情与已保存作品卡片，远程图片失败时不留空白占位；UI 测试核查展示，独立播放及发行缺口不变。
+
+更新记录：2026-09-28，v2.68，安卓搜索结果仅显示封面/标题/立即观看，本地、随包、在线结果点击进入以播放器置顶、选集其次、详情最后的观看页；浏览器模拟桥接验证三类入口，真实设备仍待环境，按用户要求本轮不生成 APK。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.67，安卓视频、画质和帧率改为同一横屏全屏区域，播放器选集按钮改小；浏览器横屏模拟检查布局与双档 HLS 控件，真机方向锁定和切换待环境。见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.66，安卓启动器、页面标题、页面品牌及主动诊断标题改为“三叶动漫”，内部包标识不改；覆盖安装与设备启动器显示待真机验收。证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-28，v2.65，安卓搜索/详情封面增加真实来源海报解析、精确主机校验和已知 PC 作品本地回退，选集按线路/集序展示，过滤无效导航并短时预读相邻集；原生来源样例与隔离浏览器验证，真机媒体性能和第三方资源长期可用性待环境。详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.64，安卓来源展示去第三方品牌文字，HLS 画质/帧率选择仅按清单真实档位开放，选集切换减少串行等待、短期解析复用与并发竞态；真机播放时延、实际片源多档和发行签名保持待环境。证据见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.63，安卓前端按 PC 视觉重排首页、搜索、片库和详情，使用真实随包海报、底部触屏导航与可折叠的辅助输入；隔离截图审查 360/390 宽度和深浅主题，服务能力尚不能凭视觉对齐标为 PC 全量完成。
+
+## 安卓专项进度（2026-09-24）
+
+AND-A0 原生容器和独立入口：本机前端与调试 APK 构建通过，真机安装/拦截待环境。AND-A1～A2 已有 SQLite v3 本地片库、来源搜索和预览子集、MP4/HLS 播放入口、历史与设置；PC 随包已发布作品的只读快照与封面现可在安卓首页离线浏览，但不等于在线目录或手机用户片库。真实设备持久化、v1/v2→v3 覆盖升级、实际来源播放、排期、AI 及完整 PC 客户端功能仍未完成验收。命令及 APK 摘要见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.50，记录安卓独立入口和 SQLite 本地片库首段的代码验证与剩余设备验收；不将构建通过标为整体安卓完成。
+
+更新记录：2026-09-24，v2.51，安卓本地片库扩展为 SQLite v2 的观看历史与非敏感设置，前端补直链 MP4/HLS 播放、首页最近观看、本地筛选、后台暂停、返回键与诊断；设备端搜索/解析、真实播放、排期、扩展板块及两机安装仍未通过。状态与验收边界见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.52，安卓设备端按 PC 默认站点补受控公开搜索与当前页预览子集，固定 HTML 与隔离桥接测试通过；完整选集/多线路、真实来源网络、真机运行、排期及扩展板块继续未完成，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.53，安卓进一步实现同作品播放列表和 `temLineList` HTTPS 线路的固定样例解析、选集按需读取和片库来源重新预览；真实来源、真机播放、排期与其余完整功能继续待验证或开发，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.54，安卓历史续播按选集与线路重新获取公开播放地址，原线路缺失时保留记录并显示错误；隔离桥接回归通过，真机进度恢复、实际来源及完整产品功能仍未验收，详见[安卓开发计划](./android-development-plan.md)。
+
+更新记录：2026-09-24，v2.55，按用户明确要求把安卓完整 PC 客户端前后端功能列为目标，核实当前仅有子集；增量开发真实来源详情封面/简介、SQLite v3 和本机首页作品卡片，余下首页聚合、完整搜索/详情/播放、排期、AI 等继续逐项开发与验收。证据和设备缺口见[安卓开发计划](./android-development-plan.md)。
+
+实现补记：2026-09-24，安卓首页进一步从 PC 已交付 `seed.sql` 生成 6 条真实已发布目录及封面离线快照，限定来源域名与详情预览一致；不在用户片库注入数据，选集实时播放仍待设备验证。
+
+实现补记：2026-09-24，安卓搜索可同时筛选本地已保存作品及随包快照，排期只展示随包更新文案中的明确星期和时间；外部来源失败不妨碍本地结果，在线排期刷新与真实设备仍待完成。
+
+更新记录：2026-09-24，v2.56，登记本地与随包目录的合并检索、时间证据可核对的排期子集；未完成的实时来源和 PC 全量功能继续按安卓开发计划验收。
+
+## 起播画质与增强稳定性
+
+更新记录：2026-09-22，v2.49，按用户「你修改后画面波动非常大」修正 VQ-42 引入的回归（VQ-45）：不匹配格点不再以 0 置信度输出（渲染着色器会因此退回"按相位硬切换两张原帧"，平坦与渐变区域整片跳变），改为输出全局平移、置信度固定 0.5；歧义判据由实测恒为 0 的"次优解代价差"改为局部对比度（3x3 灰度极差 ≥ 16）；平移先验步长 2→1（原先验最坏偏差 4 像素）并按面积自适应限制采样数约 2000；分析尺寸变化（清晰度换档）时重置运动历史，不再用未初始化纹理当上一帧。**默认后端回退为 CPU**，WebGPU 改为显式启用（`VITE_FLOW_BACKEND=webgpu` 或 Worker URL 的 `?sanyeFlowBackend=webgpu`），因为 GPU 路径的真实片源观感仍无证据。证据：`e2e/webgpu-motion.test.cjs` 新增平坦区域可用性判据后通过（平坦可用率 0→1.0、退回格点位移 8→4、采信格点 23→41 且位移为真值 5）；默认 CPU 路径 `worker-generations`+`interpolation-frame-queue`+`frame-cadence-policy` 17/17、`interpolation-continuity` 2/2（`contentFreezeRuns`/`contentHolds`/`contentJumps`/`contentBacksteps` 全 0，内容推进 P95 8.74–8.78ms）；`pnpm typecheck` 与 `pnpm docs:check` 通过。教训与边界记录在[测试报告](./media-player-test-report.md) v1.31：VQ-42 只验证了合成画面的位移还原与耗时，没有验证真实画面观感，而"位移能还原"与"画面会平滑"并不等价。
+
+更新记录：2026-09-22，v2.48，按用户「这个免安装包里没有的东西删掉」清理交付包内已无调用方的内容：RIFE v4.6 神经补帧运行时（`resources/runtime/interp/`，约 17MB）在离线导出入口下线后没有任何调用方，本轮连同主进程 `neuralInterpolation.cjs`、`interpAssets.cjs`、`prepareInterp.cjs` 与渲染端 `neuralInterpolation.ts`、`components/frameInterpolationDialog.vue` 一并删除；`preload.cjs` 的 IPC 桥与 `main.cjs` 的注册/清理/退出前结束推理移除，渲染进程可访问的主进程能力归零；`prepare.mjs` 新增显式清除历史 `runtime/interp` 残留（否则旧构建产物会被 `extraResources` 原样打进包）；`verify-runtime-closure.cjs` 移除 RIFE 摘要与显卡驱动库分类，`verify-interpolation.cjs` 删除，`sanye_desktop/package.json` 的 files 与 test 列表同步。保留 `sanye_client/src/video/interpolation.ts` 与 `interpolationSource.ts`——它们被 8 个 e2e 用例用于生成受控测试片源，且不进入桌面产物。证据：`pnpm typecheck` 通过；`pnpm test:desktop` 68/68（较 83 项减少的 15 项即被删的神经补帧测试）；客户端 `build:desktop` 通过；`node sanye_desktop/verify-packaged-runtime.cjs "<包目录>"` 无窗口验收通过（首选端口 28710、被占用时顺延、三个业务服务就绪、目录数据 6 条、重启复用数据库）；`pnpm docs:check` 通过；依赖闭包由「包内 28 文件／系统组件 30 项／显卡驱动库 1 项」变为「27／28／0」，`app.asar` 由 10 项减为 8 项，包内不再有 `interp/`。交付包 `20260922-151438-965`：ZIP 540.8→504MB、解压 926.5→909.5MB，ZIP SHA-256 `02E034DB1A5F8A6F2930FC1E0476849CFA537D3F371A5F0E5F29A426986F0902`。文档同步见[本地桌面运行与打包](./local-desktop.md) v1.56（`DESK-EXE-12`/`13` 废止、新增 `DESK-EXE-14`）、[第三方许可说明](./third-party-notices.md) v1.6、[播放器设计](./media-player-development.md) v1.31 与[进阶计划](./player-quality-development-plan.md) v1.16。
+
+更新记录：2026-09-22，v2.47，按用户「换一个为实时设计的轻量模型，用这个进行实现吧」实施 VQ-42～VQ-44（P13 WebGPU 常驻运动估计）：新增 `sanye_client/src/video/webgpuMotionEstimator.ts`（灰度、降采样、全局平移先验、金字塔搜索、往返一致性收尾五份 WGSL）与 `webgpu.d.ts`（最小 WebGPU 类型声明，沿用 `jsfeat.d.ts` 的本地声明约定，不新增依赖）；`motionFlow.worker.ts` 改为模块加载时非阻塞探测、GPU 优先、失败回退 jsfeat，首次启用先喂一帧建立历史再交付 CPU 结果，并拒绝软件回退适配器、显式暴露着色器编译失败；`flowBackend`/`flowFallbackReason` 进入窗口统计。证据：新增 `e2e/webgpu-motion.test.cjs` 在真实 Electron（隐藏窗口）通过——相同帧位移 0（60/60 格可信）、已知平移 (5,2) 还原为 5.0/2.0、逐帧中位 4.4ms／P95 6.4ms、真实光流线程后端序列 `["jsfeat","jsfeat","jsfeat","webgpu"]`；无头环境 `requestAdapter` 返回 null 因而自动回退，`worker-generations` 6/6、`interpolation-frame-queue` 3/3、`frame-cadence-policy` 8/8、`interpolation-continuity` 2/2、`interpolation-bypass` 9/9、`interpolation-buffer-layer` 2/2、`realtime-interpolation` 4/4、`quality-fluctuation` 1/1、`playback-pipeline` 6/6、`high-refresh-presentation` 2/2、`enhancement-thread-migration` 5/5 逐个通过；客户端 typecheck 与 build:desktop 通过；`docs:check` 通过。**本轮落地的是无需预训练权重的实时算法管线，不是神经网络**——权重来源与许可需另行确认后再按 VQ-10 流程评估。实现见[进阶计划](./player-quality-development-plan.md) P13 与[播放器设计](./media-player-development.md) P13；真实片源在 GPU 路径下的观感、跨显卡、整片与桌面安装物待环境。
+
+更新记录：2026-09-22，v2.46，按用户「已经是正常了但是我还要更加丝滑，进行上面方案的完善，无窗口验证」实施 VQ-41（P12 源帧等待位）：渲染 Worker 在上一源帧的运动分析尚未返回时不再直接丢弃新到的源帧，改为最多保留一帧并在当前帧进入帧队列后按到达顺序补上；只有等待位已占用（持续超预算）才真正丢帧并保留较早的那一帧；新增 `deferredSourceFrames`，与 `droppedSourceFrames` 分开计数；`reset` 与失败清理关闭等待位位图，避免旧播放段等待帧跨段补上。证据：新增 `e2e/interpolation-frame-queue.test.cjs`（3 项）通过；无窗口复测 `worker-generations` 6/6、`interpolation-continuity` 2/2（`contentFreezeRuns`/`contentHolds`/`contentJumps`/`contentBacksteps` 全 0）、`interpolation-buffer-layer` 2/2、`interpolation-delay-adaptive` 5/5、`interpolation-bypass` 9/9、`realtime-interpolation` 4/4（稳态 `droppedSourceFrames 0`／`deferredSourceFrames 1–2`）、`high-refresh-presentation` 2/2、`quality-fluctuation`+`enhancement-thread-migration` 6/6、`playback-pipeline` 6/6、`playback-experience` 2/2、`progress-seek-latency` 1/1、`startup-quality-timeline` 3/3、`seek-performance`+`motion-naturalness` 6/6、`enhancement-recovery`+`presentation-scheduling`+`p1-playback-lifecycle` 11/11，以及 `frame-cadence-policy`／`flow-analysis-policy`／`frame-menu-state`／`adaptation-notice` 判定模块用例；客户端 typecheck 与 build:desktop 通过。实现见[进阶计划](./player-quality-development-plan.md) P12 与[播放器设计](./media-player-development.md) P12；起播窗口仍有 4 次真丢帧（首帧预热与首次运动分析），真实弱网、跨显卡、整片与桌面安装物待环境。
+
+更新记录：2026-09-22，v2.45，按用户「为什么还有导出的按钮，把帧率做好就行了」下线离线导出入口：`sanye_client` 播放器控制栏移除「导出」控件，`animeDetailView.vue` 不再挂载 `frameInterpolationDialog.vue`，该组件与其样式不再进入桌面构建产物；帧率只保留播放期的实时补间「帧率」菜单。P7（VQ-33～VQ-36）的 RIFE 离线生成能力随之失去客户端入口，相关任务行标记为「已下线」；随包 RIFE 运行时是否同步移除待确认。证据：`pnpm typecheck` 与 `pnpm --filter @sanye/sanye_client build:desktop` 通过，桌面构建产物不再包含 `frameInterpolationDialog-*.js` 与该窗口的 CSS；真实桌面包与接收方电脑复验待环境。
+
+更新记录：2026-09-22，v2.44，按用户「进度条拖动响应速度还是太慢了」实施 P11（VQ-40）。旧口径「拖动只预览、松手提交一次定位」在拖动期间完全不推进画面，松手后还要等完整定位与补帧恢复，被感知为响应慢。改为：按下暂停并记录播放状态与按下位置，拖动期间把媒体元素按节流推进到指针位置（命中缓冲最小间隔 90ms、未命中 220ms，一次只允许一个定位在途，间隔再按上一段定位实测耗时乘 1.2 放宽，目标与当前位置差值 ≤0.2 秒时不重复定位），预览定位直接写 `video.currentTime`、不弹定位提示；松手时位置已在松手点 0.2 秒容差内（含正在进行的预览定位）就直接恢复播放状态，否则只补一次 `player.seek`；指针中断或窗口失焦仍取消并还原按下位置。门禁口径同步改写：`e2e/seek-performance.test.cjs` 不再要求拖动期间定位为 0，改为「至少一次预览定位 + 每次拖动最多一次补齐定位 + 落点准确 + 缓存命中不重启 HLS 加载、不重复请求分片」；`e2e/progress-seek-latency.test.cjs` 新增预览定位次数与「松开后落到松手点」判据（门禁 ≤400ms）。证据：`seek-performance` 5 项、`seek-directions` 3 项、`progress-seek-latency`（四配置）通过，四类配置松开后落点 13.2–56.3ms、补帧层恢复 160.8–243.9ms，拖动期间预览定位 2–4 次；本地 1080p MP4 同一次拖动由原生 31 次定位变为 5 次预览 + 1 次补齐并保持暂停；缓存命中的 HLS 拖动 `startLoad` 增加 0 次、分片请求 6→6。客户端 typecheck 与 build 通过。实现见[进阶计划](./player-quality-development-plan.md) P11 与[播放器设计](./media-player-development.md) P11；真实弱网、跨显卡与桌面安装物待环境。
+
+更新记录：2026-09-22，v2.43，按用户「播放过程中会出现短暂卡断，不要出现短暂卡断」实施 P10（VQ-39）。先细化判据：渲染 Worker 统计「连续两次以上未前进的提交」为一次卡断（`contentFreezeRuns` / `contentFreezeMaxFrames` / `contentFreezeFrames`），并把画面推进量限定为补间层已接管呈现的提交（接管前的提交不可见，计入会把定档期的正常行为误报成卡断）。据此定位根因：每源帧流水线约 5ms 采集 + 14–20ms 运动分析 + 19ms 往返，24 FPS 源每帧预算 41.67ms；稳定期需要延迟 P90 约 108ms、尖峰约 150ms，而段起点下限只有 83ms（实测起播 66.7ms）。延迟不足时目标越过最新源帧 → 画面重复最后一帧（冻结）→ 延迟被迫加宽，而加宽发生在接管之后就是一次可见冻结（首窗实测最长冻结 10 个输出帧约 83ms）。处置：新增 `InterpolationDelayPolicy.beginEpochAt()`，播放段起点按给定延迟定档——**首次播放段采用会话上限**（尚无本机实测需要可用），**后续播放段采用上一段实测需要（P90）**；该定档发生在画布尚未接管的段边界，与 VQ-32「播放期不收缩」不冲突。取舍（已写入规格与设计）：放弃 VQ-29「首个播放段延迟低于 150ms」的收益，首段原画窗口与固定 150ms 对照持平（366.9ms 对 356.8ms），换取全程无卡断；定位恢复收益保留（198.5ms 对固定 268.6ms，生效延迟 69.7–84.9ms）。证据：新增 `e2e/interpolation-continuity.test.cjs`（2 项，自生成 1080p/24 FPS 素材跑真实链路）稳定 9 窗口与含 3 次跳转的 9 窗口四项计数全为 0、内容推进 P95 8.77–8.81ms（理想 8.33ms）；真实片源 Sintel 1080p 复测同口径全 0（修复前最长冻结约 67ms）。回归逐个文件独立进程执行通过：`interpolation-delay-adaptive`（5 项，起播断言按新口径更新并新增卡断/倒退断言）、`interpolation-buffer-layer`（2 项）、`quality-fluctuation`、`realtime-interpolation`（4 项）、`interpolation-bypass`（9 项）、`playback-pipeline`（6 项）、`enhancement-thread-migration`（5 项）、`enhancement-recovery`（5 项）、`worker-generations`（6 项）、`presentation-scheduling`（5 项）、`p1-playback-lifecycle`、`progress-seek-latency`、`seek-performance`（5 项）、`playback-experience`（2 项）、`frame-cadence-policy`（8 项）、`flow-analysis-policy`（3 项）、`motion-naturalness`、`frame-menu-state`；客户端 typecheck 与 build 通过。实现见[进阶计划](./player-quality-development-plan.md) P10 与[播放器设计](./media-player-development.md) P10；真实弱网、跨显卡与整片长时观看待环境。
+
+更新记录：2026-09-22，v2.42，按用户「画面波动情况依旧存在，进行完善」实施 P9（VQ-38）。先补口径：渲染 Worker 新增「画面推进量」统计（相邻两次提交的内容在媒体时间轴上前进多少毫秒，并派生 `contentHolds` / `contentJumps` / `contentBacksteps`），因为原有 `outputFps` 与 `frameIntervalP95Ms` 都回答不了「画面有没有跳」。据此定位并修复三处根因：(1) 页面把 `waiting` 列入 `suspendEvents`，每次缓冲都立刻拆掉补间层、露出比画布早一个插值延迟的原视频，产生前后双向跳变——改为短时缓冲由渲染 Worker 维持最后一帧，只有内容停止推进超过其 800ms 阈值才收层，同时 `sanye-media-pending` 的露出只在补间层未接管时生效；(2) 分辨率变化（HLS 自动或手动换档）走 `reset(true, true)` 清空队列并收层——改为只跟随尺寸、保留帧队列与生效延迟，会话首次确定尺寸仍按播放段起点重建；(3) 播放期加宽延迟会把目标时刻向后拉，产生约一个源帧的倒退——改为把加宽量转成目标时刻的临时前移量并随时间线性消化，目标短暂停住而不是后退，VQ-29 的低延迟起播保持不变。证据：新增 `e2e/interpolation-buffer-layer.test.cjs`（2 项）——真实播放注入 6 次缓冲事件后补间层 6/6 保持、0 次露出原视频、0 次层切换，真正跳转仍立即收层再恢复；解码分辨率 720p→360p 真实切换且零层切换、不露出原视频。真实片源（Sintel 1080p、24 FPS 源、120 目标、UHD 770）8 个窗口 `contentBacksteps=0`、`contentHolds=0`、`contentJumps=0`、`contentStepP95Ms 8.77`（理想 8.33ms）；修复前同口径出现 1 次 `-31.67ms` 倒退与 1 次内容重复。回归逐个文件独立进程执行全部通过：`quality-fluctuation`、`interpolation-stability`、`interpolation-delay-adaptive`（5 项）、`enhancement-thread-migration`（5 项）、`enhancement-recovery`（5 项）、`worker-generations`（6 项）、`presentation-scheduling`（5 项）、`p1-playback-lifecycle`、`playback-pipeline`（6 项）、`progress-seek-latency`、`seek-performance`、`interpolation-bypass`（9 项）、`realtime-interpolation`（4 项）、`playback-experience`（2 项）。客户端 typecheck 通过。实现见[进阶计划](./player-quality-development-plan.md) P9 与[播放器设计](./media-player-development.md) P9；跨显卡、整片长时观看与真实弱网待环境。
+
+## 播放器拖动响应 P11：拖动预览与定位收敛（2026-09-22）
+
+更新记录：2026-09-22，v2.44，按[画质进阶计划](./player-quality-development-plan.md) P11 执行 VQ-40，见上节更新记录。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-40a | 实现与验证完成 | `seekControl.ts` 拖动期间按节流预览定位（命中缓冲 90ms、未命中 220ms、一次只允许一个在途、按实测耗时放宽）；`progress-seek-latency` 记录预览定位次数与松手前位置偏差 |
+| VQ-40b | 实现与验证完成 | 松手在 0.2 秒容差内不重复定位、否则只补一次；取消时还原按下位置。四类配置松开后落点 13.2–56.3ms（门禁 ≤400ms） |
+| VQ-40c | 实现与验证完成 | `seek-performance` 与 `progress-seek-latency` 的旧断言（拖动期间定位为 0、松手必须提交一次）改写为新口径；缓存命中仍不重启 HLS 加载、不重复请求分片。真实弱网、跨显卡与桌面安装物待环境 |
+
+## 画质进阶优化 P10：播放期卡断收口（2026-09-22）
+
+更新记录：2026-09-22，v2.43，按[画质进阶计划](./player-quality-development-plan.md) P10 执行 VQ-39，见上节更新记录。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-39a | 实现与验证完成 | 冻结段判据（连续两次以上未前进）与「只统计已接管提交」的推进量口径；新增门禁断言稳定与跳转后卡断段数为 0 |
+| VQ-39b | 完成 | 根因与实测数据记录在[播放器设计](./media-player-development.md) P10：每源帧流水线约 38–44ms、需要延迟 P90 约 108ms、段起点下限仅 83ms |
+| VQ-39c | 实现与验证完成 | 首次播放段采用会话上限、后续按上一段实测需要定档；放弃 VQ-29 起播延迟收益（首段与固定对照持平），保留定位恢复收益。真实弱网、跨显卡与整片待环境 |
+
+更新记录：2026-09-21，v2.41，按用户「我所有的帧率要求都是实时的，还有插帧，进行改善」实施 P8（VQ-37）：把播放期实时「帧率」与离线「导出」在名称与文案上分开（入口 `导出`、窗口 `生成 NNNfps 视频`、产品规格 v0.20 与两份发行说明同步），`flowAnalysisPolicy.ts` 的升档样本数改为按余量分级（12～120）并把投影改为「当前样本与平滑值取大」，`motionRenderer.ts` 的合成定点迭代由 2 次改为 3 次。实测：按档位成本模型，1080p 到达 256 由 244 帧缩短到 47 帧、720p 缩短到 28 帧且终档不变；隔离夹具把 LK 迭代上限降到 10 可省约 38% 分析成本、SSIM 仅降 0.12%，但在生产实时链路上 `computeMs` 无下降、丢源帧由 5/1/0/0 变为 8/2/3/2，故**不采纳**并保持 `motionFlow.ts` 原参数。门禁：客户端 typecheck 通过；`frame-cadence-policy`（含按真实成本模型改写的阶梯用例）、新增 `flow-analysis-policy`（3 项）与 `motion-naturalness` 共 12 项通过；`realtime-interpolation` 4 项通过（1080p → 120 目标输出 119/120/122 FPS、帧间隔 P95 8.33 ms、长帧 0）；`playback-pipeline` 6 项与 `interpolation-bypass` 9 项通过；`interpolation-stability` 单独运行两次通过（三个浏览器用例并发时会因抢占失败一次，属已记录的负载抖动）。本机 1080p/30 在 128 最粗档已占约 45% 帧预算，分析宽度不再升档，属实测边界而非缺陷。实现见[进阶计划](./player-quality-development-plan.md) P8 与[播放器设计](./media-player-development.md) P8；真实整片观感、跨显卡与更强设备的升档行为待环境。
+
+## 画质进阶优化 P9：画面波动收口（2026-09-22）
+
+更新记录：2026-09-22，v2.42，按[画质进阶计划](./player-quality-development-plan.md) P9 执行 VQ-38，见上节更新记录。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-38a | 实现与验证完成 | 新增画面推进量口径（内容时间步长 + 重复/跳变/倒退计数），成为波动判据；原有提交数量与提交间隔口径保留 |
+| VQ-38b | 实现与验证完成 | 缓冲事件不再拆掉补间层；6 次注入 0 次切换、0 次露出原视频；真实跳转仍立即收层再恢复。真实弱网（丢包、RTT 抖动）待环境 |
+| VQ-38c | 实现与验证完成 | 清晰度切换不再重置管线；720p→360p 真实切换零层切换。会话首次确定尺寸仍按播放段起点重建 |
+| VQ-38d | 实现与验证完成 | 播放期加宽延迟改为暂停前进而非后拉目标时刻；真实片源 8 窗口 0 倒退。跨显卡与整片长时观看待环境 |
+
+更新记录：2026-09-21，v2.40，按用户「接入神经补帧模型，并做合适调整，保证我发送给别人就能用」的要求实施 P7 神经补帧预处理接入（VQ-33～VQ-36）：桌面端 `interpAssets.cjs` / `neuralInterpolation.cjs` / `preload.cjs` / `main.cjs` 与渲染端 `neuralInterpolation.ts` / `interpolationSource.ts` 把 RIFE v4.6（ncnn/Vulkan）接成预处理引擎，`prepareInterp.cjs` 在准备运行时阶段把它按固定 SHA-256 暂存进 `runtime/interp/rife-ncnn-vulkan/`，`verify-runtime-closure.cjs` 把显卡驱动库与包内依赖分列并校验摘要，补帧窗口新增「补帧引擎」「目标帧率」与本次引擎/显卡/回退原因显示，超限与失败自动回退光流，失败与拦截原因写入 `local-services/logs/interpolation.log`。实施见[进阶计划](./player-quality-development-plan.md) P7 与[播放器开发设计](./media-player-development.md) P7。按用户要求本轮不执行构建、测试与包内验收，全部条目为「代码已实施，待验证」；真实显卡导航、包内运行、跨设备与接收方电脑均保持待环境。
+
+## 画质进阶优化 P8：实时帧率与插帧收敛（2026-09-21）
+
+更新记录：2026-09-21，v2.41，按[画质进阶计划](./player-quality-development-plan.md) P8 执行 VQ-37，见上节更新记录。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-37a | 实现与文档同步完成 | 实时「帧率」菜单与离线「导出」入口在名称、窗口标题与说明文案上分开；产品规格与两份发行说明同步。界面文案调整未做截图级验收，逻辑入口未变（沿用早前修复的 `.art-control-preprocess`） |
+| VQ-37b | 实现与受控验证完成 | 阶梯按余量分级升档、投影取当前样本与平滑值中较大者；1080p 到达 256 由 244 帧缩短到 47 帧、720p 缩短到 28 帧，终档不变。更强设备上的升档行为待环境 |
+| VQ-37c | 实现与受控验证完成 | 合成定点迭代 2 → 3 次，受控像素门禁前后一致；真实动漫薄线与遮挡观感待环境 |
+| VQ-37d | 否决候选，未采纳 | LK 迭代上限 20 → 10：隔离夹具省 38% 成本、SSIM 降 0.12%，但生产链路 `computeMs` 无下降且丢源帧增加，保持原参数 |
+
+更新记录：2026-09-21，v2.39，按用户「画面波动很大、降低复杂设计、以帧率为主、画质为辅、稳定与丝滑」的要求实施 VQ-32 稳定优先简化：`frameCadence.ts` 删除稳定回升分支（自动档在未降档时对齐刷新能力，降档后保持到下一个播放段；内部重建保留已稳定档位），`enhancementBudgetPolicy.ts` 删除恢复动作、冷却、失败退避与可恢复上限（只输出 `hold` / `downgrade`，并相应删除 Worker 的 `upgradeEnhancement`、档位阶梯与 `recoveryCeiling`），`interpolationDelayPolicy.ts` 删除播放期收缩与相关选项（保留未接管呈现前的加宽与停顿时的余量恢复），`AdaptationNotice` 与统计字段同步精简。受影响门禁按新口径更新：`frame-cadence-policy` 8 项、`enhancement-recovery` 5 项、`interpolation-delay-adaptive` 5 项、`quality-fluctuation` / `presentation-scheduling` / `frame-menu-state` / `adaptation-notice` / `playback-pipeline` 15 项、`high-refresh-presentation` 2 项、`realtime-interpolation` 4 项、`player-quality` 4 项、`quality-observability` 4 项与 `startup-quality-timeline` 3 项通过；1080p / 30 FPS → 120 目标锐化仍为 119/120/122 FPS、帧间隔 P95 8.33ms、跳过期时隙 0，自适应稳定段生效延迟恒为 66.7ms。实现见[进阶计划](./player-quality-development-plan.md) 6.2.8 与[播放器开发设计](./media-player-development.md)，命令、窗口与边界见[播放器测试报告](./media-player-test-report.md)。真实整片观感、跨显卡、物理高刷与桌面安装物仍为待环境。
+
+更新记录：2026-09-21，v2.38，执行 P6 的 VQ-31 高刷与物理呈现：新增 `presentationLayers.ts`，把源帧（媒体元素 `presentedFrames` 增量）、生成帧（GPU 完成计数，含补间帧）、合成器提交（渲染 Worker 每次提交绘制）与可观察呈现（画布作为可见层时的主线程动画帧数）分成四层分别计数，另记刷新边界上被呈现帧的内容陈旧度 P95，并给出口径判读 `aligned` / `refresh-bound` / `deadline-paced` / `unconfirmed` 与固定标记 `physical: 'unverified'`；`PresentationScheduler` 新增 `PresentationAlignment`，默认 `refresh` 在目标高于刷新能力时按刷新边界提交、并把边界前已到期时隙按各自理想时刻补齐（上界 4，覆盖 60Hz 屏幕上的全部目标档位），边界回调不交付时由交付确认退回截止时刻计时器，`presentationAlignment: 'deadline'` 保留优化前的计时器节拍作为隔离对照。新增入口 `e2e/high-refresh-presentation.test.cjs`（2 项通过）：判定语义覆盖四类口径与物理呈现标记；真实 60Hz 链路下 120 目标窗口为源帧 30 · 生成帧 120（补间 120） · 提交 120 · 呈现 60，`当前 360P` 类的口径结论写作「59.9Hz 上限」，被呈现帧相对刷新边界的陈旧度 P95 为 6.5ms（隔离对照 17.3ms）。同一改动使 `e2e/realtime-interpolation.test.cjs` 的 1080p / 30 FPS → 120 目标锐化门禁由改动前 111/111/96 FPS 且末窗降档到 60，变为 120/120/119 FPS、帧间隔 P95 恒为 8.33ms、长帧 0、跳过期时隙 0；`e2e/player-quality.test.cjs` 的 1080p 高刷矩阵 17 组全部通过（144 为 146/143、165 为 167/164、240 按极帧率口径平衡到性能档后为 233/227，此前本机 144/165 在负载窗口内降档）。`presentation-scheduling`、`frame-cadence-policy`、`worker-generations`（含新增边界交付回退用例）、`interpolation-stability`、`interpolation-bypass`（9 项）、`enhancement-recovery`（6 项）、`interpolation-delay-adaptive`（5 项）、`startup-quality-timeline`（3 项）、`quality-observability`（4 项）、`quality-fluctuation`、`progress-seek-latency`（四配置）、`playback-pipeline`、`playback-experience`（2 项）、`frame-menu-state`、`anime4k-scheduling`（2 项）、`p1-playback-lifecycle`、`p2-processing-order`、`p2-gpu-pipeline`、`p2-motion-cpu`、`motion-naturalness`、`seek-performance`、`adaptation-notice`、`interpolation` 与清晰度专项 `e2e/e2e-media-quality.mjs`（4/4，生产构建预览）通过，`pnpm --filter @sanye/sanye_client typecheck` 与 `build` 通过。实现见[进阶计划](./player-quality-development-plan.md) 6.2.7 与[播放器开发设计](./media-player-development.md)，命令、窗口数据与边界见[播放器测试报告](./media-player-test-report.md)。本机显示能力为 60Hz，120/144/165Hz 物理呈现、整片观感、跨显卡与桌面安装物仍为待环境；高刷设备上按 `SANYE_DISPLAY_HZ` 运行同一入口复测。
+
+更新记录：2026-09-21，v2.37，执行 P6 第 1 批的 VQ-30 画质可观测性：新增汇总模块 `qualityObservability.ts`，按一秒窗口把实际清晰度档位（生效档位、阶梯最高档、比当前高一档的档位与按 `abrBandWidthUpFactor` 换算的升档需求、窗口尺寸上限、手动/自动来源、带宽估计）与渲染 Worker 的 `stallFrames`、`analysisWidth`、`qualityFallbacks`、媒体等待次数合并成画质窗口；原因按「手动选择 → 记忆档位回落 → 播放窗口尺寸上限 → 带宽不足 → 播放中停顿 → 带宽自适应」取第一个能被同窗口数据证实的原因。档位变化时给一次瞬时提示（`清晰度已调整：当前 XP（最高 YP）：原因`），同一高度在回到最高档前不重复播报，最小间隔 5 秒，被拦下的降档在下一窗口补齐；清晰度菜单新增「当前清晰度说明」入口读取同一份汇总，不改变档位与控件标签；最近 30 个窗口挂在播放器实例 `sanyeQualityWindows` 上作为诊断通道，不进入界面。新增入口 `e2e/quality-observability.test.cjs`（4 项通过）：窗口汇总与原因语义、提示去重与补齐、真实降档链路（大窗口升到 720P、高档分片延迟 3 秒后回落 360P，窗口 `当前 360P（最高 720P）：带宽自适应：估算 3.2Mb/s`、落后帧 21–25、分析宽度 128、提示与窗口汇总逐字一致、可查询说明等于最新窗口摘要）在开发服务与生产构建预览各跑一次通过。`quality-fluctuation`、`startup-quality-timeline`、`progress-seek-latency`、`interpolation-delay-adaptive`、`interpolation-bypass`、`enhancement-recovery`、`realtime-interpolation`、`playback-pipeline`、`playback-experience`、`frame-menu-state` 与清晰度专项 `e2e/e2e-media-quality.mjs`（4/4）回归通过，`pnpm typecheck` 与 `pnpm --filter @sanye/sanye_client build` 通过。实现见[进阶计划](./player-quality-development-plan.md) 6.2.6 与[播放器开发设计](./media-player-development.md)，命令、窗口数据与边界见[播放器测试报告](./media-player-test-report.md)。VQ-31 待环境，本机 1080p 高刷门禁与 `progress-seek-latency` 的负载窗口失败保留为环境相关，真实显卡、片源、跨设备与桌面安装物待环境复测。
+
+更新记录：2026-09-21，v2.36，执行 P6 第 2 批的 VQ-29 补帧延迟自适应收缩：新增判定模块 `interpolationDelayPolicy.ts`（下限取 `max(2 个源帧间隔, 40ms)`、上限仍是页面传入的 150ms；未接管呈现前按实测需要加宽，播放段首个窗口为预热窗口，连续干净窗口且窗口内最坏实测需要仍留 ≥ 15ms 时才收缩 20ms，目标越过最新源帧时按步恢复余量 40ms 并受 1 秒冷却约束），渲染 Worker 的延迟在播放段边界重新定档（起播、定位、暂停恢复、缓冲、换源与时间轴跳变），帧队列保留深度改按会话上限计算（收缩只改变展示时刻、不减少可回退缓冲），页面用 40ms 斜坡让音频延迟跟随生效视频延迟，新增 `interpolationDelay: 'adaptive' | 'fixed'` 隔离对照开关与 `interpolationDelay` 统计（含 `awaitingMs`、`neededP90Ms`、`rewinds`、`resumeRewinds`）。新增入口 `e2e/interpolation-delay-adaptive.test.cjs`（3 项判定语义 + 1 项三轮取中位数的真实链路对照，5 项通过）：首帧 → 补间层就绪三轮中位数由固定 150ms 的 192.9/211.7/196.6ms 降到 114.4/119.5/116.9ms，定位后原画窗口由 262.0/267.6/257.4ms 降到 176.1/181.3/175.1ms，起播原画窗口标记由 339.8/333.8/344.8ms 降到 253.4/266.5/249.3ms，起播生效延迟 66.7ms、音画绝对偏差 0ms、正常推进回跳 0、输出尺寸与档位不变。`quality-fluctuation`、`interpolation-bypass`（9 项）、`progress-seek-latency`（四配置）、`realtime-interpolation`（4 项）、`startup-quality-timeline`（2 项）与 `enhancement-recovery`（6 项）回归通过，`pnpm typecheck` 通过。实现见[进阶计划](./player-quality-development-plan.md) 6.2.5 与[播放器开发设计](./media-player-development.md)，命令、逐窗口数据与边界见[播放器测试报告](./media-player-test-report.md)。VQ-30 待执行、VQ-31 待环境，真实显卡、片源、跨设备与桌面安装物待环境复测。
+
+更新记录：2026-09-20，v2.35，执行 P6 第 2 批的 VQ-28 仅增强路径移入渲染 Worker：新增档位链路唯一定义 `profileShaderChain`（主线程 `anime4kRuntime` 与 Worker 共用，`FrameEnhancer` 放大倍率改读链路 `magnification()`），渲染 Worker 新增 `interpolation: false` 执行模式（不建运动估计线程、无插值延迟与音频路由、`forceBypass` 固定不补帧、不做自动降档与恢复）与仅增强专用绘制路径（只呈现包含目标媒体时刻的最近原帧，同一原帧只提交一次），新增 `enhancementPath` 开关（默认 `worker`，`main` 一键回到原主线程路径）与 Worker 初始化握手失败时的自动回退，统计新增 `enhancementOnly`。新增入口 `e2e/enhancement-thread-migration.test.cjs`（5 项通过）：五档同源同尺寸 RGB 像素对照逐字节一致（性能/均衡/锐化/修复各 172,800 个通道、超分 691,200 个，最大偏差 0；性能档 alpha 差异单独记录），640×360 30 FPS 受控窗口主线程长任务由原路径 61 次（最长 65ms）降为 0、帧间隔中位数 33.3ms、输出 640×360、合成帧 0、停顿帧 0，Worker 模块不可用时回退主线程路径且播放不中断。`progress-seek-latency` 四类配置回归通过（仅增强配置由 44 次长任务、最长 78ms 变为 0 次）。实现见[进阶计划](./player-quality-development-plan.md) 6.2.4 与[播放器开发设计](./media-player-development.md)，命令与窗口见[播放器测试报告](./media-player-test-report.md)。VQ-29～VQ-31 仍待执行，Worker 运行期上下文丢失路径与真实显卡、片源、桌面安装物待环境。
+
+更新记录：2026-09-20，v2.34，执行 P6 第 2 批的 VQ-27 源帧率达标跳过光流补帧：新增判定模块 `interpolationDemandPolicy.ts`（源帧率取最近 16 个画面间隔的中位数，`≥ 目标 × 0.92` 进入旁路、`≤ 目标 × 0.8` 才恢复，进入需 400ms / 6 样本、恢复需 700ms / 8 样本，改档只清空连续证据），主线程按媒体时间上报相邻画面间隔，渲染 Worker 在旁路时不再缩放、投递光流分析与上传运动场，只保留增强与原帧呈现，统计新增 `interpolationNeed`、`flowSkippedFrames` 与 `interpolationDemand`。新增入口 `e2e/interpolation-bypass.test.cjs`：真实 60 FPS HLS 播放窗口每窗跳过 45–49 次光流分析、分析次数 0、合成帧 0、停顿帧 0；同源对照（强制保留补帧）纹理上传中位数 3.05/帧对旁路 1.0/帧，源降到 24 FPS 后恢复补帧、回到 60 FPS 再次旁路且不抖动；旁路输出最近原帧并与对照在相位端点逐字节一致。实现见[进阶计划](./player-quality-development-plan.md) 6.2.3 与[播放器开发设计](./media-player-development.md)，命令与窗口见[播放器测试报告](./media-player-test-report.md)。VQ-28～VQ-31 仍待执行，真实片源、跨显卡与桌面安装物待环境。
+
+更新记录：2026-09-20，v2.33，执行 P6 第 1 批的 VQ-26 增强档位有界恢复：降档由“连续 3 个慢帧”（约 100ms）改为墙钟持续压力判定（覆盖 800ms、不少于 3 个样本，连续两个有余量样本才结束），恢复加入 5 秒冷却、3 秒稳定样本门槛、恢复失败退避（5→10→20→40→60 秒）与可恢复上限（默认等于请求档位，240 FPS 平衡与结构性限制锁定实际档位）。新增 `enhancementBudgetPolicy.ts` 与 `e2e/enhancement-recovery.test.cjs`，渲染 Worker 端 34 秒受控运行观测到两次降档、两次有界恢复与两次恢复失败退避。实现见[进阶计划](./player-quality-development-plan.md) 6.2.2 与[播放器开发设计](./media-player-development.md)，命令与窗口见[播放器测试报告](./media-player-test-report.md)。VQ-27～VQ-31 仍待执行，画质说明入口口径待确认。
+
+更新记录：2026-09-20，v2.32，执行 P6 第 1 批的 VQ-25 起播清晰度记忆：按播放地址记录上次成功的实际档位与阶梯签名（自动 7 天、手动 30 天），起播优先定档，首片超过 2 秒未出画或致命失败时作废记录并回落低档；同一地址再次起播时高档与首帧同时到位（本机受控夹具四次运行 137.2–244.7ms，冷启动基线约 2.29–2.39 秒）。实现见[画质与帧率进阶优化开发计划](./player-quality-development-plan.md) 6.2.1 与[播放器开发设计](./media-player-development.md)，命令与窗口见[播放器测试报告](./media-player-test-report.md)。VQ-26～VQ-31 仍待执行，增强档位恢复提示与画质说明入口两项产品口径待确认。
+
+更新记录：2026-09-20，v2.31，按用户要求就「从搜索到播放」的画质与帧率登记新阶段方案 P6；测量基线与工作包见[画质与帧率进阶优化开发计划](./player-quality-development-plan.md)第 6 节，本轮只登记方案，未实施任何条目。实施前需确认三项产品口径（起播清晰度记忆形式、增强档位恢复是否提示、画质说明入口）。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-25 | 实现与浏览器验证完成 | 起播清晰度记忆：按播放地址记录上次成功的实际档位与阶梯签名（自动 7 天、手动 30 天强偏好），起播优先定档，首片超过 2 秒未出画或命中致命错误时作废记录并回落低档；播放期只在实际档位变化时写回。受控夹具四次运行下高档与首帧同时到位（137.2–244.7ms），冷启动 2291.6–2388.0ms、过期 2266.5–2349.9ms，记忆档位延迟 8 秒时在 2174.9–2325.0ms 回落出低档首帧。真实片源、跨网络与桌面安装物待环境 |
+| VQ-26 | 实现与浏览器验证完成 | 增强档位由“3 个慢帧即永久降档”改为墙钟持续预算压力判定（800ms、≥3 样本、连续两个有余量样本才结束）并允许有界恢复：5 秒冷却、3 秒稳定门槛、恢复失败冷却翻倍（上限 60 秒）、可恢复上限默认等于请求档位；请求档位、实际档位、上限与回退记录全部保留。本机受控夹具（640×360、2× 超分、34 秒）观测到两次降档与两次恢复，恢复间隔分别 8.08 秒与 13.02 秒；真实显卡、片源与桌面安装物待环境 |
+| VQ-27 | 实现与浏览器验证完成 | 源帧率已达标时跳过光流补帧，只保留增强与原帧呈现。判定用画面间隔中位数（进入 `≥ 目标 × 0.92` 且覆盖 400ms / 6 样本，恢复 `≤ 目标 × 0.8` 且覆盖 700ms / 8 样本，改档只清空连续证据）；旁路窗口不再缩放、分析光流或上传运动场。真实 60 FPS HLS 播放每窗跳过 45–49 次光流分析、分析 0、合成帧 0、停顿帧 0；同源对照纹理上传中位数 3.05/帧对 1.0/帧；源降到 24 FPS 恢复补帧、回到 60 FPS 再旁路，一次会话不超过 3 次模式变化；旁路输出最近原帧且与对照在相位端点逐字节一致。真实片源、跨显卡与桌面安装物待环境 |
+| VQ-28 | 实现与浏览器验证完成 | 仅增强路径移入渲染 Worker，消除主线程长任务且不改变像素。主线程与 Worker 共用 `profileShaderChain`；Worker `interpolation: false` 只做增强、不补帧、无插值延迟并关闭自动降档；同源同尺寸五档 RGB 对照逐字节一致（性能档 alpha 差异单独记录）；640×360 30 FPS 受控窗口长任务 61 次（最长 65ms）→ 0 次、帧间隔中位数 33.3ms、输出尺寸与档位保持；`enhancementPath: 'main'` 保留一键回到原路径，Worker 不可用时自动回退。真实显卡、片源与桌面安装物待环境 |
+| VQ-29 | 实现与浏览器验证完成 | 补帧延迟由固定 150ms 改为按实测需要收缩的预算：下限 `max(2 个源帧间隔, 40ms)`、上限 150ms；未接管呈现前按实测需要加宽，播放段首个窗口为预热窗口，连续干净窗口且窗口内最坏实测需要仍留 ≥ 15ms 时每次收缩 20ms，目标越过最新源帧（画面重复同一帧）时按步恢复余量 40ms（1 秒冷却）；音频延迟用 40ms 斜坡跟随，帧队列保留深度按会话上限计算，`interpolationDelay: 'fixed'` 保留固定延迟对照。三次运行的三轮中位数对照：首帧 → 补间层就绪 192.9/211.7/196.6ms → 114.4/119.5/116.9ms，定位后原画窗口 262.0/267.6/257.4ms → 176.1/181.3/175.1ms，起播生效延迟 66.7ms、音画偏差 0ms、正常推进回跳 0、输出与档位不变。真实显卡、片源、跨设备与桌面安装物待环境 |
+| VQ-30 | 实现与浏览器验证完成 | 画质可观测性：按一秒窗口汇总实际清晰度档位、阶梯最高档、升档带宽需求、窗口尺寸上限与档位来源，并合并渲染 Worker 的 `stallFrames`、`analysisWidth`、`qualityFallbacks` 和媒体等待次数；原因按手动选择→记忆回落→窗口尺寸上限→带宽不足→播放停顿→带宽自适应归纳。档位变化给一次瞬时提示，清晰度菜单提供「当前清晰度说明」入口读取同一份汇总，不新增常驻面板。新增 `e2e/quality-observability.test.cjs`（4 项）覆盖窗口汇总、原因语义、提示去重/补齐与真实降档链路，开发服务与生产构建预览各通过一次；回归与清晰度专项 4/4 通过。真实显卡、片源、跨设备与桌面安装物待环境 |
+| VQ-31 | 实现与浏览器验证完成，物理呈现待环境 | 高刷与物理呈现：源帧、生成帧、合成器提交与可观察呈现四层分开记录，窗口固定带 `physical: 'unverified'`；目标高于刷新能力时按刷新边界提交并补齐边界内到期时隙（上界 4），边界回调不交付时退回截止时刻计时器，`deadline` 保留隔离对照。本机 60Hz、1080p、30 FPS 源、锐化档：120 目标为 120/120/119 FPS、帧间隔 P95 8.33ms、跳过期时隙 0，被呈现帧陈旧度 P95 6.5ms（隔离对照 17.3ms）；`player-quality` 高刷矩阵 17 组全部通过（144 为 146/143、165 为 167/164、240 平衡到性能档后 233/227）。120/144/165Hz 物理呈现、整片、跨显卡与桌面安装物待环境，高刷设备按 `SANYE_DISPLAY_HZ` 运行同一入口 |
+| VQ-32 | 实现与浏览器验证完成 | 稳定优先简化：帧率目标只降不升（自动档未降档时对齐刷新能力，内部重建保留已稳定档位，新播放段才重新定档），增强档位只降不升（删除恢复、冷却、退避与可恢复上限），补帧延迟只加宽不收缩（删除播放期收缩）。`frame-cadence-policy` 8 项、`enhancement-recovery` 5 项（Worker 夹具 2 次降档、0 次升档）、`interpolation-delay-adaptive` 5 项（起播延迟 150→66.7ms、定位原画窗口 271.7→195.9ms、稳定段延迟恒定、回跳 0、音画偏差 0ms）、`high-refresh-presentation` 2 项、`realtime-interpolation` 4 项（1080p 120 目标 119/120/122 FPS）、`player-quality` 4 项、`quality-observability` 4 项、`startup-quality-timeline` 3 项与 `quality-fluctuation` / `presentation-scheduling` / `frame-menu-state` / `adaptation-notice` / `playback-pipeline` 15 项通过，客户端 typecheck 与 build 通过。真实整片观感、跨显卡、物理高刷与桌面安装物待环境；取消恢复后档位驻留较低值为本轮取舍 |
+
+## 播放体验修正：进度条与定位测量（2026-09-20）
+
+更新记录：2026-09-20，v2.29，按用户反馈修正进度条更新缓慢，并测量拖动定位与播放期卡顿。实现口径见[播放器设计](./media-player-development.md)，窗口数据、命令与未解决项见[播放器测试报告](./media-player-test-report.md)。
+
+| 任务 | 状态 | 本轮范围与验收边界 |
+| --- | --- | --- |
+| VQ-22 | 实现与浏览器验证完成 | 进度条改用播放器的播放期动画帧逐帧写入并取消 120ms 宽度过渡；四类配置下写入次数≈渲染帧数、最长静止为 0、目标滞后 P95 为 0。修复前约 3.6 次/秒、最长静止 150ms |
+| VQ-23 | 本机测量完成，两项均由后续条目收口 | 缓存命中拖动在约 20–60ms 内完成定位且不重复请求分片。两个未解决项均已收口：仅增强路径的主线程逐帧执行（受控窗口 44 次长任务、最长 78ms）由 VQ-28 移入渲染 Worker，同入口复测为 0 次长任务；定位后的原画窗口由 VQ-29 自适应收缩，三轮中位数由 262.0/267.6/257.4ms 降到 176.1/181.3/175.1ms。真实显卡与长片量级仍待设备复测 |
+| VQ-24 | 实现与浏览器验证完成 | 修复画质波动：不再把采集间隔当作时间轴跳变重建管线；目标落在窗口外时用最近可用帧维持增强与补间层，只有内容连续停止推进 800ms 才回到原画。稳定窗口与 0.4 秒卡顿窗口均无整层切换，1.5 秒中断仍按设计回退并可恢复；真实显卡量级待设备复测 |
+
+## 画质进阶优化 P1 补充：刷新对齐与长帧治理（2026-09-20）
+
+更新记录：2026-09-20，v2.28，按用户要求让画面更新贴合屏幕刷新、减少偶发长帧和处理阻塞，并在稳定播放预算内保住画质。设计口径见[播放器设计](./media-player-development.md)，命令、窗口数据与未达项目见[播放器测试报告](./media-player-test-report.md)。
+
+| 任务 | 状态 | 本轮范围与验收边界 |
+| --- | --- | --- |
+| VQ-19 | 本机实现与无头浏览器验证完成 | `PresentationScheduler` 用刷新回调时隙取代 1ms 心跳与消息脉冲，非整数倍刷新也落在刷新边界上；刷新回调不交付时回退计时器并跳过过期时隙。受控 320×180 无头浏览器证据见报告；物理高刷、整片和跨显卡未验收 |
+| VQ-20 | 实现与单元验证完成 | 取消逐帧同步完成回读；新增绘制耗时、长绘制计数与长帧比例，帧率策略按长帧比例判断抖动。高刷在缺少刷新估计时受浏览器计时器分辨率限制，未声称全部窗口达标 |
+| VQ-21 | 保护性验证完成 | 未修改输出尺寸、清晰度档位、增强回退门限与菜单；浏览器窗口保持原尺寸与生效档位。真实动漫画质、长片观感与桌面安装物保持待环境 |
+
+## 画质进阶优化 P3（2026-09-18）
+
+## 画质进阶优化 P7：神经补帧预处理接入（2026-09-21）
+
+更新记录：2026-09-21，v2.40，执行[画质进阶计划](./player-quality-development-plan.md) P7（VQ-33～VQ-36）。用户要求“接入神经补帧模型并保证发送给别人就能用”，本轮把 P3 评估过的同一候选接成桌面包内的预处理引擎；播放期实时补帧仍为稀疏光流，P4 常驻实时推理结论不变。按用户要求本轮不验证。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-33 | 已下线 | RIFE v4.6 接入为预处理引擎：渲染端解码帧、主进程跑 `-i/-o/-n/-f` 目录模式、结果帧回传后编码；引擎选择为「自动（优先神经补帧）/ 神经补帧 / 光流插帧」，网页构建与无桥环境继续使用光流。2026-09-22 按用户要求下线离线导出入口后，客户端不再打开该窗口，代码保留未删 |
+| VQ-34 | 已下线 | 帧交接与预算：解码帧逐帧交给主进程后立即从 FFmpeg 文件系统删除；输出倍数取 `round(目标/源帧率)`（2～12），总帧数 `1+倍数×(源帧数-1)`；单次上限 480p 3600 / 720p 2400 / 1080p 1200 帧，超限回退光流并说明原因。随入口下线一并失效 |
+| VQ-35 | 已删除 | 原为随包与许可（固定摘要暂存 RIFE 运行时、显卡驱动库分类与摘要校验）。2026-09-22 随整条 RIFE 链路删除：`prepareInterp.cjs`、`interpAssets.cjs` 已不存在，`prepare.mjs` 改为显式清除历史 `runtime/interp` 残留，`verify-runtime-closure.cjs` 移除相关校验；`docs/third-party-notices.md` 的对应条目标记为已移除 |
+| VQ-36 | 已下线 | 失败诊断与回退：区分摘要不一致、显卡初始化失败、安全策略拦截、超时并附文件路径与 SHA-256；写入 `local-services/logs/interpolation.log`；重新打开窗口替换旧任务、退出先结束推理进程。随入口下线一并失效，接收方电脑证据不再需要 |
+
+更新记录：2026-09-18，v2.27，按[画质进阶计划](./player-quality-development-plan.md)执行第四步神经补帧可行性实验。本机采用决策已形成：暂不采用 RIFE v4.6，不进入 P4；这不是实时运行门禁通过。具体证据见[播放器测试报告](./media-player-test-report.md)，选型条件见[播放器设计](./media-player-development.md)。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-10 | 候选核对已完成 | 固定 ncnn/Vulkan 代码、v4.6 模型和文件摘要；核实代码 MIT、模型清单明确 MIT、ncnn BSD-3-Clause 及第三方条款，记录体积和 UHD 770 特性。完整随包依赖许可和发行验收未执行 |
+| VQ-11 | 本机隔离实验已完成，实时链路待验证 | 六类场景、五个时间步、90 个统计样本及同源光流比较；1080p 连续文件实验完成。保留首次失败；常驻推理、GPU 显存、生产帧传输/合成同步和真实动漫未测，不宣称全部验收条件通过 |
+| VQ-12 | 决策已完成：暂不采用 | 部分复杂运动质量改善，但存在细线、切镜等退化，实时预算也未证实；保留当前光流和原画回退。P4 条件未满足，P5 可独立验收现有管线 |
+
+## 画质进阶优化 P2（2026-09-18）
+
+更新记录：2026-09-18，v2.26，执行[画质进阶计划](./player-quality-development-plan.md)第三步 VQ-07～VQ-09。P1 原文件保存在本地 `pre-p2/`；设计和原始证据分别见[播放器设计](./media-player-development.md)与[播放器测试报告](./media-player-test-report.md)。
+
+| 任务 | 状态 | 本轮范围与边界 |
+| --- | --- | --- |
+| VQ-07 | 局部改进与本机验证完成 | 残差拒绝和邻域异常运动检查改善指定形变、遮挡及小角度旋转样本；比较向量与实际中间帧误差。较大旋转仍有明显误差，OpenCV 稠密流未进入默认依赖，不作全面画质提升承诺 |
+| VQ-08 | 本机资源验证完成 | 复用颜色及光流纹理存储、延迟占位写入、缓存着色器位置与增强结果；同像素、尺寸变化、池上限、异常释放检查通过。比较处理顺序后保留先增强原帧；耗时收益有波动 |
+| VQ-09 | 十七组合与菜单验证完成 | 请求档位、实际档位、回退历史和资源估算分别记录；菜单跟随实际档位并保留偏好。1080p 重增强仍会按缓存和处理预算回退，未宣称最高档可持续 |
+
+## 画质进阶优化 P1（2026-09-18）
+
+更新记录：2026-09-18，v2.25，按[画质进阶计划](./player-quality-development-plan.md)执行第二步 VQ-04～VQ-06。本轮保留第一步媒体、参数及失败窗口，同设备比较帧间隔、调度开销和浏览器相关进程 CPU；具体结果集中见[播放器测试报告](./media-player-test-report.md)。
+
+| 任务 | 状态 | 本轮范围与验收边界 |
+| --- | --- | --- |
+| VQ-04 | 本机实现与对照已完成 | 多次慢采样确认、有限消息任务、周期性无脉冲探测与 GPU 完成等待降低忙轮询；同源对照和高刷矩阵见报告。保留循环低值，不宣称全部窗口达标或物理高刷已验收 |
+| VQ-05 | 代码与定向验证已完成 | 启动预热、窗口重置、升档冷却及按倍速计算预算；修复旧捕获、缩放和光流返回的跨代竞争。单元及浏览器验证覆盖切源、循环、暂停、定位、隐藏恢复与倍速，保留原画尺寸 |
+| VQ-06 | 评估已完成，暂不启用跨会话能力缓存 | 当前网页 API 缺少可靠驱动标识，桌面也无驱动读取接口；本轮保留实时自适应和会话生命周期重置，不将短测持久化为硬件上限。接入条件与拒绝原因见播放器设计 |
+
+## 画质进阶优化 P0（2026-09-18）
+
+更新记录：2026-09-18，v2.24，按[画质与帧率进阶优化计划](./player-quality-development-plan.md)落实第一步 VQ-01～VQ-03 的本机样本、测量与可重复基线；不改变产品菜单、默认算法或桌面发行物。具体实现、命令结果及缺失环境集中记录在[播放器测试报告](./media-player-test-report.md)。
+
+| 任务 | 状态 | 本轮交付与验收边界 |
+| --- | --- | --- |
+| VQ-01 | 本机样本基线已建立 | 八类可重放合成样本及官方 CC BY 3.0 授权的 Sintel 真实动画片段均已登记摘要、尺寸、时间范围、帧率与来源；二维日漫、真实动画配对真值和整片主观验收待环境。P2 增补解析合成真值，不以三维动画替代二维日漫 |
+| VQ-02 | 可观测指标已实现并验证 | 按需开启捕获、解码元数据、上传、分析、插值提交及排队测量，保留 GPU 完成、丢帧、长任务、浏览器进程 CPU 与主线程堆观测；可用显存和能耗不可测，完整进程内存尚未覆盖 |
+| VQ-03 | 本机四类基线已建立 | 已固定实际源码、依赖及测试入口摘要，记录运行首尾源码稳定性、设备驱动、浏览器、供电和显示参数；冷启动、预热、三十秒持续及干扰记录包含低值窗口。对照拒绝输入、输出、环境或源码稳定性不满足的结果，历史失败保留 |
+
+## 播放质量改进专项（2026-09-16）
+
+更新记录：2026-09-16，v2.23，按 D-027 顺序实现双向运动置信度与切镜、原帧修复和超分、自动及 120/144/165 与 240 实验目标，接入播放器质量菜单和补帧目标设置。受控像素、GPU 吞吐量及回退证据见[播放器报告](./media-player-test-report.md)。真实高刷呈现、长片质量和 RIFE 推理待环境；不将本机 GPU 生成数等同于用户屏幕呈现，不改变其他任务状态。
+
+## 实时补帧专项（2026-09-16）
+
+更新记录：2026-09-16，v2.22，增加本轮用户指定的实时补帧专项。实现、光流像素证据、增强开启时的后台性能及播放器开关回归见[播放器测试报告](./media-player-test-report.md)。状态为代码与受控验证已完成、高刷新率设备观看验收待环境；尚未重新打包已安装客户端，不据此改变既有发布门禁或其他任务状态。
+
+## 本轮剩余任务规划（2026-09-09）
+
+### 本地桌面交付调整（2026-09-10）
+
+更新记录：2026-09-11，v2.21，按用户选择增加 120fps 预处理生成：运动补偿插帧、音轨保留、取消与结果播放；12fps 合成源输出 120 帧/秒及 116 个不同画面，非加密点播和实际 EXE 界面验证通过。整集处理与当前 60Hz 屏幕的 120Hz 显示不在通过范围，证据见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-11，v2.20，候选 20260911.1 已含返回、搜索、侧栏与画质控件修复，真实打包 EXE 八项及安装通过；性能前台对照尚未完成，不能由后台回调或源码解除限帧推断 60/120fps。最新候选路径和证据见[桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-10，v2.19，实际创建并安装当前用户自签名测试证书，修复 Windows PowerShell 模块加载与 NSIS 卸载程序失效签名表引用。自签名主程序已完成真实页面、播放和退出码 0 验证；七项桌面回归通过，最终安装包及安装卸载证据见[桌面运行](./local-desktop.md)。公开可信签名、另一台电脑和远端 CI 仍不由本机结果推断。
+
+更新记录：2026-09-10，v2.18，推进不依赖证书的 Windows 源码检查工作流、离线种子导入导出及产物摘要清单；远端工作流执行、完整安装包构建与验收仍未完成，具体边界见[本地桌面运行](./local-desktop.md)。
+
+用户明确改为本机服务打包，不采用远程服务器部署；本轮排除登录、AI 和桌宠，保留六部固定作品推荐及顺序。新增 `sanye_desktop` 分发入口，运行作品、搜索、收藏三个服务及独立 PostgreSQL，操作与配置见[本地桌面运行](./local-desktop.md)。此前 T-R-06/T-R-07 的服务器交付记录保留为历史，不作为本次桌面交付完成证明。
+
+已执行相关业务模块 Maven 测试打包、前端类型检查和构建；本地专用数据目录验证了六部推荐导入、搜索、浏览器页面及重启后的收藏/历史，报告为 `sanye_deploy/.local/desktop/8c0102d5-9b68-4df5-8816-268ac1716453/report.json`。最终 EXE 与真实播放结果在桌面验证报告登记，不由此处基础回归推断。
+
+最终本地服务八项检查通过，报告为 `.local/desktop/7d750a91-7629-49e2-94ec-3f2600dc9c51/report.json`。较早 EXE 已验证固定首页、封面和真实视频推进，但调试退出异常；最新退出流程修正后的 EXE 被 Windows Device Guard 拦截。当前为代码及本地服务验证完成、安装包签名与最新 EXE 验收 `blocked-external`，具体证据见本地桌面文档。
+
+更新记录：2026-09-10，v2.15，按用户最新范围登记本地桌面改造及固定推荐要求，保留未完成的发布与外部来源验收。
+
+更新记录：2026-09-10，v2.16，修正桌面打包临时安装器先执行后签名的问题，默认打包要求可信签名，补充启动失败报告和退出超时；`pnpm test:desktop` 四项通过。现有 EXE 复测仍被 Smart App Control 拦截，签名身份未配置，整体保留 `blocked-external`，证据与解除条件见[本地桌面运行](./local-desktop.md)。
+
+更新记录：2026-09-10，v2.17，推进 SignPath 免费开源签名申请准备，已核对公开仓库、许可证、发行及托管构建要求；维护者授权后加入自有代码 MIT 许可和第三方许可说明，申请账户及供应商审核仍待完成。申请草稿见[本地桌面运行](./local-desktop.md)，未将申请准备标记为证书问题已解决。
+
+本节是本轮五项任务的状态、完成定义与后续证据登记入口；历史任务记录仍保留原验收范围。用户明确排除第六项：真实 CAS 接入、AI 供应商额度与真实模型验收、内容版权处理、桌宠 Windows 系统验收。本轮不执行这些事项，也不将它们标记为已解决。原有发布阻塞继续保留；本轮目标为受控测试环境交付能力，不代表具备正式公开发布资格。
+
+本轮已完成 T-R-01 至 T-R-04；T-R-05 已完成代码、本地扫描和启动验证，真实生产配置与凭据复用/轮换确认待环境；T-R-06 已实现候选发布工具并通过本地回归和容器冒烟，固定候选及外部环境验收仍待环境；T-R-07 未执行。下面的工作量为单人有效工作日估算，不包含外部环境等待；执行负责人为当前任务开发者，具体环境维护人须在环境准备时登记。
+
+### 当前基础回归核对（2026-09-10）
+
+本次全量文档核对后重新执行当前工作区基础回归，具体命令、环境和结果统一见[当前审计](./current-status-audit.md)。这些检查不改变各任务完成定义，不把历史真实中间件验收写成再次执行。当前没有完整目标环境正常使用保证。
+
+T-R-04 的最终完成证据限定于 `8a74d86bd5c3` 报告快照。本次摘要核对显示恢复核心脚本一致，但演练脚本和四个运行 JAR 已变化；最新产物的真实恢复复验未执行，交付候选前仍须补齐。
+
+更新记录：2026-09-10，v2.14，补充当前代码回归与文档一致性入口，保留新登记的 T-R-06 发布准备证据及外部阻塞。
+
+### T-R-06 执行与证据（2026-09-10）
+
+当前状态：**发布准备工具已实现，本地专项通过；完整候选与测试环境验收待环境**。本次按第六个任务 T-R-06 执行，未进行 T-R-07 部署或回滚，不能标记本项整体已完成。
+
+- 新增 `sanye_deploy/release/` 与手动候选工作流：仅 `test` 分支、同提交最新成功 push CI、干净源码、冻结依赖、干净双后端构建；固定新增工作流 Action 提交和两个基础镜像摘要。准备 12 个最小应用上下文，绑定源码树、锁文件、POM、Flyway SQL、JAR/dist、镜像摘要及运行号，推送后才生成摘要 Compose。入口与约束见 [CI/CD](./ci-cd.md#t-r-06-候选镜像与实例核验)。
+- 配置绑定维护人、目标、版本、独立 namespace、环境文件指纹和上一发布/备份/迁移评审材料；实例核验检查实际镜像和配置、容器健康及 Nacos 实例 IP/端口/提交。新材料绑定不会自动证明迁移兼容或备份可恢复，具体回滚规则见 [发布管理](./release-management.md)。
+- `node --test sanye_deploy/release/release.test.mjs`：10 项通过，失败/跳过均为 0。覆盖脏工作区、候选提交、可变镜像、输入变更、旧 CI 成功、错误镜像/Nacos 注册、配置解析、回滚绑定及分支强制检查缺失。已加入 CI 文档作业。7 个发布脚本 `node --check` 通过。
+- Java 21.0.12 下 `node sanye_deploy/release/smoke-local.mjs` 最终 8 项真实容器检查通过，报告为 `sanye_deploy/.local/tr06/sanye_tr06_2e4e2557f579/report.json`。使用当前现有网关 JAR 和客户端 dist，验证非 root、数据目录权限、健康失败分支、日志脱敏、Nginx 页面回退与网关 401 转发。报告绑定脚本、Dockerfile、探针、配置、JAR 和本地镜像摘要；本次容器及专用网络已清理，未启动桌宠。它不是干净候选构建、注册表推送、完整数据库或十二实例 Nacos 验收。
+- 初次冒烟中网关已启动，但共享 Rabbit 健康探针连接默认地址失败。最终 Compose 对非消息业务服务关闭该探针，作品和搜索保留；作品/搜索事件开关及 job 调度开关显式启用。失败报告 `593be4e88e0d`、`8c5f7d9cc903` 保留，不算成功证据。
+- 当前工作区带有大量前序修改；设置当前完整 HEAD 后，准备命令仍以退出码 1 拒绝脏工作区，未生成候选上下文，未暂存、提交或推送。完整 12 镜像流水线尚未在候选提交上运行，也未宣称重新完成全量前后端构建。
+- 远端只读查询：`dev/test/release` 均为 `f1d82b39f013869427f89d28d38f4f3633cdba11`；最新成功运行 `32924183945` 对应 `548c2764e1c16b329ebffa8e19d568217dc13f86`，不包含本次工作区内容。`check-remote.mjs` 对三个分支保护均返回 HTTP 401，报告 `sanye_deploy/.local/tr06/remote-protection.json` 为未通过；不能据此认定远端失败检查已阻止合并。
+
+待环境解除条件：整理并确认完整候选提交，确认测试主机、专用中间件网络/namespace、维护人、注册表及凭据来源，准备真实回滚基线、备份恢复和迁移兼容证据；以具有读取规则权限的身份核验远端保护，完成干净构建、实际推送及候选到实例的对应核验。T-R-05 未解除的真实配置与凭据复用事项继续保留。
+
+更新记录：2026-09-10，v2.13，登记 T-R-06 工具实现、本地容器与负例证据、远端 401 和未完成门禁；同步 CI、环境、发布、部署、差距与评审记录，执行 `pnpm docs:check`。
+
+### T-R-05 执行与验收记录（2026-09-10）
+
+当前状态：**代码与本地验证已完成，生产凭据验收待环境**。本项按任务编号执行，不包含 T-R-06/07 发布操作。
+
+- 业务核心与管理应用新增启动配置校验，删除应用数据库、Redis、JWT 默认凭据及 Auth/Gateway Java 默认签名密钥；配置缺失、占位、弱值、环境 profile 冲突在 Bean 和中间件连接创建前拒绝。Nacos 启用时要求独立命名空间，组件条件与变量见 [环境矩阵](./environment-config.md#t-r-05-环境与启动校验)。
+- 管理 HTTP 工具删除 URL、参数、正文和异常原文日志，HTTPS 恢复默认信任与主机名校验；Actuator 配置值强制隐藏，管理端关闭默认 debug、热重载和 Druid 控制台。安全与轮换规则见 [安全设计](./security-design.md#t-r-05-启动与审计规则)。
+- 新增 `scan-sensitive-config.mjs` 和 8 项回归，扫描当前源码、本地可达历史、指定日志及 JAR。输出仅脱敏位置，错误或未决候选返回非零。自研 JAR 模式明确列出未检查的第三方依赖，不能写成完整供应链或凭据有效性证明。
+- Java 21 下两套后端 `mvn -q -f <工程>/pom.xml package` 退出码 0。业务后端本次 291 项测试通过，含 26 项真实 SpringApplication 启动专项；管理后端 23 项通过，含真实自签名 HTTPS 对端无法接收凭据的回归，失败、错误、跳过均为 0。最终日志为 `sanye_deploy/.local/tr05/backend-final-package.log`、`admin-package.log`；早期并行构建导致的临时类加载失败已由顺序完整构建复验，不作为通过证据。
+- `node sanye_deploy/verify-sensitive-startup.mjs` 验证实际 gateway/admin JAR 缺失及占位密钥拒绝、随机密钥注入后网关健康 `UP`、五次进程日志不含注入值；10 项检查通过。报告为 `sanye_deploy/.local/tr05/startup/report.json`，记录脚本和 JAR SHA-256，全部本次进程已停止。管理端有效配置启动由 SpringApplication 专项覆盖，本轮没有连接真实管理数据库作生产登录验收。
+- Gitleaks 8.30.1 经 GitHub Release 资产 SHA-256 校验后本地运行：可达历史 10 个提交、当前源码、部署日志均退出码 0，无其规则命中。报告与日志在 `sanye_deploy/.local/tr05/gitleaks-*.json/.log`。其直接 JAR 扫描读取 0 字节，因此明确不计作产物通过证据；产物使用自定义归档读取报告。
+- 自定义扫描报告 `sanye_deploy/.local/tr05/audit.json` 检查源码 995 项、历史 blob 1009 项、日志及启动证据 93 项、全部 12 个业务/管理 JAR 中自研条目 2036 项，读取错误 0，明确排除 1337 个第三方依赖条目。304 条候选已在 `final-classification.json` 逐项复核：102 条明确本地默认值、178 条代码/元数据误报、24 条合成测试夹具，未解决字面凭据 0；另有 103 条示例或配置引用，日志无规则命中。分类基于具体代码语法、历史 blob、测试生命周期和实际归档条目，不按目录整体放行。16 条产物候选均为参数化 SQL、缓存键或消息元数据，已与源码核对。分类报告绑定审计文件 SHA-256；扫描器原始非零结果保留，不建立宽泛放行规则。报告记录当前 HEAD、脏工作区边界和各 JAR 摘要。早期 `classification.json` 为中间状态，不作为最终证据。外部维护人仍须确认公开开发凭据是否被复用，发现复用后在受控渠道轮换。
+
+待环境解除条件：明确测试/生产目标与维护人、凭据来源和命名空间；以真实受控配置完成应用连接与登录验证；确认公开默认凭据未被复用或提供已轮换的脱敏证据。本次未修改真实凭据、历史、远端分支保护或发布环境，未提交或推送现有脏工作区。
+
+更新记录：2026-09-10，v2.12，登记 T-R-05 实现、扫描和启动证据，保留生产凭据门禁；同步安全、配置、部署与评审文档，执行 `pnpm docs:check`。
+
+### T-R-04 修正复验（2026-09-10）
+
+当前状态：**已完成（全部已发现问题修正，最终代码复验通过）**。上一轮遗漏问题时的记录仅作为历史证据，不能替代本节最终验证。
+
+| 问题 | 修正 | 最终证据 |
+| --- | --- | --- |
+| `update_text=null` 导致详情排期和状态筛选空指针 | 修正 JDBC 共用目录排期、内存排期和状态筛选；空值保留，不虚构排期或完结状态 | 新增 Java 回归先复现两处空指针；最终真实恢复保留空值作品，详情及三种筛选通过 |
+| Windows 仅改变路径大小写可绕过重叠检查 | 用真实路径及 Windows 大小写规范化统一比较；拒绝符号链接、保留设备名、尾部点和空格 | `pnpm test:recovery` 路径与链接专项通过 |
+| 工具超时或失败只结束直接子进程 | 有界终止本次记录的进程树，流错误立即触发清理；清理失败使总报告失败 | 含持续运行后代进程的超时测试通过；最终四个应用进程树均停止 |
+| 对象只保留字节和简单 MIME，属性或 MIME 参数丢失 | 使用锁定的 MinIO SDK；V2 保存并回读 MIME 参数、下载/缓存头、自定义属性和标签；网络空闲与总时限明确 | 元数据注入拒绝、请求超时、服务失败测试通过；真实对象全部属性及标签保留 |
+| `information_schema.sequences` 漏掉 identity 序列 | 改查 PostgreSQL 系统目录，校验全部序列状态 | 最终业务库 53 项、管理库 47 项表或序列一致，共 100 项 |
+| 负例只要抛异常就通过，不能证明拒绝原因 | 每个负例匹配预期错误，验证未创建后续目标；注入恢复工具中途失败并检查保留报告 | 已有库/桶/目录、损坏/空备份、缺本地/MinIO 对象、导入中断全部按预期拒绝 |
+| 演练关闭 Flyway 且恢复工具依赖源容器 | 八个 schema 使用真实 Flyway 初始化、校验和重复迁移；恢复工具独立，源数据库和 MinIO 停止后恢复，目标应用保持 Flyway 开启 | 最终源服务离线恢复及目标启动校验通过，迁移历史保留 |
+| 工具路径、健康检查与最终报告存在误判空间 | Java 路径可配置并提前校验 21，网关管理端口与健康探测一致；严格响应断言；报告记录当前脚本及 JAR 摘要 | 最终源码摘要与报告逐项一致，全部检查及清理通过，应用验收状态为 `passed` |
+
+最终命令与结果：
+
+- `pnpm install --frozen-lockfile` 退出码 0；MinIO SDK 与锁文件一致。
+- `pnpm test:recovery` 15 项通过，失败、跳过均为 0，已接入安装依赖后的 CI 前端作业。
+- Java 21 下 `mvn -q -f sanye_server/pom.xml -pl sanye-server-anime,sanye-server-file,sanye-server-gateway -am package '-Djacoco.append=false'` 及 `mvn -q -f sanye_admin_server/pom.xml package` 均退出码 0；当前报告共 162 项相关 Java 测试通过，失败、错误、跳过均为 0。此次未跳过测试，业务模块保留原覆盖率门禁；报告在对应模块 `target/surefire-reports`。
+- `node sanye_deploy/verify-recovery-live.mjs` 退出码 0，31 项真实隔离检查通过。最终报告为 `sanye_deploy/.local/tr04/8a74d86bd5c3/report.json`；已核对其中的两个脚本及四个运行 JAR SHA-256 与当前文件完全一致。
+- 最终备份耗时 17,283 ms，数据恢复及校验 8,505 ms；模拟故障时备份年龄（本轮 RPO）43,395 ms，从恢复开始到全部应用验收完成（本轮 RTO）35,432 ms。合成有效记录无丢失，以上为本机小型数据演练结果。
+- 最终四个应用进程树、五个专用容器均已停止，`docker ps` 为空；仅保留受控测试数据、备份和脱敏证据，未操作原有业务容器。代码未暂存、提交或推送。
+
+V1 备份只保留只读校验能力，缺少完整对象属性和 identity 序列证据，完整恢复前必须生成 V2；不把旧清单写成已补齐数据。真实 CAS、生产凭据、正式发布及其他任务的边界仍保持原清单，不影响本项已要求的受控独立恢复验收。
+
+更新记录：2026-09-10，v2.11，重新打开后逐项修正 T-R-04 问题，以最终源码构建、15 项恢复测试、162 项 Java 测试和 31 项真实演练关闭门禁；同步文档并执行 `pnpm docs:check`。
+
+### T-R-04 执行与验收记录（2026-09-10，上一轮历史证据）
+
+- 新增 `sanye_deploy/recovery.mjs`，并替换 `backup-local.ps1`、新增 `restore-local.ps1` 参数化入口。配置区分源与目标、业务库与管理库、MinIO 桶与本地文件目录；凭据仅通过环境变量注入，见 [环境矩阵](./environment-config.md#独立恢复配置)。
+- 备份采用两库自定义格式整库导出、表内容与序列指纹、MinIO 当前对象及本地文件 SHA-256。要求源写入暂停并重复复核；活动文件必须具有本地运行副本，已配置 MinIO 桶的文件还须具有对象副本。备份完成标记、清单和所有文件摘要全部通过后才能恢复。
+- 恢复预检拒绝源目标重叠、已存在数据库/桶/目录、路径越界、符号链接、空文件、损坏或缺失对象和不兼容 PostgreSQL 版本。导入仅向新目标进行；目标表与序列先与源一致，再同步映射元数据桶名、本地目录和 MinIO 对象，并复核映射结果。失败保留专用现场，不删除原数据或自动清理备份。
+- 本地验证：`pnpm test:recovery` 9 项通过，覆盖完整性、缺失副本、路径与映射保护、二进制流及错误脱敏，已接入 CI 文档作业。当前源码的 anime/file/gateway 及管理后端 Maven 打包通过；本次打包使用 `-DskipTests`，不计作 Java 单元测试证据。
+- 真实演练使用 `node sanye_deploy/verify-recovery-live.mjs`；源与目标分别使用本次新建的 PostgreSQL、MinIO 容器，Redis 也独立，随机凭据不写入报告。合成业务库按版本顺序应用全部当前 SQL，管理库使用当前初始化与 Quartz SQL；目标应用关闭 Flyway，本项不替代 Flyway 升级专项。真实 CAS、生产凭据和发布验收不在本次范围内。
+- 最终真实验收：运行 `node sanye_deploy/verify-recovery-live.mjs` 退出码 0，17 项检查通过。报告为 `sanye_deploy/.local/tr04/b0bc7ea2d5e7/report.json`，包含 4 个运行 JAR 的 SHA-256、源与目标名称、时间、检查和停止记录；业务库 45 项、管理库 31 项表或序列全部一致，MinIO 字节与内容类型、本地文件及元数据映射通过。
+- 恢复后的管理端真实密码登录与 `/getInfo` 通过；内容与文件经真实网关读取，所有者文件 SHA-256 与备份一致；其他所有者及匿名伪造身份分别返回业务码 `2003`、`2001` 且数据为空。已有数据库、桶、目录分别拒绝；桶和目录预检失败均证明未创建数据库，目录失败也未创建桶。
+- 本轮备份耗时 14,839 ms，数据恢复及校验 8,105 ms；模拟故障时点相对备份开始的 RPO 为 27,821 ms，恢复开始至全部应用验收通过的 RTO 为 37,150 ms。合成有效记录无丢失。这些数值仅代表本轮小型合成数据与本机资源，不作为生产周期、容量或恢复时限承诺。
+- 本轮及调试容器均已停止，临时 Java 进程已退出，原有容器未启动或修改；数据、备份、脱敏日志和失败现场保留在 `.local/tr04/`。数据恢复阶段报告的 `applicationAcceptance=pending` 保留原时点含义，后续应用验收由总报告顶层 `status=passed` 证明。
+- 演练发现两个环境/夹具问题并修正：PostgreSQL 18 导出与 16 目标不兼容，改为同版本工具并增加提前拒绝；随机管理密码长度调整为符合现有 20 字符上限。另发现直接插入 `update_text=null` 的作品会触发现有排期构建空指针；本轮使用正常业务值的合成记录验收，该既有业务问题不在恢复脚本修改范围内。
+- T-R-04 结论：**已完成（受控独立环境，含恢复后应用验收）**。`pnpm test:recovery` 9 项通过；文档同步以最终 `pnpm docs:check` 为准。T-R-05 生产敏感配置、T-R-06/07 发布以及真实 CAS、Flyway 升级专项继续保留原边界。
+
+更新记录：2026-09-10，v2.10，登记 T-R-04 实现、测试与独立恢复范围；操作说明见 [独立恢复说明](./backup-recovery.md)。
+
+### T-R-01 执行记录（2026-09-09）
+
+- 基准提交：`548c2764e1c16b329ebffa8e19d568217dc13f86`；本轮验证对象为该提交之上的当前工作区，包含既有未提交与未跟踪文件，不是该提交本身的发布验收。源文件副本位于被忽略的 `sanye_deploy/.local/tr01-source`，用于独立安装和构建。
+- 用户要求统一当前本机版本：Node.js 26.5.0、pnpm 10.15.0、Microsoft Java 21.0.12、Maven 3.9.16。两套 POM 编译目标改为 21，`.nvmrc`、`.java-version`、包约束与 CI 同步。Node.js 26 为非 LTS。当前终端运行 `. ./sanye_deploy/use-local-toolchain.ps1` 后，`mvn --version` 已确认 Java 21.0.12；未修改机器全局环境变量。
+- 修复媒体跨集线路污染：入口第一集的备用地址不再追加给其他剧集。新增测试先复现第二集含第一集两条地址，再验证修复；动漫模块及依赖的测试与 JaCoCo 门禁通过。
+- 修复管理端会话竞态：退出或换号时失效旧请求，并清空旧权限；并发加载按 store 隔离。`pnpm test:admin-auth` 两项通过，覆盖退出后迟到响应、换号后的响应乱序和同会话请求合并，已接入 CI。
+- `pnpm typecheck`、三端 `pnpm build` 通过。`pnpm e2e:ci` 四个脚本合计 13 项通过；封面夹具补齐后复跑不再依赖未启动后端的封面代理。该回归仍是自包含前端测试。
+- 入口体积校验通过：客户端 67.5 KiB gzip（预算 75）、管理端 204.6 KiB（预算 220）、桌宠 32.0 KiB（预算 70）。Vite 仍有大分块提示，未通过调高阈值隐藏。
+- 最终独立源码副本的 `pnpm install --frozen-lockfile`、`pnpm build` 退出码均为 0；两套 Java 21 `clean test` 退出码均为 0，业务后端 239 项、管理后端 3 项，失败/错误/跳过均为 0。报告位于该副本对应模块的 `target/surefire-reports`。普通 Maven 测试不执行 `AnimeMigrationIT`。
+- PostgreSQL 18.4 隔离实例仅监听 `127.0.0.1:25439`，数据目录为 `sanye_deploy/.local/tr01-pg`，使用新建的 `sanye_tr01_fresh`、`sanye_tr01_upgrade` 数据库；测试后实例已停止。`AnimeMigrationIT` 两项通过：空库 V1–V10、重复 migrate 无新增迁移、多线路 JSONB 读写、V9 老剧集升级后主地址和默认空线路保留。未操作共享库，未修改历史迁移。
+- 迁移实测确认：空库 V7 清理演示种子后，正式目录为空；V8 不负责创建正式内容。独立测试显式创建合成数据，不把历史六部片库或授权内容自动迁入新库。
+- 交付时必须包含 V10、`SearchKeywordAliases.java`、`SearchCoverOverrides.java`、外部搜索 E2E、体积校验脚本，以及本轮新增测试/工具链脚本；只提交已跟踪差异会遗漏依赖。本次未暂存、提交或推送。
+
+独立数据库测试命令（仅用于上述专用新库，先设置 `SANYE_MIGRATION_TEST_PORT`）：
+
+```powershell
+. ./sanye_deploy/use-local-toolchain.ps1
+$env:SANYE_MIGRATION_TEST_PORT = '25439'
+mvn -B -f sanye_server/pom.xml -pl sanye-server-anime -am test '-Dtest=AnimeMigrationIT' '-Dsurefire.failIfNoSpecifiedTests=false' '-Djacoco.skip=true'
+```
+
+该专项明确跳过覆盖率统计；普通模块测试已独立执行覆盖率门禁。测试拒绝含既有 `sanye_anime` schema 的数据库，重跑须另行准备全新专用测试库。报告在 `sanye_server/sanye-server-anime/target/surefire-reports`。测试部署、真实浏览器到后端全链路、远端 CI 和生产凭据不在本轮通过结论内。
+
+### T-R-03 执行与验收记录（2026-09-09）
+
+- `sanye-server-job` 接入 XXL-JOB 3.1.0，默认关闭；开启时必须配置调度台、执行器令牌与内部服务令牌。`rebuildAnimeIndex` 调用受控搜索接口，成功写入计数，失败记录失败回调，日志不输出凭据或远端异常正文。
+- 搜索重建从公开目录分页读取作品，构建独立版本索引；校验源总数、作品唯一性、发布状态、批量写入结果和刷新后数量，成功后原子切换别名。失败及旧索引保留；历史物理索引不自动删除。搜索与 RAG 默认统一读取 `sanye_anime_live`，历史环境须同步配置并重启相关实例。
+- 搜索数据库 PostgreSQL 事务锁拒绝跨实例重建并发，事件消费持共享锁到 inbox 提交；XXL-JOB 阻塞策略为 `DISCARD_LATER`。普通搜索调用者不能触发重建，现有 RuoYi Quartz 不受影响。
+- 单元验证：Java 21 下 `mvn -q -f sanye_server/pom.xml test '-Djacoco.append=false'` 退出码 0，263 项通过，失败、错误、跳过均为 0，保留原覆盖率门禁，job 新增 80% 门禁。报告在各模块 `target/surefire-reports`，日志 `sanye_deploy/.local/tr03/all-backend-tests.log`。新增索引及权限测试 11 项、job 测试 6 项。
+- 真实调度验证：`node sanye_deploy/verify-index-job.mjs`，注入受控测试凭据及 `TR03_SOURCE_URL=http://localhost:8082`。读取当前作品服务 9 条公开作品，使用全新 `sanye_tr03_5c94fbdd90fd` 数据库及同名前缀独立索引，未修改作品主数据。调度组 4 自动注册，任务 3 的日志 4/5/6 分别为成功/失败/恢复成功；修复缺失及多余文档，失败保持旧别名，管理台重复触发被丢弃。
+- 运行证据：`sanye_deploy/.local/tr03/5c94fbdd90fd-evidence.json`、同前缀 search/job 日志及执行器日志目录。测试进程已退出；独立数据库、版本索引、`NONE` 调度类型任务和调度日志保留，不会自动执行。正式发布、生产配置和真实用户验收不在结论内。
+- 管理整合已补齐：RuoYi“任务管理”通过 Quartz / XXL-JOB 标签切换，提供执行器状态、立即执行、失败重试、日志筛选及详情。服务端代理使用独立 Cookie 会话，固定任务编号、执行器组与处理器；权限分别为 `monitor:job:list`、`monitor:job:query`、`monitor:job:changeStatus`。触发记录管理审计，调度台凭据和原始日志正文不返回浏览器。
+- 管理整合验证：`mvn -q -f sanye_admin_server/pom.xml test` 共 16 项通过，包含真实 Spring 方法权限代理和本地 HTTP 协议用例；`pnpm typecheck`、`pnpm build` 通过；`node e2e/e2e-xxl-admin.mjs` 11 项页面检查通过，含移动端、失败恢复、未配置、离线、只读和无日志权限。
+- 真实 RuoYi 验收由 `verify-index-job.mjs` 的 `TR03_ADMIN_JAR` 分支执行，使用全新 `sanye_tr03_fd351d27ad6f` 数据库与独立 Redis，初始化项目管理员种子；仅在该专用库移除测试角色的触发权限。页面操作触发任务 5，调度日志 19/20/21 对应成功/失败/重试成功；匿名与无权限调用被拒绝，失败筛选正确，审计记录写入专用管理库。证据为 `sanye_deploy/.local/tr03/fd351d27ad6f-ruoyi-evidence.json`、同前缀桌面/移动端截图及 admin 日志，前端状态报告为 `.local/tr03/ui/checks.json`。
+- T-R-03 结论：**已完成（受控测试环境，含 RuoYi 管理整合）**。正式配置和发布仍按 T-R-05 至 T-R-07 跟踪，本轮不将其标记为完成。
+
+更新记录：2026-09-09，v2.9，完成 RuoYi 管理整合与真实浏览器验收，依据本节新增报告及 `pnpm docs:check`。
+
+更新记录：2026-09-09，v2.8，登记 T-R-03 实现、隔离调度验收及管理入口边界，依据上述测试与运行报告。
+
+### 当前证据与范围
+
+### T-R-02 执行记录（2026-09-09，历史中间状态）
+
+- 新增共享事件信封与进程内可靠语义基线：`DomainEvent` 统一事件 ID、类型、聚合 ID、版本、载荷和时间；`InMemoryEventBus` 提供事件 ID 幂等、按聚合版本顺序丢弃、有限重试和死信结果。
+- 作品管理状态变更发布 `anime.status.changed` 事件，载荷包含作品 ID和目标状态。该实现用于固定契约和可重复测试，不等同于 RabbitMQ 持久投递链路。
+- 使用当前本机 Java 21 工具链执行：`mvn -B -f sanye_server/pom.xml -pl sanye-server-core -am test '-Dtest=InMemoryEventBusTest' '-Dsurefire.failIfNoSpecifiedTests=false'`，退出码 0；2 项测试通过，失败/错误/跳过均为 0，JaCoCo 门禁通过。
+- 当前仓库仍未引入 `RabbitTemplate`/`RabbitListener`、持久 Outbox 发布器、搜索索引消费者或真实死信队列；因此事务写入、RabbitMQ confirm/断连恢复、下架后 ES 删除、重启恢复和真实最终一致性仍为 `待环境`，不能以本地事件总线测试替代。
+
+### T-R-02 实现批次（2026-09-09，历史中间状态）
+
+- 已补充 PostgreSQL Outbox repository、定时 Rabbit 发布器、消息 ID、确认/返回配置、搜索事件消费者、ES 删除入口、事件交换机/搜索队列/DLX 声明，以及 V11 Outbox 字段兼容迁移。
+- 作品状态更新在存在数据库 Outbox 时写入同一 Spring 事务；内存目录测试继续使用无 Outbox 构造路径。
+- Java 21 下 core、anime、search 的 Maven 编译与打包通过（`-DskipTests -Djacoco.skip=true`）。完整覆盖率门禁尚未恢复：新增基础设施类使 core 指令覆盖率降至 0.69，低于 0.70。
+- 尚未完成真实 RabbitMQ 断连恢复、消费者持久幂等表、独立补偿任务和真实死信队列回放；真实 RabbitMQ/ES 环境最终一致性仍为 `待环境`。
+
+### T-R-02 最终验收记录（2026-09-09）
+
+- 验收脚本：`node sanye_deploy/verify-reliable-events.mjs 142 baseline`，使用隔离 Compose 数据库中专用合成作品 `142`，通过管理接口验证发布、更新、下架；每个事件均产生连续版本并由 Outbox 标记 `SENT`，搜索 inbox 记录事件版本，ES 分别完成单文档写入和删除。
+- 重复/乱序验收：重放已发布和旧下架事件后 inbox 版本保持不变，ES 不被旧事件复活；脚本输出保存在 `sanye_deploy/.local/tr02/`。
+- 缓存验收：`node sanye_deploy/verify-reliable-events.mjs 142 cache`，事件消费删除 `sanye:home:home:*` 测试键。
+- RabbitMQ 断连验收：`node sanye_deploy/verify-reliable-events.mjs 142 disconnect`，断连期间事件保持 `PENDING` 并增加重试，恢复后同一事件 ID 最终变为 `SENT`；重启验收 `restart-check` 通过。
+- 死信与补偿验收：`exhaust` 证明 5 次失败后状态为 `DEAD`；`consumer-failure` 证明 ES 不可用时 inbox 不推进，恢复后重放原死信事件成功；补偿接口重新从主数据生成权威事件。
+- 独立 PostgreSQL 验收：`ReliableEventPersistenceIT` 覆盖 Outbox 失败回滚、12 次并发更新的连续版本、租约到期重启恢复和 DEAD 重试；数据库名通过 `SANYE_EVENT_TEST_DATABASE` 显式指定，未操作共享生产库。
+- 质量验证：Java 21 下 `mvn -q -f sanye_server/pom.xml test` 全业务后端 250 项通过，失败、错误、跳过均为 0，未跳过 JaCoCo；独立数据库专项另有 3 项通过（不由普通 test 自动执行）。日志为 `sanye_deploy/.local/tr02/all-backend-tests.log`、`persistence-it.log`；事件指标可通过 `/actuator/prometheus` 读取。最终 `PENDING=0`，DEAD 和死信保留故障演练证据。`pnpm docs:check` 616 项通过。
+- T-R-02 结论：**已完成（受控测试环境）**。真实生产凭据、远端 CI、正式发布和非本地数据仍不在本项结论内。
+
+- `git status --short --branch` 显示当前为 `feature-T-B-01`，存在前后端、媒体、搜索、CI 和文档的既有修改及未跟踪文件。任务开始时记录文件清单和基准提交，保留全部既有修改，按任务整理可复核差异；不得直接批量暂存。
+- 规划时未发现事件或任务实现；T-R-02 已补齐 RabbitMQ 生产和消费，T-R-03 已接入执行器与索引重建，当前证据以上述验收记录为准。
+- 规划时的旧备份脚本绑定本机工具路径、只备份单库并含删除原库的恢复示例；T-R-04 已替换这一入口，当前执行方式和证据见本节新增记录。
+- [CI](../.github/workflows/ci.yml) 已有前后端门禁；[浏览器入口](../e2e/run-ci.mjs) 启动客户端预览并执行四个专项，不启动真实业务服务或数据库。此证据不能替代测试环境验收。本轮没有查询远端分支保护或运行环境状态。
+
+### 执行批次与完成定义
+
+| 编号 | 对应范围 | 工作与交付物 | 验收及证据 | 依赖与状态 | 估时 |
+| --- | --- | --- | --- | --- | ---: |
+| T-R-01 | 第 1 项：当前代码收口 | 按搜索、媒体与 V10 迁移、管理端、性能与 CI 分组审阅现有差异；修复可复现缺陷；建立当前提交与测试报告映射，核对干净安装及迁移可重现性 | Node.js 26.5.0、pnpm 10.15.0、Java 21.0.12 下执行文档检查、前端类型检查/构建、两套后端干净测试、自包含浏览器回归；每项记录退出码、环境、报告和覆盖边界；实际数据库验证仅在隔离库执行 | 已完成（本地代码与隔离验证）；证据见本节执行记录 | 2–3 天 |
+| T-R-02 | 第 2 项：可靠业务事件 | 以作品发布、更新、下架到搜索索引同步及已有缓存失效为首个业务闭环；业务写入与 Outbox 同事务，接入发布确认、幂等消费、版本顺序、有限重试、死信与补偿；同步事件契约、迁移和指标 | 单元测试覆盖事务失败、重复、乱序、重启与投递失败；真实 RabbitMQ 断连恢复后最终一致；下架作品从搜索移除；记录事件 ID、重试及消费者证据 | T-R-01；**已完成（受控测试环境）**；正式发布与生产凭据仍待环境 | 3 天 |
+| T-R-03 | 第 2 项：XXL-JOB 业务任务 | 接入执行器，以作品索引对账/重建为真实任务，按已有设计完成别名切换、互斥、重复触发保护、失败记录及受控管理触发；保持 RuoYi Quartz 现有任务能力 | 真实调度平台触发执行，证明重复触发不并发破坏数据，失败保留旧索引，重跑修复缺失/多余记录；保留任务日志、执行器注册、索引校验证据 | T-R-02；**已完成（受控测试环境，含 RuoYi 管理整合）**；证据见本节 | 2–3 天 |
+| T-R-04 | 第 3 项：独立环境恢复 | 参数化备份/恢复目标和工具路径，补齐业务库、管理库与 MinIO 对象备份清单；向独立数据库与桶恢复，校验核心表、文件元数据和对象摘要；记录备份时间、耗时、RPO/RTO | 目标隔离和非覆盖检查通过；恢复后登录、内容、文件读取完成实测；空文件、损坏备份、缺失对象必须报错；不得将备份生成成功作为恢复成功 | **已完成（全部已发现问题修正，最终代码复验通过）**；证据见本节最终复验 | 2–3 天 |
+| T-R-05 | 第 4 项：敏感配置 | 扫描源码、配置、日志与候选产物及 Git 历史，只输出脱敏位置；区分示例与真实值；补齐关键配置缺失启动失败、环境隔离与凭据注入；登记需轮换凭据而不暴露原值 | 使用测试凭据验证缺失/占位值拒绝、有效注入可启动、日志和产物不泄露；真实生产值交由受控渠道配置并保留脱敏证据；不重写 Git 历史 | 代码与本地验证已完成；生产配置与凭据复用/轮换确认待环境，见本节记录 | 1–2 天 |
+| T-R-06 | 第 5 项：测试环境发布准备 | 固定提交、依赖和镜像摘要，补齐镜像构建/注册表、测试配置、启动健康检查及 Nacos 注册；核验远端必需检查与分支保护；整理迁移兼容、备份和回滚预案 | 在干净构建上下文生成可追溯产物；候选提交到镜像摘要到测试实例一一对应；失败检查能阻止合并；确认环境、注册表、维护人和回滚版本 | T-R-01、T-R-05；工具已实现，本地专项通过；固定候选、远端权限与环境验收待环境，见执行记录 | 2–3 天 |
+| T-R-07 | 第 5 项：发布与回滚验收 | 将本轮业务链部署到已确认的隔离测试环境，执行受控数据冒烟、权限、事件与调度回归，完成一次实际版本回滚；检查可读取的运行日志与关键健康/故障指标 | 记录提交、流水线、镜像、配置版本、迁移、备份、操作时间及回滚后验收；应用回滚不自动倒退数据库，无法兼容的迁移先通过恢复方案评审；形成测试环境就绪结论 | T-R-02/03/04/05/06；待环境 | 1–2 天 |
+
+### 顺序、检查入口与环境解除条件
+
+推荐单人顺序：T-R-01 → T-R-05 → T-R-02 → T-R-03 → T-R-04 → T-R-06 → T-R-07。隔离环境与注册表的资料准备可在 T-R-01 时启动。合计约 13–19 个有效工作日；发现高风险缺陷后重新估时，不降低完成定义以满足估时。
+
+T-R-01 的现有入口为 `pnpm docs:check`、`pnpm typecheck`、`pnpm build`、`pnpm e2e:ci`、`mvn -B -f sanye_server/pom.xml clean test`、`mvn -B -f sanye_admin_server/pom.xml clean test`。涉及性能差异时补充 `pnpm perf:check`。执行前确认命令不会指向共享数据；全量真实服务回归须先审阅测试数据写入和清理范围，禁止直接复用旧报告通过数字。
+
+环境待办必须有明确目标才能解除：隔离主机/数据库/桶、连接方式、命名空间、维护人、可写数据范围、注册表、测试域名或内部入口、远端分支管理权限、当前部署版本与回滚版本。可先完成脚本、测试和候选产物；对共享库恢复、删除、凭据轮换、分支保护或外部部署等高影响操作，执行前给出具体目标和影响并取得授权。不得把规划请求视为对这些操作的授权。
+
+监控栈完整部署、法律文案、域名运营和视觉设计未新增为本轮独立任务；相关既有差距继续保留。T-R-07 仅要求本次交付所需健康与故障证据。排除的第六项及其他外部门禁未关闭时，不得把测试环境通过写成正式发布通过。
 
 ## 1. 拆分规则
 
@@ -456,6 +974,8 @@ T-G-05 -> T-G-06 -> T-H-01
 
 ## 更新记录
 
+2026-09-09，v2.7：关闭 T-R-02 的本地代码、真实 PostgreSQL/RabbitMQ/Redis/ES 验收；保留历史失败过程，最终结论以上述最终验收记录为准。未关闭 T-R-03 或正式发布门禁。
+
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-21 | v0.3 | 更新 T-B-03 的 Compose 配置、XXL-JOB MySQL 依赖、Docker Desktop/WSL 实际状态和验证证据 | Docker 配置修复与本地诊断 |
@@ -479,3 +999,5 @@ T-G-05 -> T-G-06 -> T-H-01
 | 2026-08-25 | v2.2 | 将剧场版的多条媒体记录改为语言或播放线路展示，消除第一集、第二集错误语义 | `animeDetailView.vue`、`e2e/e2e-movie-playback-lines.mjs` |
 | 2026-08-25 | v2.3 | 登记搜索目录回源与外部缓存、V9 导入查重索引、8 路受控抓取和剧集批量写入；真实来源耗时保留为待环境复测 | search 12/12、anime 76/76、客户端 typecheck/build、`pnpm docs:check` |
 | 2026-08-26 | v2.4 | 固定桌宠和前端工具链安全版本，登记 CI 管理后端测试、浏览器回归与依赖审计门禁 | `pnpm typecheck`、`pnpm build`、`pnpm e2e:ci`、`pnpm audit --audit-level high` |
+| 2026-09-09 | v2.5 | 将用户保留的五项范围拆为 T-R-01 至 T-R-07，登记依赖、估时、验收与环境条件；第六项保持排除 | 用户范围确认、当前源码和部署脚本只读核对；本次仅规划 |
+| 2026-09-09 | v2.6 | 执行 T-R-01，统一本机工具链，修复跨集线路与管理会话竞态，补齐隔离数据库验证 | 本节执行记录、Maven 报告、前端与浏览器命令 |

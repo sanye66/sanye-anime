@@ -28,6 +28,24 @@ class AnimeUrlImportServiceTest {
     private FakePageFetcher fetcher;
     private AnimeUrlImportService service;
 
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfSystemProperty(named = "sanye.media.live", matches = "true")
+    void livePreviewFollowsCanonicalRedirectAndExtractsPlayback() throws Exception {
+        var liveFetcher = new com.sanye.anime.sanye_anime.media.HttpMediaPageFetcher(30000, 2097152);
+        var media = new MediaImportService(catalogStore, mediaStore, liveFetcher, "yhdmtv.cc,www.yhdmtv.cc", 5);
+        var previewService = new AnimeUrlImportService(null, media, liveFetcher, null);
+        var preview = previewService.previewFrom("https://yhdmtv.cc/p/74487/153/0");
+        assertTrue(preview.title().contains("天气之子"));
+        assertEquals(1, preview.episodes().size());
+        assertTrue(preview.episodes().getFirst().playbackOptions().size() >= 2);
+        assertTrue(preview.episodes().stream().noneMatch(episode -> episode.playbackUrl().contains("v6.qrssv.com")));
+        assertTrue(preview.episodes().stream().anyMatch(episode -> episode.playbackUrl().contains(".m3u8")));
+        var report = java.nio.file.Path.of("target", "live-preview.json");
+        java.nio.file.Files.createDirectories(report.getParent());
+        new ObjectMapper().writeValue(report.toFile(), preview);
+        System.out.println("LIVE_PREVIEW_EPISODES=" + preview.episodes().size());
+    }
+
     @BeforeEach
     void setUp() {
         AnimeMemoryStore.resetForTest();
@@ -63,7 +81,19 @@ class AnimeUrlImportServiceTest {
         assertEquals(2024, result.anime().year());
         assertEquals("已发布", result.anime().status());
         assertEquals(2, result.episodesImported());
-        assertEquals("https://media.example/one.m3u8", mediaStore.episodesOf(result.anime().id()).getFirst().playbackUrl());
+        assertEquals("https://media.example/one.m3u8", mediaStore.episodesOf(result.anime().id()).get(0).playbackUrl());
+    }
+
+    @Test
+    void previewCachesEpisodesButRetriesEmptyResults() {
+        String url = "https://example.com/p/900/";
+        fetcher.pages.put(url, "<title>测试作品</title>");
+        assertTrue(service.previewFrom(url).episodes().isEmpty());
+        fetcher.pages.put(url, "<title>测试作品</title><script>var player_aaaa={\"url\":\"https://media.example/one.m3u8\"};</script>");
+        var playable = service.previewFrom(url);
+        assertEquals(1, playable.episodes().size());
+        fetcher.pages.put(url, "<title>测试作品</title>");
+        org.junit.jupiter.api.Assertions.assertSame(playable, service.previewFrom(url));
     }
 
     @Test
@@ -102,7 +132,7 @@ class AnimeUrlImportServiceTest {
     @Test
     void importsCleanTitleFromCurrentDetailTemplate() {
         fetcher.pages.put("https://example.com/v/903/153",
-                "<html><head><title>日韩动漫《天气之子》-高清全集在线观看/手机免费番剧-樱花动漫</title>"
+                "<html><head><title>电影综合《天气之子》-高清全集在线观看/手机免费番剧-樱花动漫</title>"
                         + "<meta name='description' content='公开简介。'></head><body>"
                         + "<div class='module-info-heading'><h1>天气之子</h1></div>"
                         + "<img src='/data/uploadFile/logo.png' alt='樱花动漫'>"
@@ -114,6 +144,7 @@ class AnimeUrlImportServiceTest {
         var result = service.importFrom("https://example.com/p/903/153/0", true);
 
         assertEquals("天气之子", result.anime().title());
+        assertEquals("剧场版", result.anime().type());
         assertEquals("https://img.example/weather.jpg", result.anime().coverUrl());
         assertEquals(1, result.episodesImported());
     }
@@ -150,7 +181,7 @@ class AnimeUrlImportServiceTest {
         assertEquals("预览简介。", result.summary());
         assertEquals("https://img.example/preview.jpg", result.coverUrl());
         assertEquals(1, result.episodes().size());
-        assertEquals("https://media.example/preview.m3u8", result.episodes().getFirst().playbackUrl());
+        assertEquals("https://media.example/preview.m3u8", result.episodes().get(0).playbackUrl());
         assertTrue(catalogStore.allCards().stream().noneMatch(card -> card.title().equals("预览作品")));
     }
 

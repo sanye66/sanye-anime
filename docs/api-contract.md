@@ -2,10 +2,80 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.8 |
+| 文档版本 | v0.24 |
 | 文档状态 | 设计基线，与 [详细技术设计](./technical-design.md) 对应；实现时以此为准并回填字段变更 |
 | 适用范围 | `sanye_server` 业务接口、SSE 流式事件、管理平台协作接口 |
-| 更新时间 | 2026-08-25 |
+| 更新时间 | 2026-10-09 |
+
+## 安卓本地桥接契约（2026-10-09）
+
+`SanyeCatalog` 是仅供安卓包调用的 Capacitor 插件，不是 HTTP 接口。`list()` 返回 `{ items: SavedMedia[] }`，按更新时间倒序；`save({ title, url, coverUrl?, summary?, favorite? })` 返回 `{ item }`，仅接受 1–120 字符标题和不超过 2048 字符的 HTTPS 地址（拒绝用户信息、本地或数字 IP 主机名、控制字符；**作品地址允许查询参数与片段**，因为来源播放页地址天生是 `.../p/123?from=search#ep-2` 这种形态，限制参数会把用户的保存与历史整条拒掉）。可选封面允许随包相对路径 `/assets/...`（禁止 `..`）与公网 HTTPS 图床地址（可带查询参数），拒绝用户信息、片段、非 443 端口与非公网主机名（无点号、纯数字 IP、`.local`/`.localhost`/`.internal`）；图片白名单不赋予页面请求权限；简介上限 500 字。写入类方法失败时使用带错误码的桥接拒绝：`E_CATALOG_PARAM`（参数非法）、`E_CATALOG_NOT_FOUND`（收藏目标不存在）、`E_CATALOG_READ`、`E_CATALOG_WRITE`、`E_CATALOG_DELETE`，并把原始异常交给 Capacitor 写日志，前端不提前展示成功状态。相同 URL 更新标题和时间并保留收藏，未提供新封面/简介则保留旧值；可选 `favorite: true` 在同一事务中将新建或已有作品收藏，不传时新作品不收藏、已有收藏状态不变。`setFavorite({ id, favorite })` 返回 `{ item }`，目标不存在则失败。`SavedMedia` 包含 `id`、`title`、`url`、`coverUrl`、`summary`、`favorite`、`updatedAt`（毫秒）。
+
+更新记录：2026-10-09，v0.24，按 VQ-61 补齐安卓设置的音量键与缓存清理的实际调用面：`settings` 新增 `volume`（0–1 的有限数，0 表示静音；原生 `validSetting`／`readSettings` 同步支持，落盘仍是 `app_settings` 键值表、无需迁移），客户端拖动音量条后 400 毫秒合并写入一次、启动读取设置时恢复（此前音量只存在内存里，每次启动跳回 100%）；`clearMediaCache()` 从「声明但从未被调用」改为「我的 → 存储 → 清理媒体缓存」，调用时同时清空原生缓存目录与页面内存里的分片缓存表，返回的 `removed` 口径不变；`SanyeSource.search`／`preview` 在客户端补 15 秒 JS 侧上限（原生 6 秒／15 秒期限之外的兜底），超时按失败处理并让在途记录出表，不再把 Promise 永久留在 `previewPending`。证据：原生 JVM 单测 `gradlew --offline :app:testDebugUnitTest`（31 项 30 通过／1 跳过／0 失败，含新增音量档位断言）、安卓浏览器门禁 15 个文件 55 项 55 通过 0 失败（`e2e/android-playback-resilience.test.cjs` 断言音量落盘与缓存清理）。真机落盘与迁移仍待环境。
+
+更新记录：2026-10-09，v0.23，按 VQ-60 把安卓桥接契约回填到当前实现并补上失败语义：作品地址允许查询/片段（封面仍拒绝片段、非 443 端口与非公网主机名）、`save` 与历史写入的失败带错误码并保留异常日志、设置项补 `qualityProfile`/`frameTarget`、`clearMediaCache()` 的 `removed` 为删除的文件与子目录总数、`SanyeSource.search` 在入口全失败时以 `E_SOURCE_UNAVAILABLE` 拒绝而不是返回假空结果、`preview` 标题缺失不再整次失败、`SanyePlayer` 失败以 `E_PLAYER_WINDOW` 拒绝。证据为原生 JVM 单测 `gradlew --offline :app:testDebugUnitTest`（30 通过／1 跳过／0 失败）、安卓浏览器门禁 47 项通过；真实设备与真实站点兼容仍待环境。
+
+更新记录：2026-09-24，v0.22，安卓桥接保存增加可选的事务内收藏，公开来源封面单独按精确图片主机白名单接纳；来源页面请求白名单未扩大。证据为原生单测、真实 HTML 快照解析与隔离前端交互，真机持久化仍待环境。
+
+更新记录：2026-09-24，v0.17，登记安卓本地片库桥接的方法、验证约束和错误边界；真机调用待环境。
+
+安卓桥接新增 `recordProgress({mediaUrl,title,episodeId,episodeTitle,lineId,positionSeconds,durationSeconds,completed}) → {item}`，按稳定作品 URL、集数和线路去重；只在播放确实推进后写入，不要求先保存作品；写入用 `INSERT OR REPLACE` 的返回行号判成败并直接组装返回项（不再回读同一条记录），返回项字段与 `listHistory()` 的单条记录完全一致。`listHistory() → {items}` 按 `updated_at DESC, media_url, episode_id, line_id` 倒序返回全部历史（不截断用户数据，排序由匹配的四列索引承担）。`clearHistory() → {removed}` 不影响片库与收藏。`getSettings() → {settings}` 和 `setSettings({settings}) → {settings}` 支持 `theme`（`system/light/dark`）、`autoPlay`（布尔）、`playbackRate`（0.5–2）、`qualityProfile`（`off/fast/balanced/sharp`）、`frameTarget`（`off/auto/60/90/120/144/165/240`，数字档位同样接受）及 `volume`（0–1，0 表示静音）；任一键非法则整次设置保存被拒，原有设置不变。`clearMediaCache() → {removed}` 仅清理应用专属缓存目录，`removed` 是删除的文件与子目录总数（不含缓存根目录本身）；页面侧「我的 → 存储 → 清理媒体缓存」会同时清空内存分片缓存表（VQ-61），底层媒体缓存写入仍由原生播放器路径决定。调用方按暂停、后台和时间节流保存，并对读取类调用（`list`/`listHistory`/`getSettings`）与写入类调用（`recordProgress`）统一加 8 秒上限，超时按失败重试处理而不是永久停在「正在读取」；搜索与预览另有 15 秒客户端上限。真实设备落盘/迁移尚未验证。
+
+更新记录：2026-10-09，v0.23，同上一条：历史写入不回读、历史排序索引、设置白名单补档位、缓存清理计数口径与读取超时；真机落盘/迁移仍待环境。
+
+更新记录：2026-09-24，v0.18，补充安卓历史、设置及限定缓存清理桥接契约；实现以本机源码和单测为据，不推断真机通过。
+
+安卓 `SanyeSource` 原生只读桥接：`search({keyword}) → {hits:[{title,sourceUrl,coverUrl,summary}]}`，搜索词 1–50 字（按码点计），搜索页仍是 PC 已配置的 `yhdmtv.cc` 页面，最多返回 30 条；两个搜索入口并发竞速，先返回非空结果者胜，**只有两个入口都取不到页面时**才以 `E_SOURCE_UNAVAILABLE` 拒绝（空 `hits` 只表示确实没有匹配），这样调用方的一次静默重试才会生效。`preview({sourceUrl}) → {title,sourceUrl,coverUrl,summary,episodes:[{id,title,sourceUrl,playbackUrl,mimeType,lineId}]}`，仅 PC 媒体导入白名单 `yhdmtv.cc` 与 `yinghuadongman.org.cn` 的 HTTPS 详情 URL（`/p/` 或 `/v/`，不带查询串与片段），预览不写本地库，最多 1000 条选集；解析页面明示的 `player_aaaa` MP4/HLS 直链、同作品列表及 `temLineList` HTTPS HLS 地址，不执行脚本或把 iframe 冒充原生媒体；临时播放 URL 仅进入播放器，历史使用稳定的来源页 URL。选集项尚未解析时 `playbackUrl` 为空，由用户选择后再访问对应来源页；预览会并发探测最多 3 条首集候选（1 秒预算）补齐 `playbackUrl`，超时返回已完成的部分而不是丢弃。页面没有标题时 `title` 返回空串（不再整次失败），由调用方用搜索命中或已保存作品的标题补齐。原生预览缓存 20 秒、上限 24 条，超限只淘汰最快过期的一条。单次请求与整体期限为 6 秒／15 秒，期限在入队前起算。真实站点兼容尚待验证。
+
+更新记录：2026-10-09，v0.23，同上一条：搜索入口全失败改为报错（不再假空）、标题缺失降级、首集探测保留已完成结果、缓存改逐条淘汰、并登记 30 条结果／1000 条选集／20 秒 24 条缓存等此前未写入的上限。
+
+安卓 `SanyePlayer` 原生桥接只操作当前窗口，不写本地库：`setLandscape({enabled})` 进入横屏前记录当前方向、退出时还原，`setImmersive({enabled})` 隐藏或恢复系统栏（全屏时允许内容铺进刘海/挖孔区），`setKeepAwake({enabled})` 按播放状态开关屏幕常亮；三者成功时返回空对象。窗口不可用（`getActivity()` 为空）或主线程执行失败时以 `E_PLAYER_WINDOW` 拒绝，不会把 Promise 永久挂起；WebView 重载后插件内的横屏标志与记录方向回到初始值，避免「上次退出后仍是横屏」让下一次进入播放器不再下发横屏请求。
+
+更新记录：2026-10-09，v0.23，同上一条：补记 `SanyePlayer` 三个窗口方法的参数、错误码与重载复位语义（此前只有实现、未进入契约）。
+
+更新记录：2026-09-24，v0.21，补设备来源详情封面/简介字段以及 SQLite v3 片库桥接可选元数据，失效或非白名单封面拒绝持久化；不把源页面样例推导为 PC 全量详情能力。
+
+核对补记：2026-09-24，PC 搜索页面与 PC 媒体导入白名单是不同契约；安卓 `preview` 白名单新增 PC 已交付目录中的 `yinghuadongman.org.cn`，但 `search` 仍只调用原有 `yhdmtv.cc` 搜索地址。包内只读目录快照来源 `sanye_desktop/runtime/seed.sql`，不是 `SanyeCatalog` 中的用户作品，也不是在线搜索结果。
+
+更新记录：2026-09-24，v0.20，`preview` 的每个选集项增加 `sourceUrl` 和 `lineId`；同作品播放列表可返回 `playbackUrl` 为空的待解析项，用户选中后对其白名单来源页再次调用 `preview`。页面公开 `temLineList` 可提供 HTTPS HLS 线路，来源仍不执行脚本或获取第三方媒体内容。来源网站真实结构兼容待环境，不将样例解析视为全部来源契约完成。
+
+更新记录：2026-09-24，v0.19，补安卓设备端来源搜索与当前播放页只读预览子集，证据限固定样例与本机构建，真实站点待环境。
+
+## 外部搜索备用来源（2026-09-17）
+
+更新记录：2026-09-17，v0.16，外部搜索候选增加 `alternativeSourceUrls: string[]`，默认空数组、最多三个。按同名作品合并结果时仍保留主要 `sourceUrl` 和分类优先级，但不丢弃其他不同的来源页。客户端将其传入直接观看页面，各来源继续通过现有白名单预览接口解析；仅对同名、单集电影合并播放线路，电视剧不跨来源合并集数。
+
+## 当前核对（2026-09-10）
+
+可靠事件、搜索重建和 RuoYi XXL-JOB 的当前契约见本文前部；源代码与本次测试范围见[当前审计](./current-status-audit.md)。接口定义、Mock 成功和真实服务可用性是不同证据；真实 CAS、AI 与目标环境端到端验收仍待环境。
+
+更新记录：2026-09-10，v0.15，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+## 索引重建内部接口
+
+`POST /api/v1/search/reindex` 仅接受 `X-Caller-Name` 为 `sanye-server-job` 或 `sanye-admin-server`，且 `X-Internal-Token` 与搜索服务配置匹配的调用。缺失、错误或空配置均返回业务码 `2002`，不开始索引操作。普通搜索调用者无权触发重建。
+
+成功响应保持 `ApiResponse`，`data` 为 `{ "indexed": 2 }`，计数为本次完整公开目录写入数量，允许空目录为 `0`。重建并发、源数据失败、分页不完整、重复作品、非发布状态、批量写入失败或校验失败，均返回 `SEARCH_UNAVAILABLE`，不把异常原文返回给调用者。候选索引验证成功后原子切换别名；失败保留旧索引。
+
+XXL-JOB 3.1.0 管理台的登录会话、任务触发和日志接口由 RuoYi 服务端代理访问。原 `/monitor/job/*` 仍为 Quartz；新增以下独立接口，公开网关前缀为 `/api/v1/admin`：
+
+| 方法与路径 | 权限 | 响应或约束 |
+| --- | --- | --- |
+| `GET /monitor/xxl-job` | `monitor:job:list` | `data` 含 `configured`、`jobId`、`jobName`、`executorAppName`、`executorOnline`；未配置明确返回 `configured=false` |
+| `GET /monitor/xxl-job/logs` | `monitor:job:query` | 参数 `pageNum`、`pageSize`、`status`，状态只允许 -1/1/2/3（全部/成功/失败/进行中）；`data={rows,total}` |
+| `POST /monitor/xxl-job/trigger` | `monitor:job:changeStatus` | 不接受可变任务参数；成功仅表示调度已提交，实际结果由日志确认；记录 RuoYi 操作审计 |
+
+日志行包含 `id`、`jobId`、`triggerTime`、`handleTime`、`triggerCode`、`handleCode`、`status`、`triggerMessage`、`handleMessage`。状态为 `PENDING/RUNNING/SUCCESS/FAILED`。消息为固定状态摘要，不透传调度台 HTML、内部地址、堆栈、Cookie 或凭据；详情弹窗展示该行摘要。服务端只允许配置中的任务编号，核对执行器组、`BEAN`、`rebuildAnimeIndex`、`DISCARD_LATER`、无自动重试和空参数。浏览器无法指定任务编号、调度台地址或执行器地址。提交超时或响应不明确时提示先查日志，不自动重发。
+
+更新记录：2026-09-09，v0.14，登记 RuoYi XXL-JOB 状态、日志、触发与权限契约，依据管理后端测试和真实浏览器验收。
+
+更新记录：2026-09-09，v0.13，收紧重建入口权限并固定响应与失败语义；证据为 `SearchControllerSecurityTest` 和 T-R-03 调度报告。
+
+## 可靠作品事件契约
+
+`anime.status.changed` 同时表示作品状态或正文元数据改变。信封为 `eventId`、`type`、字符串 `aggregateId`、正整数 `version`、`occurredAt` 和 `payload`。载荷包含 `animeId`、`id`、`title`、`originalTitle`、`type`、`year`、`score`、`status`、`coverUrl`、`tags`、`updateText`、`summary`；两个作品编号必须一致。版本由作品行的数据库事务递增，消费者按聚合串行处理，只接受高于已处理版本的事件；所有非已发布状态均删除索引文档。
+
+`POST /api/v1/manage/anime/{id}/events/compensate` 从当前主数据生成新版本事件，成功返回 `data: "queued"`。要求与其他管理接口一致的 `X-Caller-Name` 和 `X-Internal-Token`，网关不公开该路径。不存在作品返回既有 NOT_FOUND，未授权使用既有 FORBIDDEN。验收证据见 [任务清单](./development-tasks.md)。
 
 ## 1. 通用约定
 
@@ -360,9 +430,11 @@ CAS 回调成功响应（data）：
 
 | 方法 | 路径 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/search/external?keyword=&size=` | 登录/匿名 | 读取授权外部搜索页，返回可导入的 `/p/` 详情页候选 |
+| GET | `/api/v1/search/external?keyword=&type=&preferredOnly=&size=` | 登录/匿名 | 读取授权外部搜索页，返回可直接观看或导入的 `/p/` 详情页候选；`type` 可选；`preferredOnly=true` 时先返回别名正式标题结果 |
 
-当前外部搜索格式为 `https://yhdmtv.cc/search/index.html?keyword=<urlencoded keyword>`，该页面的候选列表由公开的 `/public/auto/search1.html?keyword=<urlencoded keyword>` 动态返回。`keyword` 参数可传普通关键词，也可传完整 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL；服务端会提取其中的 `keyword` 后再查询外部候选。服务端只返回标题、详情页 URL、封面和摘要候选，详情页 URL 允许 `/p/` 下的多段路径。同一关键词和数量的有效候选缓存 120 秒，空结果缓存 10 秒，并发相同请求合并为一次远端读取。客户端先查询站内搜索；ES 零命中或不可用时搜索服务回源动漫公开目录，目录仍无结果时客户端才请求外部候选。客户端对每条候选提供两条路径：直接观看进入站内 `/watch/external?sourceUrl=...`，由客户端调用 `/api/v1/anime/external-preview` 只读解析元数据和播放地址，并复用站内 ArtPlayer/HLS 播放器；导入观看调用 `/api/v1/anime/import-url` 写入作品后跳转正式详情播放。站内直接观看不创建作品、不写入剧集，也不代理或下载视频流。
+当前外部搜索格式为 `https://yhdmtv.cc/search/index.html?keyword=<urlencoded keyword>`，该页面的候选列表由公开的 `/public/auto/search1.html?keyword=<urlencoded keyword>` 动态返回。`keyword` 参数可传普通关键词，也可传完整 `https://yhdmtv.cc/search/index.html?keyword=...` 搜索 URL；服务端会提取其中的 `keyword` 后再查询外部候选。明确登记的作品简称会扩展为正式标题和用户原词，例如“春物”会并行查询“我的青春恋爱物语果然有问题”和“春物”；正式标题结果优先，随后保留原词本身能够召回的其他标题，未登记短词只查询原词且不做别名猜测。响应候选字段为 `title`、`sourceUrl`、`coverUrl`、`summary` 和 `type`。服务端只遍历 `/p/` 详情页候选，每路结果的规范化标题必须严格包含该路查询词，再按标题合并去重；分类只在来源文本具有确定证据时映射为“电视动画”“剧场版”“网络动画”或“原创动画”，无确定分类的候选只出现在“全部”。可选 `type` 参数按该字段精确筛选。
+
+每个实际查询词的有效候选缓存 120 秒，空结果缓存 10 秒，并发相同查询词合并为一次远端读取。客户端并行查询站内搜索、`preferredOnly=true` 的高相关候选和完整外部候选；正式标题结果先返回并立即展示，原词回源完成后再补齐其他标题，两次外部请求共享正式标题的同一次远端读取。外部候选与“已在片库”结果分区显示，因此站内命中不会阻止外部结果出现。来源封面地址长期不可用且已核对同一作品元数据时，服务端按失效图片 URL 精确替换为可用真实封面；其他加载失败仍由客户端回退到网关占位封面，不按模糊标题猜测图片。客户端对每条外部候选提供两条路径：直接观看进入站内 `/watch/external?sourceUrl=...`，由客户端调用 `/api/v1/anime/external-preview` 只读解析元数据和播放地址，并复用站内 ArtPlayer/HLS 播放器；导入观看调用 `/api/v1/anime/import-url` 写入作品后跳转正式详情播放。站内直接观看不创建作品、不写入剧集，也不代理或下载视频流。
 
 | GET | `/api/v1/anime/external-preview?sourceUrl=` | 登录/匿名 | 只读解析白名单外部作品页面，返回标题、简介、封面、剧集和播放器地址，供站内预览页播放 |
 
@@ -381,7 +453,7 @@ sourceUrl
 episodes
 ```
 
-该接口不创建或更新作品，不写入剧集媒体记录；外部播放地址仍由站内 ArtPlayer/HLS 播放器加载。
+该接口不创建或更新作品，不写入剧集媒体记录；外部播放地址仍由站内 ArtPlayer/HLS 播放器加载。预览与导入共享详情页元数据解析，`type` 会同时读取作品名、明确类型字段和页面分类标题，并按“剧场版”“网络动画”“原创动画”“电视动画”顺序确定性映射。
 
 ## 11. 管理端协作接口（sanye_admin ↔ sanye_server）
 
@@ -745,6 +817,8 @@ data: {"messageId":0,"code":3002,"reason":"匿名每日额度已用完，登录�
 
 ## 更新记录
 
+2026-09-09，v0.12：补充 T-R-02 事件信封、版本、完整快照和受控补偿接口；未授权调用已在真实服务验证。
+
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-19 | v0.2 | 追加第 13 节接口响应示例（实测）与更新记录 | 企业级文档完善 |
@@ -754,3 +828,6 @@ data: {"messageId":0,"code":3002,"reason":"匿名每日额度已用完，登录�
 | 2026-08-25 | v0.6 | 补充外部候选直接观看与导入观看双路径，以及 URL 导入并发读取限制 | `searchView.vue`、`AnimeUrlImportService`、`MediaImportService`、anime 测试与客户端 typecheck |
 | 2026-08-25 | v0.7 | 将外部候选直接观看收口为站内 `/watch/external` 预览，补充只读预览接口和响应字段契约 | `AnimeController`、`AnimeUrlPreviewResult`、`searchView.vue`、站内 Playwright 回归、anime 76 项测试 |
 | 2026-08-25 | v0.8 | 搜索增加 ES 零命中目录回源、外部候选短时缓存和并发请求合并；导入改为 8 路固定线程池与剧集批量写入 | search 12 项、anime 76 项单元测试，客户端 typecheck/build |
+| 2026-08-26 | v0.9 | 外部候选与站内片库改为并行分区展示；增加标题严格匹配、确定性分类、同名去重、历史类型展示校正、封面失败回退，并同步预览/导入详情分类 | search 15 项、anime 80 项单元测试，客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v0.10 | 增加精确作品简称解析，“春物”按正式标题查询并排除无关子串结果；搜索封面改为立即加载、5 秒超时回退且窄屏保持可见 | search 17 项、客户端 typecheck/build、搜索专项 Playwright 5/5 |
+| 2026-08-26 | v0.11 | 将作品简称从替换查询修正为扩展查询：正式标题和用户原词并行回源，先渐进展示正式标题结果，再补齐原词能召回的其他标题；为已核验失效图片精确替换同作品真实封面 | search 18/18、客户端 typecheck/build、搜索 Playwright 5/5、真实外部接口与图片复测 |

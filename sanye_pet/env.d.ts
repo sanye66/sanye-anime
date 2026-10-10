@@ -6,6 +6,7 @@ interface Window {
     hide(): void
     quit(): void
     toggleTop(): void
+    onProgress(listener: (value: { percent: number; barWidth: number; barHeight: number }) => void): () => void
     openClient(path?: string): Promise<{ ok: boolean; reason?: string }>
     getConfig(): Promise<{
       clientUrl: string

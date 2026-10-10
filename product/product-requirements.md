@@ -2,14 +2,16 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.5 |
+| 文档版本 | v0.7 |
 | 文档状态 | Baseline，核心客户端首版范围已冻结，桌宠作为 P1 附属形态规划 |
 | 功能明细 | [feature-specification.md](./feature-specification.md) |
 | 总体架构 | [overall-architecture.md](./overall-architecture.md) |
 | 决策记录 | [decision-log.md](../docs/decision-log.md) |
 | 目标平台 | PC Web，Windows 优先；桌宠首发 Windows，macOS 作为后续兼容目标 |
 | 参考素材 | `C:\Users\10121\Desktop\d29264d2565ed3a9194a8426ae77c48d.jpg` |
-| 更新时间 | 2026-08-18 |
+| 更新时间 | 2026-09-16 |
+
+更新记录：2026-09-16，v0.7，按用户确认依次提升运动补帧、修复与超分、自动及手动高刷目标；交互、设备回退和验收以[功能详细说明](./feature-specification.md)的“播放质量与实时补帧”为准。
 
 ## 1. 产品概述
 

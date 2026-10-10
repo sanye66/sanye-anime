@@ -53,7 +53,7 @@ public class InMemoryAnimeCatalogStore implements AnimeCatalogStore {
     /** 委托内存聚合逻辑生成详情。 */
     @Override
     public AnimeDetail detailOf(long id) {
-        return AnimeMemoryStore.detailOf(id);
+        return isPublished(id) ? AnimeMemoryStore.detailOf(id) : null;
     }
 
     /** 生成新编号并写入内存目录，空状态默认为草稿。 */

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, screen, shell, nativeImage } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
+const { spawn } = require('node:child_process')
 
 const CLIENT_URL = process.env.SANYE_CLIENT_URL || 'http://localhost:5173'
 // 桌宠窗口只包住角色和交互面板，透明区域不会绘制额外场景背景。
@@ -24,6 +25,83 @@ let win = null
 let tray = null
 let alwaysOnTop = true
 let settings = { ...DEFAULT_SETTINGS }
+let runnerWindow = null
+let progressWatcher = null
+let lastProgressAt = 0
+let candidateBar = null
+let candidateCount = 0
+
+function startProgressWatcher() {
+  if (process.platform !== 'win32') return
+  const script = path.join(__dirname, 'watch-progress.ps1')
+  progressWatcher = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-File', script], {
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  let pending = ''
+  progressWatcher.stdout.on('data', (chunk) => {
+    pending += chunk.toString()
+    if (pending.length > 8192) pending = ''
+    let newline
+    while ((newline = pending.indexOf('\n')) !== -1) {
+      const line = pending.slice(0, newline).trim()
+      pending = pending.slice(newline + 1)
+      try { updateRunner(JSON.parse(line)) } catch { runnerWindow?.hide() }
+    }
+  })
+  progressWatcher.on('exit', () => { progressWatcher = null; runnerWindow?.hide() })
+  progressWatcher.on('error', () => { progressWatcher = null; runnerWindow?.hide() })
+  // 采集器无响应时收起旧进度，不能继续显示过期位置。
+  const staleTimer = setInterval(() => {
+    if (Date.now() - lastProgressAt > 1500) runnerWindow?.hide()
+  }, 1000)
+  app.on('before-quit', () => { clearInterval(staleTimer); progressWatcher?.kill() })
+}
+
+function updateRunner(value) {
+  if (!Number.isFinite(value.percent) || !Number.isFinite(value.x) || !Number.isFinite(value.y) || !Number.isFinite(value.width) || !Number.isFinite(value.height)) {
+    candidateBar = null
+    candidateCount = 0
+    runnerWindow?.hide()
+    return
+  }
+  const display = screen.getDisplayNearestPoint({ x: value.x, y: value.y })
+  const bounds = display.bounds
+  const barWidth = Math.min(Math.round(value.width), bounds.width - 48)
+  const barHeight = Math.max(8, Math.ceil(value.height))
+  if (barWidth < 30 || barHeight > 40 || value.x < bounds.x || value.x + barWidth > bounds.x + bounds.width || value.y - 64 < bounds.y || value.y + barHeight > bounds.y + bounds.height) {
+    candidateBar = null
+    candidateCount = 0
+    runnerWindow?.hide()
+    return
+  }
+  // 聚焦窗口切换时先确认同一条进度条连续出现，避免悬浮窗跟着瞬时的候选条乱跳。
+  const barKey = `${value.x}:${value.y}:${barWidth}:${Math.round(value.height)}`
+  candidateCount = candidateBar === barKey ? candidateCount + 1 : 1
+  candidateBar = barKey
+  if (candidateCount < 3) {
+    runnerWindow?.hide()
+    return
+  }
+  lastProgressAt = Date.now()
+  if (!runnerWindow) {
+    runnerWindow = new BrowserWindow({
+      width: barWidth + 64, height: 64 + barHeight, x: value.x - 32, y: value.y - 64,
+      transparent: true, frame: false, resizable: false, skipTaskbar: true,
+      alwaysOnTop: true, focusable: false, show: false,
+      webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+    })
+    runnerWindow.setIgnoreMouseEvents(true)
+    const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5199'
+    if (process.env.PET_DEV === '1') runnerWindow.loadURL(`${devUrl}/?progressRunner=1`)
+    else runnerWindow.loadFile(path.join(__dirname, '..', 'dist', 'renderer', 'index.html'), { query: { progressRunner: '1' } })
+    runnerWindow.webContents.once('did-finish-load', () => updateRunner(value))
+    runnerWindow.on('closed', () => { runnerWindow = null })
+  }
+  runnerWindow.setBounds({ x: value.x - 32, y: value.y - 64, width: barWidth + 64, height: 64 + barHeight })
+  runnerWindow.webContents.send('pet:progress', { percent: Math.max(0, Math.min(100, value.percent)), barWidth, barHeight })
+  if (!runnerWindow.isVisible() && !runnerWindow.webContents.isLoading()) runnerWindow.showInactive()
+}
 
 function getPositionFile() {
   return path.join(app.getPath('userData'), POSITION_FILE)
@@ -169,6 +247,7 @@ if (!gotLock) {
     applyStartupSetting()
     createWindow()
     createTray()
+    startProgressWatcher()
     app.on('activate', () => showPet())
   })
 }

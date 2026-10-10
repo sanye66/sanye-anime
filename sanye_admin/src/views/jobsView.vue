@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { adminJobApi, adminJobLogApi, type AdminJob, type AdminJobBody } from '@/api/jobs'
 import { useAuthStore } from '@/stores/auth'
+import XxlJobPanel from '@/components/xxlJobPanel.vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
+const scheduler = ref(route.query.scheduler === 'xxl' ? 'xxl' : 'quartz')
+watch(() => route.query.scheduler, value => { scheduler.value = value === 'xxl' ? 'xxl' : 'quartz' })
 const loading = ref(false)
 const rows = ref<AdminJob[]>([])
 const total = ref(0)
@@ -160,9 +166,12 @@ onMounted(() => {
 <template>
   <div class="admin-page">
     <div class="admin-page-heading">
-      <div><span class="header-kicker">三叶的定时记录</span><h2>任务管理</h2><p>Quartz 定时任务的生命周期：查看、立即执行、暂停与恢复。</p></div>
-      <span class="admin-page-count">共 {{ total }} 个任务</span>
+      <div><span class="header-kicker">三叶的定时记录</span><h2>任务管理</h2></div>
+      <span v-if="scheduler === 'quartz'" class="admin-page-count">共 {{ total }} 个任务</span>
     </div>
+    <el-tabs v-model="scheduler" @tab-change="router.replace({ query: { ...route.query, scheduler } })"><el-tab-pane label="Quartz" name="quartz" /><el-tab-pane label="XXL-JOB" name="xxl" /></el-tabs>
+    <XxlJobPanel v-if="scheduler === 'xxl'" />
+    <template v-else>
     <el-alert v-if="failureCount > 0" type="warning" :closable="false" show-icon title="存在失败任务执行记录"><template #default><span>当前有 {{ failureCount }} 条失败记录，请检查执行日志并确认是否需要重试。</span><el-button type="warning" link @click="$router.push('/jobs/logs')">查看日志</el-button></template></el-alert>
     <div class="admin-toolbar job-toolbar">
       <div class="admin-toolbar-spacer" />
@@ -208,10 +217,13 @@ onMounted(() => {
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="void save()">保存任务</el-button></template>
     </el-dialog>
+    </template>
   </div>
 </template>
 
 <style scoped>
+.admin-page { grid-template-columns: minmax(0, 1fr); }
+.admin-page :deep(.el-tabs__item:not(.is-active)) { color: var(--sanye-muted); }
 .job-toolbar { margin-top: -8px; }
 .admin-toolbar-spacer { flex: 1; }
 .job-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }

@@ -1,6 +1,19 @@
 # sanye_server
 
+| 项目 | 内容 |
+| --- | --- |
+| 文档版本 | v1.0 |
+| 文档状态 | 基线 |
+| 关联文档 | [当前审计](../docs/current-status-audit.md) |
+| 更新时间 | 2026-09-10 |
+
 这是项目的 Spring 服务端微服务工程，负责账户、动漫内容、搜索、AI 对话、文件、反馈和定时任务。
+
+## 当前核对（2026-09-10）
+
+当前使用 Java 21.0.12 / Maven 3.9.16。业务事件与 XXL-JOB 索引重建已有实现和受控验收；缺失关键配置会在启动早期拒绝，不能只执行打包命令就认为可启动。环境注入见[配置矩阵](../docs/environment-config.md)，当前验证和运行缺口见[审计](../docs/current-status-audit.md)。
+
+更新记录：2026-09-10，v1.0，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 工程定位
 
@@ -49,5 +62,5 @@ Nacos 注册与配置默认关闭，连接外部基础设施前通过环境变�
 
 - 多服务骨架、网关路由、共享 core/web、OpenFeign 基线与 Flyway 迁移已建立。
 - 已联调接口：系统、首页、作品详情、官网公开接口、AI 会话与 SSE 流式（含推荐、停止、重生成、额度）。
-- 本地认证（CAS Mock）、ES 搜索、会话持久化和 RAG 已完成本地联调；正式 CAS、真实模型额度、RabbitMQ 业务事件、XXL-JOB 业务任务以及动态 Nacos 注册仍属于环境或后续实现边界，具体限制见 [../docs/backend-mvp.md](../docs/backend-mvp.md)。
+- 本地认证（CAS Mock）、ES 搜索、会话持久化和 RAG 已完成本地联调；RabbitMQ 业务事件和 XXL-JOB 业务任务已完成受控验收，正式 CAS、真实模型额度以及目标环境动态 Nacos 注册仍待环境，具体限制见 [../docs/backend-mvp.md](../docs/backend-mvp.md)。
 - Nacos、Sentinel、RabbitMQ、PostgreSQL、Elasticsearch、Redis、MinIO 和 XXL-JOB 的版本与验证门禁见 [../docs/version-baseline.md](../docs/version-baseline.md) 和 [../docs/gap-register.md](../docs/gap-register.md)。

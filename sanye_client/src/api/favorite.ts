@@ -11,6 +11,16 @@ export interface HistoryItem {
   lastViewAt: string
 }
 
+export interface ContinueWatchingItem {
+  animeId: number
+  episodeId: number
+  episodeTitle?: string
+  positionSeconds: number
+  durationSeconds: number
+  completed: boolean
+  updatedAt: string
+}
+
 export const favoriteApi = {
   // 收藏与历史接口统一使用当前登录用户或设备归属。
   /** 查询收藏分页。 */
@@ -28,4 +38,7 @@ export const favoriteApi = {
     http.get<PageResult<HistoryItem>>(`/users/me/history?page=${page}&size=${size}`),
   /** 记录作品观看历史。 */
   recordView: (animeId: string | number) => http.post<void>(`/users/me/history/${animeId}`),
+  continueWatching: (limit = 20) => http.get<ContinueWatchingItem[]>(`/users/me/continue-watching?limit=${limit}`),
+  saveContinueWatching: (item: Omit<ContinueWatchingItem, 'updatedAt'>) =>
+    http.put<ContinueWatchingItem>('/users/me/continue-watching', item),
 }

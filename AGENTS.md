@@ -71,13 +71,24 @@
 ## 开发规则
 
 - 使用根目录 `pnpm-workspace.yaml` 管理 `sanye_client` 和 `sanye_admin` 前端依赖。
-- 使用 Node.js 22 LTS 和 pnpm 10.15.0 作为项目基线。
+- 使用当前本机工具链作为项目基线：Node.js 26.5.0（非 LTS）、pnpm 10.15.0、Java 21.0.12 和 Maven 3.9.16。
 - 前端变更进入更高环境前，执行 `pnpm typecheck` 和 `pnpm build`。
 - 不要向仓库加入真实凭证、供应商密钥或生产数据。
 - 文档新增或实质修改必须遵守 [文档变更规则](docs/document-change-rules.md)：更新唯一事实源、版本、状态、更新时间和更新记录，登记 [文档评审记录](docs/document-review.md)，并运行 `pnpm docs:check`。
 - 文档中的“已完成/已验证”必须关联命令、日志、截图、测试报告或其他可复核证据；外部账户、授权、系统兼容和发布环境阻塞必须保留为 `待环境` 或 `blocked-external`。
 - 重命名项目、包、服务、模块或入口文件时同步更新引用。
 - 保持 `sanye_client` 和 `sanye_admin` 可以独立构建；`sanye_server` 使用独立的 Java 构建流程。
+
+### 桌面免安装包发行物（强制）
+
+- 免安装包中的 `三叶动漫.exe` 必须与 `sanye_desktop/node_modules/electron/dist/electron.exe` 逐字节一致。构建脚本负责还原并校验 SHA-256，校验不一致即中止构建。
+- 禁止让 electron-builder 改写该可执行文件：`sanye_desktop/build-portable.cjs` 的 `win.signAndEditExecutable` 必须保持 `false`，禁止对免安装包 EXE 写入图标、版本资源或签名。
+- 应用图标随包提供 `icon.ico`（与 `sanye_desktop/assets/icon.ico` 一致），桌面快捷方式指向该文件；窗口与托盘继续使用包内 `assets/icon.ico`。EXE 自身显示 Electron 默认图标属已接受取舍，不得靠改写 EXE 恢复。
+- 出现“应用程序控制策略已阻止此文件”、Code Integrity `3077/3033/3118` 或 Smart App Control 拦截时，先按文件哈希与官方 Electron 二进制对照，再判断原因；不得用重建、改名、复制或自签名规避，也不得直接归因为业务代码缺陷。
+- 本地数据库状态必须自愈且探活必须认证：不得只凭 `pg_isready` 判定就绪；复用既有集群前必须校对 `sanye` 角色口令，异常退出残留的 `postmaster.pid` 必须接管，损坏或截断的包文件必须在启动前点名并提示重新完整解压。
+- 交付流程不得被清理步骤阻断：回收站拒绝回收大型目录时改为可恢复地移入 `sanye_desktop/dist/desktop-retired/`，不得删改用户数据，也不得让构建成功后的发布失败。
+- 需要带自定义图标或签名的 EXE 时，先取得可信代码签名并按安装包流程验证；不得把自签名或改写过的未签名 EXE 作为免安装包交付。
+- 细节、证据边界和验收入口见 [本地桌面运行与打包](docs/local-desktop.md) 的“桌面发行物强制规则”；回归门禁为 `pnpm test:desktop`（含 `sanye_desktop/packaging.test.cjs`、`sanye_desktop/runtimeClosure.test.cjs`）与 CI 工作流 `.github/workflows/desktop-check.yml`。
 
 ### 分支、提交与合并规范
 

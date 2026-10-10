@@ -28,7 +28,7 @@ public class AnimeContentRetriever implements ContentRetriever {
 
     /** 注入 ES 客户端和检索配置，统一限制索引与返回条数。 */
     public AnimeContentRetriever(ElasticsearchClient es,
-                                 @Value("${sanye.rag.index:sanye_anime}") String index,
+                                 @Value("${sanye.rag.index:sanye_anime_live}") String index,
                                  @Value("${sanye.rag.top-k:3}") int topK) {
         this.es = es;
         this.index = index;

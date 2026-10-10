@@ -2,6 +2,7 @@ package com.sanye.anime.sanye_favorite;
 
 import com.sanye.anime.sanye_favorite.client.AnimeBrief;
 import com.sanye.anime.sanye_favorite.client.AnimeClient;
+import com.sanye.anime.sanye_favorite.model.ContinueWatchingRequest;
 import com.sanye.anime.sanye_core.auth.AuthContext;
 import com.sanye.anime.sanye_core.exception.BusinessException;
 import com.sanye.anime.sanye_core.web.ApiResponse;
@@ -17,6 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -129,5 +131,41 @@ class FavoriteServiceTest {
         assertEquals(1, result.total());
         assertEquals("星海回声", result.items().get(0).anime().title());
         assertEquals("2026-08-17T16:00:00Z", result.items().get(0).lastViewAt());
+    }
+
+    @Test
+    void continueWatchingMapsRows() {
+        when(jdbc.query(anyString(), org.mockito.ArgumentMatchers.<RowMapper<Object>>any(), any(), any()))
+                .thenAnswer(inv -> {
+                    RowMapper<?> mapper = inv.getArgument(1);
+                    ResultSet rs = mock(ResultSet.class);
+                    when(rs.getLong("anime_id")).thenReturn(1L);
+                    when(rs.getLong("episode_id")).thenReturn(2L);
+                    when(rs.getString("episode_title")).thenReturn("第二集");
+                    when(rs.getLong("position_seconds")).thenReturn(12L);
+                    when(rs.getLong("duration_seconds")).thenReturn(100L);
+                    when(rs.getBoolean("completed")).thenReturn(false);
+                    when(rs.getTimestamp("updated_at")).thenReturn(Timestamp.from(Instant.parse("2026-08-17T16:00:00Z")));
+                    return List.of(mapper.mapRow(rs, 0));
+                });
+        var result = service.continueWatching("device:d1", 20);
+        assertEquals(1, result.size());
+        assertEquals(2L, result.get(0).episodeId());
+        assertEquals(12L, result.get(0).positionSeconds());
+    }
+
+    @Test
+    void saveContinueWatchingUpserts() {
+        var request = new ContinueWatchingRequest(1L, 2L, "第二集", 12L, 100L, false);
+        var result = service.saveContinueWatching("device:d1", request);
+        verify(jdbc).update(anyString(), eq("device:d1"), eq(1L), eq(2L), eq("第二集"), eq(12L), eq(100L), eq(false));
+        assertEquals(1L, result.animeId());
+        assertNotNull(result.updatedAt());
+    }
+
+    @Test
+    void saveContinueWatchingRejectsNegativePosition() {
+        var request = new ContinueWatchingRequest(1L, 2L, null, -1L, 100L, false);
+        assertThrows(BusinessException.class, () -> service.saveContinueWatching("device:d1", request));
     }
 }

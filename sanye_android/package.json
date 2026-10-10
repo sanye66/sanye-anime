@@ -1,0 +1,17 @@
+{
+  "name": "@sanye/sanye_android",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "sync": "capacitor sync android",
+    "open": "capacitor open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

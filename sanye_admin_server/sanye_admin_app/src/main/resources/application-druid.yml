@@ -8,7 +8,7 @@ spring:
             master:
                 url: ${SANYE_ADMIN_DATASOURCE_URL:jdbc:postgresql://localhost:15432/sanye_admin}
                 username: ${SANYE_ADMIN_DATASOURCE_USERNAME:sanye}
-                password: ${SANYE_ADMIN_DATASOURCE_PASSWORD:123456}
+                password: ${SANYE_ADMIN_DATASOURCE_PASSWORD:}
             # 从库数据源
             slave:
                 # 从数据源开关/默认关闭
@@ -42,7 +42,7 @@ spring:
             webStatFilter: 
                 enabled: true
             statViewServlet:
-                enabled: true
+                enabled: false
                 # 设置白名单，不填则允许所有访问
                 allow:
                 url-pattern: /druid/*

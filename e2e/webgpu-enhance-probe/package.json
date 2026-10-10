@@ -1,0 +1,5 @@
+{
+  "name": "sanye-webgpu-enhance-probe",
+  "private": true,
+  "main": "main.cjs"
+}

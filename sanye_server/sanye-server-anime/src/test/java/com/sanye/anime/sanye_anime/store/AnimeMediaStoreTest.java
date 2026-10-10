@@ -1,13 +1,18 @@
 package com.sanye.anime.sanye_anime.store;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanye.anime.sanye_anime.AnimeMemoryStore.AnimeEpisode;
+import com.sanye.anime.sanye_anime.AnimeMemoryStore.AnimePlaybackOption;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
+import java.sql.ResultSet;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -31,20 +36,42 @@ class AnimeMediaStoreTest {
     }
 
     @Test
-    void jdbcStoreReadsAndReplacesRows() {
+    void jdbcStoreReadsAndReplacesRows() throws Exception {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        JdbcAnimeMediaStore store = new JdbcAnimeMediaStore(jdbc, "sanye_anime");
-        when(jdbc.query(anyString(), any(RowMapper.class), anyLong())).thenReturn(List.of(episode(1)));
+        JdbcAnimeMediaStore store = new JdbcAnimeMediaStore(jdbc, new ObjectMapper(), "sanye_anime");
+        when(jdbc.query(anyString(), any(RowMapper.class), anyLong())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            RowMapper<AnimeEpisode> mapper = invocation.getArgument(1);
+            ResultSet rs = mock(ResultSet.class);
+            when(rs.getLong("id")).thenReturn(1L);
+            when(rs.getInt("episode_no")).thenReturn(1);
+            when(rs.getString("title")).thenReturn("第 1 集");
+            when(rs.getString("source_page_url")).thenReturn("https://example.com/p/1");
+            when(rs.getString("playback_url")).thenReturn("https://player.example/1");
+            when(rs.getString("mime_type")).thenReturn("application/vnd.apple.mpegurl");
+            when(rs.getString("source_label")).thenReturn("测试");
+            when(rs.getString("playback_options_json")).thenReturn("["
+                    + "{\"url\":\"https://player.example/1\",\"mimeType\":\"application/vnd.apple.mpegurl\",\"label\":\"主线路\"},"
+                    + "{\"url\":\"https://backup.example/1\",\"mimeType\":\"application/vnd.apple.mpegurl\",\"label\":\"备用线路\"}]");
+            return List.of(mapper.mapRow(rs, 0));
+        });
 
-        assertEquals(1, store.episodesOf(7).size());
+        AnimeEpisode restored = store.episodesOf(7).get(0);
+        assertEquals(2, restored.playbackOptions().size());
+        assertEquals("https://backup.example/1", restored.playbackOptions().get(1).url());
         store.replaceEpisodes(7, List.of(episode(1), episode(2)));
 
         verify(jdbc).update(anyString(), anyLong());
-        verify(jdbc).batchUpdate(anyString(), org.mockito.ArgumentMatchers.<List<Object[]>>any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Object[]>> batch = ArgumentCaptor.forClass(List.class);
+        verify(jdbc).batchUpdate(anyString(), batch.capture());
+        assertTrue(String.valueOf(batch.getValue().get(0)[7]).contains("backup.example"));
     }
 
     private AnimeEpisode episode(int no) {
         return new AnimeEpisode(no, no, "第 " + no + " 集", "https://example.com/p/" + no,
-                "https://player.example/" + no, "text/html", "测试");
+                "https://player.example/" + no, "text/html", "测试",
+                List.of(new AnimePlaybackOption("https://player.example/" + no, "text/html", "主线路"),
+                        new AnimePlaybackOption("https://backup.example/" + no, "text/html", "备用线路")));
     }
 }

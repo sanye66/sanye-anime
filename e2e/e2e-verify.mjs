@@ -70,7 +70,7 @@ try {
   await page.goto(`${BASE}/mine`, { waitUntil: 'networkidle', timeout: 20000 })
   await page.getByText('你的名字', { exact: false }).first().waitFor({ timeout: 10000 })
   const mineText = await page.locator('.mine-library-grid').innerText()
-  ok('我的页收藏与历史', mineText.includes('收藏') && mineText.includes('历史记录'), '收藏/历史面板含作品数据')
+  ok('我的页收藏与历史', mineText.includes('收藏') && mineText.includes('观看历史'), '收藏/历史面板含作品数据')
 
   // 2d. 搜索页：Elasticsearch 已就绪时展示真实命中结果，服务故障另由网络专项覆盖。
   await page.goto(`${BASE}/search?keyword=${encodeURIComponent('你的名字')}`, { waitUntil: 'networkidle', timeout: 20000 })

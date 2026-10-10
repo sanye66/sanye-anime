@@ -24,7 +24,7 @@ public interface AnimeCatalogStore {
     /** 按编号返回原始目录记录，不存在时返回空引用。 */
     AnimeCard cardOf(long id);
 
-    /** 聚合详情、角色、相似作品和排期数据。 */
+    /** 聚合公开详情、角色、相似作品和排期数据；非发布记录返回空引用。 */
     AnimeDetail detailOf(long id);
 
     /** 新增作品并返回存储实现生成的目录记录。 */
@@ -84,7 +84,7 @@ public interface AnimeCatalogStore {
 
     /** 根据更新文案构造未来三集的简化排期。 */
     default List<AnimeSchedule> buildSchedule(AnimeCard card) {
-        if (!card.updateText().contains("更新")) {
+        if (card.updateText() == null || !card.updateText().contains("更新")) {
             return List.of();
         }
         List<AnimeSchedule> schedule = new ArrayList<>();

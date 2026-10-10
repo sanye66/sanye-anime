@@ -3,6 +3,7 @@ import { animeApi } from '@/api/anime'
 import { isAbortError, resolveAssetUrl } from '@/api/http'
 import type { AnimeCard } from '@/api/types'
 import { animeCatalogMap, compareAnimeCatalogOrder } from '@/data/animeCatalog'
+import { placeholderCover } from '@/data/coverFallback'
 
 export interface ShelfCard {
   slug: string
@@ -31,7 +32,8 @@ function toShelfCard(card: AnimeCard, index: number): ShelfCard {
     slug: String(card.id),
     title: local?.title ?? card.title,
     meta: card.updateText ?? card.type,
-    cover: resolveAssetUrl(local?.cover) ?? resolveAssetUrl(card.coverUrl && !card.coverUrl.includes('anime-placeholder') ? card.coverUrl : undefined) ?? '/covers/mushoku-oad.svg',
+    // 缺封面时用通用占位图，不能借用其他作品的封面冒充。
+    cover: resolveAssetUrl(local?.cover) ?? resolveAssetUrl(card.coverUrl && !card.coverUrl.includes('anime-placeholder') ? card.coverUrl : undefined) ?? placeholderCover,
     tone: tones[index % tones.length],
     episode: card.status,
     tag: card.score !== undefined ? `★ ${card.score}` : undefined,

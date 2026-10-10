@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <!-- Customize your theme here. -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <!-- 窗口底色跟随主题（浅色米色／深色夜空蓝）：全屏播放时 WebView 与屏幕之间的缝隙不再露白。 -->
+        <item name="android:windowBackground">@color/sanye_window_background</item>
+        <item name="android:colorBackground">@color/sanye_window_background</item>
+        <!-- 刘海/挖孔屏：横屏全屏时允许内容铺进挖孔区，否则左侧会空出一条系统保留区。 -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+        <item name="android:windowBackground">@color/sanye_window_background</item>
+    </style>
+</resources>

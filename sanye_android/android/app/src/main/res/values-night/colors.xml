@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 深色（含跟随系统为深色）时的窗口底色，与 sanye_client 的页面底色一致。 -->
+    <color name="sanye_window_background">#081428</color>
+</resources>

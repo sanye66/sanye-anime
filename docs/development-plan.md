@@ -2,13 +2,19 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.12 |
+| 文档版本 | v0.13 |
 | 文档状态 | Baseline，单人开发执行计划，已纳入正式编码前置门禁和桌宠增量计划 |
 | 关联文档 | [产品需求文档](../product/product-requirements.md)、[功能详细说明](../product/feature-specification.md)、[桌宠产品需求](../product/desktop-companion-requirements.md)、[产品总体架构](../product/overall-architecture.md)、[桌宠开发计划](./desktop-companion-development-plan.md)、[技术架构](./technical-architecture.md)、[版本基线](./version-baseline.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
 | 开发模式 | 单人开发，自动化质量门禁，必要时外部评审 |
 | 目标版本 | PC Web 动漫内容 + AI 聊天 MVP，后续增加 Windows 桌宠 |
 | 基准工期 | 核心 MVP 21 至 23 周，另预留 2 至 4 周缓冲；桌宠额外 22 个有效工作日，另预留 5 个工作日 |
-| 更新时间 | 2026-08-18 |
+| 更新时间 | 2026-09-10 |
+
+## 当前核对（2026-09-10）
+
+本轮实现和验收状态以[任务清单](./development-tasks.md) T-R-01 至 T-R-07 为准，阶段预算和原排期不等于完成比例。当前可用性与发布限制见[审计](./current-status-audit.md)；本次没有发布或关闭外部门禁。
+
+更新记录：2026-09-10，v0.13，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 计划结论
 

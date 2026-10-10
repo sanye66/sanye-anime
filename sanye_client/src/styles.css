@@ -84,6 +84,9 @@ p { color: #91a0ae; line-height: 1.65; }
   --sanye-night-deep: #0a1321;
   --sanye-sky: #263f62;
   --sanye-coral: #e77d65;
+  /* 实心主按钮底色：比装饰用的珊瑚色更深，保证白字达到 4.5:1 对比度。 */
+  --sanye-primary: #a8423a;
+  --sanye-primary-hover: #b8493f;
   --sanye-sun: #f3c86b;
   --sanye-rope: #a9464e;
   --sanye-star: #eaf2c4;
@@ -123,8 +126,8 @@ p { color: var(--sanye-muted); }
 .hero-panel > div:first-child { position: relative; z-index: 1; }
 .hero-panel h2 { color: #f8f3e7; font-family: Georgia, "Times New Roman", serif; font-weight: 500; letter-spacing: -.04em; }
 .hero-panel h2::first-line { color: var(--sanye-star); }
-.primary-button { border: 1px solid rgba(243, 200, 107, .5); border-radius: 3px 10px 3px 10px; background: var(--sanye-coral); color: #fff6e7; box-shadow: 0 8px 20px rgba(125, 52, 54, .22); }
-.primary-button:hover { background: #f08e71; }
+.primary-button { border: 1px solid rgba(243, 200, 107, .5); border-radius: 3px 10px 3px 10px; background: var(--sanye-primary); color: #fff7ea; box-shadow: 0 8px 20px rgba(125, 52, 54, .22); }
+.primary-button:hover { background: var(--sanye-primary-hover); }
 .hero-art { position: relative; overflow: hidden; background: linear-gradient(145deg, #e48368 0%, #c95f62 55%, #9f4653 100%); color: #fff2df; }
 .hero-art::before { position: absolute; top: 16%; left: -12%; width: 120%; height: 42%; border: 1px solid rgba(255, 245, 215, .7); border-radius: 50%; content: ''; transform: rotate(-18deg); }
 .hero-art::after { position: absolute; right: 17%; bottom: 15%; width: 9px; height: 9px; border-radius: 50%; background: var(--sanye-star); box-shadow: -93px -58px 0 2px rgba(234, 242, 196, .9), -41px -107px 0 1px rgba(243, 200, 107, .9), 78px -73px 0 1px rgba(234, 242, 196, .8); content: ''; }
@@ -300,13 +303,6 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
 
 /* 首页：用大画面、半透明信息带与时间线取代单调的三张卡片排列。 */
 .home-page { width: min(100%, 1600px); gap: 28px; }
-.home-search { display: flex; align-items: center; gap: 10px; max-width: 720px; min-height: 54px; padding: 7px; border: 1px solid rgba(156, 201, 216, .34); border-radius: 5px 17px 5px 17px; background: rgba(9, 24, 48, .72); box-shadow: 0 12px 28px rgba(5, 14, 26, .14); backdrop-filter: blur(12px); }
-.home-search-field { display: flex; align-items: center; flex: 1 1 auto; gap: 10px; min-width: 0; min-height: 38px; padding: 0 13px; border: 1px solid rgba(156, 201, 216, .24); border-radius: 3px 10px 3px 10px; background: rgba(4, 14, 30, .56); }
-.home-search-icon { color: var(--sanye-sun); font-size: 20px; line-height: 1; }
-.home-search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--sanye-ink); font-size: 12px; }
-.home-search-field input::placeholder { color: #8294a6; }
-.home-search-button { display: grid; place-items: center; flex: 0 0 auto; width: 40px; height: 38px; border: 1px solid rgba(243, 200, 107, .54); border-radius: 3px 10px 3px 10px; background: rgba(231, 125, 101, .22); color: var(--sanye-sun); cursor: pointer; font-size: 19px; line-height: 1; }
-.home-search-button:hover, .home-search-button:focus-visible { border-color: var(--sanye-sun); background: rgba(231, 125, 101, .38); color: #fff8e8; outline: none; }
 .home-hero { grid-template-columns: minmax(0, .95fr) minmax(420px, 1.05fr); min-height: 460px; border-radius: 5px 24px 5px 24px; background: rgba(14, 34, 66, .66); box-shadow: 0 24px 55px rgba(4, 10, 18, .24); }
 .home-hero > div:first-child { padding: 38px 42px 30px; }.hero-copy { display: flex; flex-direction: column; justify-content: center; }.hero-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.hero-status { color: rgba(234, 242, 196, .78); font-size: 10px; white-space: nowrap; }.hero-status i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--sanye-sun); box-shadow: 0 0 0 4px rgba(243, 200, 107, .1); }
 .home-hero h2 { max-width: 540px; margin: 29px 0 17px; font-size: clamp(38px, 4vw, 58px); line-height: 1.06; }.home-hero h2 em { color: #f0a080; font-family: Georgia, "Times New Roman", serif; font-weight: 400; }.home-hero p { max-width: 460px; font-size: 13px; line-height: 1.8; }.home-hero .hero-actions { margin-top: 25px; }
@@ -355,6 +351,8 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
 .player-cache-note { display: block; margin-top: 6px; color: #ffddb9; font-size: 10px; font-weight: 500; }
 .anime-player-frame {
   position: relative;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   aspect-ratio: 16 / 9;
   min-height: 360px;
@@ -392,32 +390,64 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
 .anime-player-frame .sanye-anime4k-active .art-video { opacity: 0; }
 .anime-player-frame .sanye-anime4k-active.sanye-media-pending .art-video { opacity: 1; }
 .anime-player-frame .sanye-anime4k-active.sanye-media-pending .anime4k-canvas { visibility: hidden; }
+.anime-player-frame .art-mask .art-state,
+.anime-player-frame .art-mask .art-state * { pointer-events: none !important; }
 .anime-player-frame .art-controls { min-width: 0; }
+@media (max-width: 560px) {
+  .anime-player-frame .art-control-pip,
+  .anime-player-frame .art-control-screenshot,
+  .anime-player-frame .art-control-fullscreenWeb,
+  .anime-player-frame .art-control-volume { display: none !important; }
+  .anime-player-frame .art-controls-left .art-control,
+  .anime-player-frame .art-controls-right .art-control { padding-inline: 4px; }
+  .anime-player-frame .art-control-interpolation,
+  .anime-player-frame .art-control-anime4k { flex-basis: 32px !important; width: 32px !important; min-width: 32px !important; }
+}
+.anime-player-frame .art-control-interpolation { flex: 0 0 40px; width: 40px; font-size: 12px; font-weight: 400; color: #fff; background: transparent; }
+.anime-player-frame .realtime-interpolation-canvas { position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; visibility: hidden; pointer-events: none; background: #060e1c; }
+.anime-player-frame .sanye-realtime-interpolation-active .realtime-interpolation-canvas { visibility: visible; }
+.anime-player-frame .sanye-realtime-interpolation-active .art-video { opacity: 0; }
+.anime-player-frame .sanye-realtime-interpolation-active.sanye-media-pending .art-video { opacity: 1; }
+.anime-player-frame .art-control-interpolation,
 .anime-player-frame .art-control-anime4k {
-  flex: 0 0 var(--art-control-height) !important;
-  width: var(--art-control-height) !important;
-  min-width: var(--art-control-height) !important;
-  max-width: var(--art-control-height) !important;
+  flex: 0 0 52px !important;
+  width: 52px !important;
+  min-width: 52px !important;
+  max-width: 52px !important;
   padding-inline: 0 !important;
-  color: var(--art-font-color, #fff) !important;
-  font: inherit;
+  color: #fff !important;
+  font-size: 12px;
+  font-weight: 400;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   line-height: 1;
   text-align: center;
 }
+.anime-player-frame .art-control-anime4k:hover,
+.anime-player-frame .art-control-anime4k.art-current {
+  color: var(--art-font-color, #fff) !important;
+}
+.anime-player-frame .art-control-interpolation .art-selector-value,
 .anime-player-frame .art-control-anime4k .art-selector-value {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   max-width: 100%;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.anime-player-frame .art-control-interpolation .art-selector-list,
 .anime-player-frame .art-control-anime4k .art-selector-list {
   right: 0;
   left: auto;
-  width: 72px;
-  min-width: 72px;
-  border: 1px solid rgba(255, 255, 255, .12);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, .28);
+  width: 112px;
+  min-width: 112px;
 }
+.anime-player-frame .art-control-interpolation .art-selector-item,
 .anime-player-frame .art-control-anime4k .art-selector-item {
   justify-content: center;
   min-width: 72px;
@@ -426,6 +456,20 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
   font: inherit;
   font-size: 12px;
   white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .anime-player-frame .art-control-interpolation,
+  .anime-player-frame .art-control-anime4k {
+    flex-basis: 32px !important;
+    width: 32px !important;
+    min-width: 32px !important;
+    max-width: 32px !important;
+  }
+  .anime-player-frame .art-control-interpolation .art-selector-list,
+  .anime-player-frame .art-control-anime4k .art-selector-list {
+    max-height: 128px;
+    overflow-y: auto;
+  }
 }
 .player-external {
   position: relative;
@@ -469,6 +513,113 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
   color: #ffe4d7;
   text-align: center;
 }
+.detail-loading-state {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 13px 18px;
+  min-height: 150px;
+  padding: 26px 6px;
+  border-block: 1px solid rgba(156, 201, 216, .18);
+}
+.detail-loading-face {
+  position: relative;
+  display: block;
+  width: 54px;
+  height: 42px;
+  border: 1px solid rgba(243, 200, 107, .5);
+  border-radius: 46% 54% 43% 57%;
+  background: rgba(12, 29, 55, .78);
+  box-shadow: 0 0 24px rgba(243, 200, 107, .1);
+  animation: detail-face-float 1.7s ease-in-out infinite;
+}
+.detail-loading-face > i {
+  position: absolute;
+  top: 14px;
+  width: 5px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sanye-sun);
+  animation: detail-face-blink 2.4s ease-in-out infinite;
+}
+.detail-loading-face > i:first-child { left: 14px; }
+.detail-loading-face > i:nth-child(2) { right: 14px; }
+.detail-loading-face > b {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 14px;
+  height: 7px;
+  border-bottom: 2px solid var(--sanye-coral);
+  border-radius: 0 0 12px 12px;
+  transform: translateX(-50%);
+}
+.detail-loading-face.compact { width: 48px; height: 37px; }
+.detail-loading-face.compact > i { top: 12px; }
+.detail-loading-face.compact > i:first-child { left: 12px; }
+.detail-loading-face.compact > i:nth-child(2) { right: 12px; }
+.detail-loading-face.compact > b { bottom: 7px; }
+.detail-loading-copy { display: grid; gap: 5px; min-width: 0; }
+.detail-loading-copy strong, .player-loading-overlay strong { color: var(--sanye-ink); font-size: 14px; }
+.detail-loading-copy small, .player-loading-overlay small { color: var(--sanye-muted); font-size: 11px; }
+.detail-loading-progress {
+  position: relative;
+  display: block;
+  grid-column: 2;
+  overflow: hidden;
+  width: min(100%, 520px);
+  height: 4px;
+  background: rgba(156, 201, 216, .15);
+}
+.detail-loading-progress > i {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 34%;
+  background: var(--sanye-coral);
+  box-shadow: 0 0 12px rgba(231, 125, 101, .5);
+  animation: detail-progress-travel 1.25s ease-in-out infinite;
+}
+.player-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 22px;
+  background: rgba(5, 12, 24, .9);
+  text-align: center;
+}
+.detail-loading-progress.compact { grid-column: auto; width: min(72%, 320px); margin-top: 6px; }
+.player-overlay { z-index: 3; }
+@keyframes detail-face-float {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-4px) rotate(1deg); }
+}
+@keyframes detail-face-blink {
+  0%, 42%, 48%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(.12); }
+}
+@keyframes detail-progress-travel {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(340%); }
+}
+html[data-sanye-theme="light"] .detail-loading-face { background: rgba(255, 251, 242, .9); }
+html[data-sanye-theme="light"] .detail-loading-state { border-color: rgba(112, 128, 137, .2); }
+@media (max-width: 560px) {
+  .detail-loading-state { grid-template-columns: 50px minmax(0, 1fr); min-height: 132px; padding-inline: 2px; }
+  .detail-loading-face { width: 48px; height: 38px; }
+  .detail-loading-face > i { top: 12px; }
+  .detail-loading-face > i:first-child { left: 12px; }
+  .detail-loading-face > i:nth-child(2) { right: 12px; }
+  .detail-loading-face > b { bottom: 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-loading-face, .detail-loading-face > i { animation: none; }
+  .detail-loading-progress > i { width: 64%; animation-duration: 2.4s; }
+}
 .anime-episode-list {
   display: flex;
   flex-wrap: wrap;
@@ -476,17 +627,7 @@ html[data-sanye-theme="light"] .settings-list div { background-color: rgba(249, 
   padding-top: 4px;
 }
 .anime-playback-sources {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 2px;
-}
-.anime-playback-sources > span {
-  margin-right: 3px;
-  color: var(--sanye-muted);
-  font-size: 11px;
-  font-weight: 600;
+  display: block;
 }
 .source-button {
   min-height: 32px;
@@ -632,12 +773,18 @@ button:hover, a:hover, .theme-toggle:hover, .play-button:hover, .settings-entry:
 .strip-action:hover span { transform: none !important; }
 *, *::before, *::after { animation: none !important; transition: none !important; }
 
+/* 播放进度由播放器的播放期动画帧逐帧写入；宽度过渡会固定引入约 120 毫秒滞后，因此明确关闭。 */
+.anime-player-frame .art-video-player .art-progress-played,
+.anime-player-frame .art-video-player .art-progress-loaded {
+  transition: none !important;
+}
+
 /* 首页首屏层级：文字区使用稳定的深色阅读底，背景光带不再穿过标题。 */
 .home-hero { position: relative; isolation: isolate; overflow: hidden; }
 .home-hero > div.hero-copy-viewport { min-width: 0; padding: 0; overflow: hidden; touch-action: pan-y; user-select: none; }
 .hero-copy-track { display: flex; width: 300%; height: 100%; will-change: transform; }
 .hero-copy-track.is-dragging { cursor: grabbing; }
-.hero-copy-slide { display: flex; flex: 0 0 33.333333%; min-width: 0; padding: 38px 42px 30px; overflow: hidden; flex-direction: column; justify-content: center; }
+.hero-copy-slide { display: flex; flex: 0 0 calc(100% / var(--hero-slide-count, 3)); min-width: 0; padding: 38px 42px 30px; overflow: hidden; flex-direction: column; justify-content: center; }
 .hero-copy-slide > * { min-width: 0; }
 .hero-copy-slide h2 { width: 100%; max-width: 100%; font-size: 38px; letter-spacing: 0; overflow-wrap: anywhere; text-wrap: balance; }
 .hero-copy-slide p { width: 100%; max-width: 100%; overflow-wrap: anywhere; }
@@ -683,7 +830,7 @@ button:hover, a:hover, .theme-toggle:hover, .play-button:hover, .settings-entry:
 .hero-carousel-arrow { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid rgba(255, 243, 214, .48); border-radius: 50%; background: rgba(9, 24, 48, .48); color: #fff1d7; cursor: pointer; font-size: 16px; line-height: 1; }
 .hero-carousel-arrow:hover, .hero-carousel-arrow:focus-visible { border-color: var(--sanye-sun); background: rgba(231, 125, 101, .52); color: #fff9e8; outline: none; }
 .hero-carousel-pagination { display: flex; align-items: center; gap: 5px; }
-.hero-carousel-page { min-width: 28px; padding: 5px 4px; border: 0; border-bottom: 1px solid rgba(255, 243, 214, .38); background: transparent; color: rgba(255, 243, 214, .62); cursor: pointer; font-size: 9px; }
+.hero-carousel-page { min-width: 34px; padding: 10px 6px; border: 0; border-bottom: 1px solid rgba(255, 243, 214, .38); background: transparent; color: rgba(255, 243, 214, .62); cursor: pointer; font-size: 9px; }
 .hero-carousel-page:hover, .hero-carousel-page:focus-visible { color: #fff5dc; outline: none; }
 .hero-carousel-page.active { border-bottom-color: var(--sanye-sun); color: var(--sanye-sun); }
 html[data-sanye-theme="light"] .home-hero > .hero-copy {
@@ -954,12 +1101,6 @@ html[data-sanye-theme="light"] .repository-heading h2,
 html[data-sanye-theme="light"] .repository-card-title strong,
 html[data-sanye-theme="light"] .repository-empty h3 { color: #263845; }
 html[data-sanye-theme="light"] .repository-select select { border-color: #cbbda9; background: rgba(255, 253, 247, .8); color: #263845; }
-html[data-sanye-theme="light"] .home-search { border-color: #cbbda9; background: rgba(255, 250, 241, .78); }
-html[data-sanye-theme="light"] .home-search-field { border-color: #d0c9bd; background: rgba(255, 253, 247, .86); }
-html[data-sanye-theme="light"] .home-search-field input { color: #263845; }
-html[data-sanye-theme="light"] .home-search-field input::placeholder { color: #7b8583; }
-html[data-sanye-theme="light"] .home-search-button { border-color: #d39b76; background: rgba(231, 125, 101, .2); color: #a9464e; }
-
 @media (max-width: 900px) {
   .repository-toolbar { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .repository-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -967,7 +1108,6 @@ html[data-sanye-theme="light"] .home-search-button { border-color: #d39b76; back
 
 @media (max-width: 560px) {
   .repository-heading { align-items: flex-start; }
-  .home-search { max-width: none; }
   .repository-toolbar { grid-template-columns: 1fr; }
   .repository-grid { grid-template-columns: 1fr; }
   .repository-result-line { align-items: flex-start; flex-direction: column; gap: 5px; }
@@ -1090,7 +1230,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty {
@@ -1103,7 +1242,6 @@ html[data-sanye-theme="dark"] .home-hero > .hero-copy,
 html[data-sanye-theme="dark"] .official-home-page .official-home-hero > div:first-child,
 html[data-sanye-theme="dark"] .official-download-page .download-hero-copy { background: linear-gradient(135deg, rgba(3, 14, 36, .98), rgba(12, 31, 65, .96)); }
 
-html[data-sanye-theme="dark"] .home-search-field,
 html[data-sanye-theme="dark"] .repository-select select,
 html[data-sanye-theme="dark"] .chat-input input,
 html[data-sanye-theme="dark"] .form-field input,
@@ -1173,7 +1311,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty {
@@ -1186,7 +1323,6 @@ html[data-sanye-theme="light"] .home-hero > .hero-copy,
 html[data-sanye-theme="light"] .official-home-page .official-home-hero > div:first-child,
 html[data-sanye-theme="light"] .official-download-page .download-hero-copy { background: linear-gradient(135deg, rgba(255, 250, 241, .98), rgba(242, 245, 238, .96)); }
 
-html[data-sanye-theme="light"] .home-search-field,
 html[data-sanye-theme="light"] .repository-select select,
 html[data-sanye-theme="light"] .chat-input input,
 html[data-sanye-theme="light"] .form-field input,
@@ -1225,7 +1361,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty { background-color: rgba(7, 22, 48, .72); }
@@ -1240,7 +1375,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty { background-color: rgba(255, 251, 243, .78); }
@@ -1427,7 +1561,8 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
   align-items: center;
   gap: 8px;
   min-width: 260px;
-  padding: 0 12px;
+  height: 42px;
+  padding: 4px 4px 4px 12px;
   border: 1px solid var(--sanye-line, #334252);
   border-radius: 8px;
   background: rgba(16, 29, 47, .72);
@@ -1435,7 +1570,7 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
 .topbar-search input {
   flex: 1;
   min-width: 0;
-  height: 34px;
+  height: 32px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -1468,23 +1603,39 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
 .sidebar-collapse {
   position: absolute;
   top: 24px;
-  right: -12px;
+  right: 12px;
   z-index: 3;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--sanye-line, #334252);
   border-radius: 50%;
   background: #101923;
   color: var(--sanye-sun, #f0c66c);
   cursor: pointer;
 }
-.app-shell.is-collapsed .sidebar { width: 64px; padding-inline: 10px; }
+.sidebar-collapse:focus-visible { outline: 2px solid var(--sanye-sun, #f0c66c); outline-offset: 2px; }
+.page-heading { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.page-back { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 1px solid var(--sanye-line, #334252); border-radius: 6px; color: inherit; background: transparent; font-size: 22px; cursor: pointer; }
+.search-submit { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 48px; height: 36px; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 4px; background: transparent; color: inherit; line-height: 20px; white-space: nowrap; cursor: pointer; }
+.topbar-search .search-submit { height: 32px; min-height: 32px; }
+.search-submit:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+.topbar-search:focus-within, .large-search:focus-within { outline: 2px solid var(--sanye-coral); outline-offset: 2px; }
+.search-submit:disabled { opacity: .45; cursor: default; }
+.search-submit:hover:not(:disabled), .page-back:hover { background: rgba(128, 128, 128, .15); }
+.search-request-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px; border: 1px solid #c97668; border-radius: 4px; }
+.app-shell:has(.anime-player-frame) .main-panel, .app-shell:has(.anime-player-frame) .sidebar { backdrop-filter: none; }
+.app-shell:has(.anime-player-frame) .client-sky * { animation: none !important; }
+@media (min-width: 701px) {
+  .sidebar { padding-top: 84px; }
+  .app-shell.is-collapsed { grid-template-columns: 64px minmax(0, 1fr); }
+  .app-shell.is-collapsed .sidebar { padding-inline: 10px; }
 .app-shell.is-collapsed .brand > div:last-child,
 .app-shell.is-collapsed .nav-item span:last-child,
 .app-shell.is-collapsed .sidebar-foot span:last-child { display: none; }
 .app-shell.is-collapsed .nav-item { justify-content: center; padding-inline: 0; }
+}
 
 /* T-C-01 搜索结果页 */
 .search-page { gap: 22px; }
@@ -1498,7 +1649,8 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  min-height: 48px;
+  padding: 4px 4px 4px 12px;
   border: 1px solid #3c5366;
   border-radius: 8px;
   background: rgba(6, 16, 32, .6);
@@ -1507,7 +1659,7 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
 .large-search input {
   flex: 1;
   min-width: 0;
-  height: 46px;
+  height: 38px;
   border: 0;
   outline: 0;
   background: transparent;
@@ -1536,6 +1688,10 @@ html[data-sanye-theme="light"] .official-download-page .comet-trail {
 .result-count { margin-left: auto; color: #71818d; font-size: 10px; }
 .search-results { margin-top: 6px; }
 .sort-label { color: #81909c; font-size: 10px; }
+.search-source-block { margin-top: 18px; }
+.search-source-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.search-source-heading h3 { font-size: 13px; }
+.search-source-heading span { color: #71818d; font-size: 10px; }
 .result-list { margin-top: 14px; border-top: 1px solid #293945; }
 .result-row {
   display: grid;
@@ -1589,6 +1745,7 @@ html[data-sanye-theme="light"] .search-panel { border-color: #d4c9ba; background
 html[data-sanye-theme="light"] .large-search { border-color: #c8b99f; background: rgba(255, 255, 255, .8); color: #a9464e; }
 html[data-sanye-theme="light"] .large-search input { color: #263845; }
 html[data-sanye-theme="light"] .result-list, html[data-sanye-theme="light"] .result-row { border-color: #e0d8cb; }
+html[data-sanye-theme="light"] .search-source-heading h3 { color: #263845; }
 html[data-sanye-theme="light"] .result-copy strong, html[data-sanye-theme="light"] .empty-state h3 { color: #263845; }
 html[data-sanye-theme="light"] .tag-list em { background: #efe8da; color: #6a7b82; }
 
@@ -1599,10 +1756,6 @@ html[data-sanye-theme="light"] .tag-list em { background: #efe8da; color: #6a7b8
 }
 @media (max-width: 1100px) {
   body { min-width: 0; }
-  .app-shell { grid-template-columns: 64px minmax(0, 1fr); }
-  .sidebar { padding-inline: 10px; }
-  .brand > div:last-child, .nav-item span:last-child, .sidebar-foot span:last-child { display: none; }
-  .nav-item { justify-content: center; padding-inline: 0; }
   .topbar-search { min-width: 160px; }
 }
 
@@ -2065,6 +2218,12 @@ html[data-sanye-theme="light"] .official-legal-menu button, html[data-sanye-them
 .mine-shelf-card div { display: grid; gap: 3px; }
 .mine-shelf-card strong { color: var(--sanye-ink); font-size: 12px; }
 .mine-shelf-card small { color: var(--sanye-muted); font-size: 10px; }
+.continue-watching-panel { margin-top: 18px; }
+.continue-watching-list { display: grid; gap: 10px; }
+.continue-watching-item { display: grid; gap: 5px; padding: 12px 14px; border: 1px solid rgba(156, 201, 216, .2); border-radius: 4px 10px 4px 10px; }
+.continue-watching-item strong { color: var(--sanye-ink); font-size: 13px; }
+.continue-watching-item span { color: var(--sanye-muted); font-size: 11px; }
+.continue-watching-item progress { width: 100%; height: 5px; accent-color: var(--sanye-coral); }
 
 /* AI 推荐卡片（T-E-07 多卡片） */
 .message-recommendations { display: grid; gap: 6px; margin-top: 8px; }
@@ -2124,7 +2283,6 @@ html[data-sanye-theme="dark"] .schedule-list-panel,
 html[data-sanye-theme="dark"] .schedule-detail-row,
 html[data-sanye-theme="dark"] .anime-detail-hero,
 html[data-sanye-theme="dark"] .anime-detail-section,
-html[data-sanye-theme="dark"] .home-search,
 html[data-sanye-theme="dark"] .repository-toolbar,
 html[data-sanye-theme="dark"] .repository-card,
 html[data-sanye-theme="dark"] .repository-empty,
@@ -2157,7 +2315,6 @@ html[data-sanye-theme="light"] .schedule-list-panel,
 html[data-sanye-theme="light"] .schedule-detail-row,
 html[data-sanye-theme="light"] .anime-detail-hero,
 html[data-sanye-theme="light"] .anime-detail-section,
-html[data-sanye-theme="light"] .home-search,
 html[data-sanye-theme="light"] .repository-toolbar,
 html[data-sanye-theme="light"] .repository-card,
 html[data-sanye-theme="light"] .repository-empty,
@@ -2195,7 +2352,6 @@ html[data-sanye-theme="light"] .official-download-page .download-hero-copy {
   background: linear-gradient(135deg, rgba(250, 253, 251, .98), rgba(238, 246, 247, .96));
 }
 
-html[data-sanye-theme="dark"] .home-search-field,
 html[data-sanye-theme="dark"] .repository-select select,
 html[data-sanye-theme="dark"] .chat-input input,
 html[data-sanye-theme="dark"] .form-field input,
@@ -2206,7 +2362,6 @@ html[data-sanye-theme="dark"] .large-search {
   color: #f3f7fa;
 }
 
-html[data-sanye-theme="light"] .home-search-field,
 html[data-sanye-theme="light"] .repository-select select,
 html[data-sanye-theme="light"] .chat-input input,
 html[data-sanye-theme="light"] .form-field input,
@@ -2415,7 +2570,7 @@ html[data-sanye-theme="light"] .episode-button.active {
   .hero-panel, .official-hero, .official-download-hero { grid-template-columns: 1fr; min-height: 0; }
   .hero-panel > div:first-child { padding: 0; }
   .home-hero .hero-art, .official-hero-art, .official-download-visual { min-height: 250px; }
-  .hero-copy-slide { min-width: 100%; padding: 26px 22px 28px; }
+  .hero-copy-slide { min-width: 0; padding: 26px 22px 28px; }
   .hero-copy-slide h2 { max-width: 100%; font-size: 34px; }
   .hero-copy-slide .hero-actions { align-items: stretch; flex-direction: column; }
   .hero-copy-slide .hero-actions a { justify-content: center; text-align: center; }
@@ -2436,10 +2591,11 @@ html[data-sanye-theme="light"] .episode-button.active {
   .search-panel { padding: 15px; }
   .filter-row { overflow-x: auto; padding-bottom: 2px; }
   .filter-chip { flex: 0 0 auto; }
-  .result-row { grid-template-columns: 30px minmax(0, 1fr) 18px; gap: 10px; }
-  .result-row .search-cover, .result-score { display: none; }
+  .result-row { grid-template-columns: 24px 58px minmax(0, 1fr) 14px; gap: 10px; }
+  .result-row .search-cover { display: block; width: 56px; height: 78px; }
+  .result-score { display: none; }
   .result-copy p { margin-top: 7px; }
-  .external-result-actions { grid-column: 2 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .external-result-actions { grid-column: 3 / -1; justify-content: flex-start; flex-wrap: wrap; }
 
   .official-header { flex-wrap: wrap; gap: 12px; padding: 16px 0; }
   .official-nav { order: 3; width: 100%; justify-content: space-between; gap: 12px; overflow-x: auto; }
@@ -2456,3 +2612,434 @@ html[data-sanye-theme="light"] .episode-button.active {
   .official-legal-copy { grid-column: 1; padding-top: 26px; }
   .official-footer { align-items: flex-start; flex-direction: column; padding: 20px 0; }
 }
+/* 跳过离屏长列表的布局与绘制，同时保留稳定的滚动占位尺寸。 */
+.anime-cover-card,
+.repository-card,
+.result-row,
+.mine-shelf-card,
+.detail-similar-card {
+  content-visibility: auto;
+}
+.anime-cover-card,
+.repository-card {
+  contain-intrinsic-size: auto 360px;
+}
+.result-row { contain-intrinsic-size: auto 180px; }
+.mine-shelf-card,
+.detail-similar-card { contain-intrinsic-size: auto 240px; }
+
+/* 客户端默认浅色视觉：用稳定实底保证首页、片库、搜索、详情与个人中心可读。 */
+html[data-sanye-theme="light"] {
+  --sanye-night: #f5f7f8;
+  --sanye-night-deep: #edf1f3;
+  --sanye-sky: #dce8ec;
+  --sanye-coral: #b4504a;
+  /* 浅色主题的强调色略微加深，正文小字与链接达到 4.5:1 可读性。 */
+  --sanye-sun: #96620f;
+  --sanye-rope: #a64b56;
+  --sanye-star: #fff7d5;
+  --sanye-ice: #5f98aa;
+  --sanye-ink: #172b38;
+  --sanye-muted: #526875;
+  --sanye-line: #cbd6db;
+  color-scheme: light;
+  background: #edf1f3;
+}
+
+html[data-sanye-theme="light"] body,
+html[data-sanye-theme="light"] .app-shell {
+  background: #edf1f3;
+  color: var(--sanye-ink);
+}
+
+html[data-sanye-theme="light"] .client-sky {
+  display: none;
+}
+
+html[data-sanye-theme="light"] body::before,
+html[data-sanye-theme="light"] body::after,
+html[data-sanye-theme="light"] .main-panel::before { display: none; }
+
+html[data-sanye-theme="light"] .sidebar {
+  border-color: #d1dade;
+  background: rgba(255, 255, 255, .96);
+}
+
+html[data-sanye-theme="light"] .main-panel { background: rgba(245, 248, 249, .9); }
+html[data-sanye-theme="light"] .brand strong,
+html[data-sanye-theme="light"] .topbar h1,
+html[data-sanye-theme="light"] .section-heading h2 { color: #172b38; }
+html[data-sanye-theme="light"] .eyebrow { color: #5f7683; }
+html[data-sanye-theme="light"] .hero-status { color: #456357; }
+html[data-sanye-theme="light"] .hero-copy-slide h2 em { color: #a6443e; }
+
+html[data-sanye-theme="light"] .nav-item { color: #4b6471; }
+html[data-sanye-theme="light"] .nav-item:hover,
+html[data-sanye-theme="light"] .nav-item.router-link-active,
+html[data-sanye-theme="light"] .nav-item.is-active {
+  background: #e9f1f3;
+  color: #173849;
+  box-shadow: inset 3px 0 0 #c85f55;
+}
+
+html[data-sanye-theme="light"] .topbar-search,
+html[data-sanye-theme="light"] .large-search,
+html[data-sanye-theme="light"] .repository-select select,
+html[data-sanye-theme="light"] .form-field input,
+html[data-sanye-theme="light"] .form-field select,
+html[data-sanye-theme="light"] .form-field textarea,
+html[data-sanye-theme="light"] .chat-input input {
+  border-color: #c4d0d5;
+  background: #fff;
+  color: #172b38;
+}
+
+html[data-sanye-theme="light"] .topbar-search input,
+html[data-sanye-theme="light"] .topbar-search-icon { color: #314d5b; }
+html[data-sanye-theme="light"] input::placeholder,
+html[data-sanye-theme="light"] textarea::placeholder { color: #6f8189; opacity: 1; }
+
+html[data-sanye-theme="light"] .home-hero,
+html[data-sanye-theme="light"] .ai-feature-strip,
+html[data-sanye-theme="light"] .schedule-section,
+html[data-sanye-theme="light"] .anime-cover-card,
+html[data-sanye-theme="light"] .schedule-list-panel,
+html[data-sanye-theme="light"] .schedule-detail-row,
+html[data-sanye-theme="light"] .repository-toolbar,
+html[data-sanye-theme="light"] .repository-card,
+html[data-sanye-theme="light"] .repository-empty,
+html[data-sanye-theme="light"] .search-panel,
+html[data-sanye-theme="light"] .result-row,
+html[data-sanye-theme="light"] .anime-detail-hero,
+html[data-sanye-theme="light"] .anime-detail-section,
+html[data-sanye-theme="light"] .profile-panel,
+html[data-sanye-theme="light"] .settings-list,
+html[data-sanye-theme="light"] .settings-list div,
+html[data-sanye-theme="light"] .settings-form-panel,
+html[data-sanye-theme="light"] .mine-library-panel,
+html[data-sanye-theme="light"] .mine-shelf-card,
+html[data-sanye-theme="light"] .detail-character,
+html[data-sanye-theme="light"] .detail-similar-card,
+html[data-sanye-theme="light"] .route-loading,
+html[data-sanye-theme="light"] .empty-state {
+  border-color: #cbd6db;
+  background-color: rgba(255, 255, 255, .96);
+  color: #172b38;
+  box-shadow: none;
+}
+
+html[data-sanye-theme="light"] .home-hero > .hero-copy {
+  background: linear-gradient(135deg, #fff 0%, #f3f7f7 100%);
+}
+
+html[data-sanye-theme="light"] .result-row:hover,
+html[data-sanye-theme="light"] .repository-card:hover,
+html[data-sanye-theme="light"] .detail-similar-card:hover {
+  border-color: #dc938a;
+  background-color: #fff9f7;
+}
+
+html[data-sanye-theme="light"] .filter-chip,
+html[data-sanye-theme="light"] .anime-detail-tags span,
+html[data-sanye-theme="light"] .tag-list em {
+  border-color: #c7d3d8;
+  background: #edf3f5;
+  color: #405a67;
+}
+
+html[data-sanye-theme="light"] .filter-chip.is-active,
+html[data-sanye-theme="light"] .filter-chip:hover {
+  border-color: #c85f55;
+  background: #f9e9e6;
+  color: #7b302b;
+}
+
+html[data-sanye-theme="light"] .secondary-button,
+html[data-sanye-theme="light"] .profile-button,
+html[data-sanye-theme="light"] .page-back,
+html[data-sanye-theme="light"] .theme-toggle,
+html[data-sanye-theme="light"] .avatar-button,
+html[data-sanye-theme="light"] .logout-button {
+  border-color: #bdcbd1;
+  background: #fff;
+  color: #284653;
+}
+
+html[data-sanye-theme="light"] .sidebar-collapse {
+  border-color: #bdcbd1;
+  background: #fff;
+  color: #933f38;
+}
+
+html[data-sanye-theme="light"] .secondary-button:hover,
+html[data-sanye-theme="light"] .profile-button:hover,
+html[data-sanye-theme="light"] .page-back:hover,
+html[data-sanye-theme="light"] .theme-toggle:hover {
+  border-color: #c85f55;
+  color: #933f38;
+}
+
+html[data-sanye-theme="light"] .primary-button,
+html[data-sanye-theme="light"] .search-submit {
+  background: var(--sanye-primary);
+  color: #fff7ea;
+}
+html[data-sanye-theme="light"] .primary-button:hover,
+html[data-sanye-theme="light"] .search-submit:hover:not(:disabled) { background: var(--sanye-primary-hover); }
+
+html[data-sanye-theme="light"] .anime-player-section {
+  border-color: #cbd6db;
+  background: #fff;
+  box-shadow: none;
+}
+
+html[data-sanye-theme="light"] .anime-player-frame,
+html[data-sanye-theme="light"] .player-external,
+html[data-sanye-theme="light"] .player-overlay,
+html[data-sanye-theme="light"] .player-loading-overlay {
+  background-color: #101820;
+  color: #f1f5f7;
+}
+
+html[data-sanye-theme="light"] .player-loading-overlay strong { color: #f1f5f7; }
+html[data-sanye-theme="light"] .player-loading-overlay small { color: #c4d0d9; }
+html[data-sanye-theme="light"] .player-overlay .text-button { color: #f8d59d; }
+html[data-sanye-theme="light"] .player-empty { background: #f4f7f8; color: #526875; }
+html[data-sanye-theme="light"] .player-error { color: #a23e38; }
+html[data-sanye-theme="light"] .anime-player-heading > .text-button { background: transparent; color: #924c16; }
+
+.anime-playback-sources {
+  display: block;
+  padding: 0;
+  border: 1px solid var(--sanye-line);
+  border-radius: 8px;
+  background: rgba(10, 25, 49, .48);
+}
+
+.anime-playback-sources summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  color: var(--sanye-ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.anime-playback-sources summary::-webkit-details-marker { display: none; }
+.anime-playback-sources summary:focus-visible { outline: 2px solid var(--sanye-coral); outline-offset: 2px; }
+.anime-playback-sources summary::after { margin-left: auto; color: var(--sanye-coral); content: '+'; font-size: 17px; }
+.anime-playback-sources[open] summary::after { content: '\2212'; }
+.anime-playback-sources summary small { color: var(--sanye-muted); font-size: 10px; font-weight: 400; }
+.anime-playback-source-options { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 14px 14px; }
+
+html[data-sanye-theme="light"] .anime-playback-sources {
+  border-color: #cbd6db;
+  background: #f4f7f8;
+}
+
+html[data-sanye-theme="light"] .anime-playback-sources summary { color: #263f4b; }
+
+html[data-sanye-theme="light"] dialog,
+html[data-sanye-theme="light"] .dialog-panel,
+html[data-sanye-theme="light"] .modal-panel,
+html[data-sanye-theme="light"] .frame-interpolation-dialog {
+  border-color: #cbd6db;
+  background: #fff;
+  color: #172b38;
+}
+
+@media (max-width: 700px) {
+  .filter-row {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    justify-content: flex-start;
+    overflow: visible;
+    gap: 8px;
+  }
+
+  .filter-chip { flex: 0 0 auto; width: auto; }
+  .home-section .section-heading { align-items: flex-start; }
+}
+
+/* 首页精选：说明文字与翻页控件曾重叠在同一个右下角，这里把说明抬到控件上方。 */
+.home-hero .art-caption { bottom: 76px; }
+.home-hero .hero-carousel-controls { bottom: 24px; }
+
+@media (max-width: 900px) {
+  .home-hero .art-caption { bottom: 70px; font-size: 17px; }
+}
+
+/* 个人中心：收藏、观看历史与继续观看统一为可左右滑动的封面小卡片。 */
+.mine-library-grid { align-items: start; }
+.mine-library-panel { align-content: start; min-height: 0; }
+.mine-rail-actions { display: flex; align-items: center; gap: 10px; }
+.mine-rail-nav { display: flex; align-items: center; gap: 6px; }
+.mine-rail-nav button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--sanye-line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sanye-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.mine-rail-nav button:hover,
+.mine-rail-nav button:focus-visible { border-color: var(--sanye-coral); color: var(--sanye-coral); outline: none; }
+.mine-rail-toggle { color: var(--sanye-sun); font-size: 10px; white-space: nowrap; }
+.mine-rail {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  padding: 2px 2px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-padding-inline: 2px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+.mine-rail.is-expanded {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  overflow: visible;
+}
+.mine-rail-card {
+  display: grid;
+  flex: 0 0 128px;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(156, 201, 216, .2);
+  border-radius: 4px 12px 4px 12px;
+  scroll-snap-align: start;
+}
+.mine-rail-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 3px 9px 3px 9px;
+  background: rgba(11, 27, 52, .5);
+}
+.mine-rail-copy { display: grid; gap: 3px; min-width: 0; }
+.mine-rail-copy strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--sanye-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.mine-rail-copy small {
+  overflow: hidden;
+  color: var(--sanye-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mine-rail-continue .mine-rail-card { flex-basis: 168px; }
+.mine-continue-card progress { width: 100%; height: 5px; accent-color: var(--sanye-coral); }
+
+html[data-sanye-theme="light"] .mine-rail-card {
+  border-color: #cbd6db;
+  background: rgba(255, 255, 255, .96);
+}
+
+html[data-sanye-theme="dark"] .mine-rail-card { background: rgba(11, 27, 52, .62); }
+html[data-sanye-theme="light"] .mine-rail-nav button { background: #fff; }
+html[data-sanye-theme="light"] .mine-rail-copy strong { color: #263845; }
+
+/* 详情页选集：按线路分组后，同类线路的剧集排在一起，标题不再被线路标签顶掉。 */
+.episode-grouped-list { display: grid; gap: 12px; padding-top: 4px; }
+.episode-group { display: grid; gap: 8px; }
+.episode-group-label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--sanye-muted);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+.episode-group-label::after { flex: 1; height: 1px; background: var(--sanye-line); content: ''; opacity: .7; }
+.episode-group-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.episode-group-count { color: var(--sanye-sun); font-size: 10px; letter-spacing: 0; }
+
+/* 排期页：浅色主题下星期标签曾是深底深字，正文几乎不可读。 */
+html[data-sanye-theme="light"] .schedule-day-tabs { border-color: #cbd6db; }
+html[data-sanye-theme="light"] .schedule-day-tab {
+  border-right-color: #d7e0e4;
+  background: #eef3f5;
+  color: #526875;
+}
+html[data-sanye-theme="light"] .schedule-day-tab strong { color: #172b38; }
+html[data-sanye-theme="light"] .schedule-day-tab.active {
+  background: linear-gradient(135deg, rgba(200, 95, 85, .18), rgba(63, 112, 153, .14));
+}
+html[data-sanye-theme="light"] .schedule-day-tab.active strong { color: #a46b14; }
+
+/*
+ * 可读性与点击热区收尾（2026-09-29 全板块体检）。
+ *
+ * 1) 「← 返回…」链接原先只有 14px 高，鼠标和触屏都容易点不中，这里撑到 32px 热区，
+ *    视觉高度靠 padding 与行高控制，不改变字号。
+ * 2) AI 会话的删除按钮原先 20×20，放大到 28×28。
+ * 3) 官网导航项补足上下热区，窄屏下不再需要精确点击。
+ */
+.back-link { display: inline-flex; align-items: center; min-height: 32px; margin-bottom: 12px; }
+.conversation-delete { width: 28px; height: 28px; }
+.official-nav-link { display: inline-flex; align-items: center; min-height: 32px; padding: 10px 0; }
+
+/*
+ * 窄屏 AI 工作区：会话列表 + 消息区 + 输入框顺序堆叠后总高度超过一屏，
+ * 输入框会落到首屏之外。这里把消息区限制在可视高度内滚动，让输入框留在屏幕里。
+ */
+@media (max-width: 700px) {
+  .chat-messages { min-height: 200px; max-height: min(42dvh, 380px); }
+  .conversation-list { padding: 12px; }
+  .conversation-list .conversation-group { max-height: 96px; }
+  /* 标题行里的「＋」已经是新建入口，窄屏不再重复占一行的按钮。 */
+  .conversation-list .new-chat-button { display: none; }
+  .chat-header { padding: 12px 16px; }
+}
+
+/*
+ * 体检第二轮：剩余对比度与点击目标。
+ *
+ * - `.text-button` 一类纯文字入口原先只有 13–23px 高，撑到 32px 热区；
+ * - AI 会话时间、剧透开关在深/浅主题下分别是 3.0 与 2.16:1，改为可读色；
+ * - 官网主按钮与相似作品卡片的强调文字改用更深的主色，白字/浅底都达到 4.5:1。
+ */
+.text-button { display: inline-flex; align-items: center; min-height: 32px; padding: 6px 2px; }
+.icon-button { width: 32px; height: 32px; }
+.conversation-delete { width: 32px; height: 32px; }
+.official-text-link { display: inline-flex; align-items: center; min-height: 32px; padding: 8px 0; }
+.official-primary { background: var(--sanye-primary, #a8423a); color: #fff7ea; }
+.official-primary:hover { background: var(--sanye-primary-hover, #b8493f); }
+html[data-sanye-theme="dark"] .conversation-item small { color: #93a6b4; }
+html[data-sanye-theme="light"] .spoiler-toggle { border-color: #c4d0d5; background: #fff; color: #526875; }
+html[data-sanye-theme="light"] .eyebrow { color: #59707d; }
+html[data-sanye-theme="light"] .detail-similar-card span { color: #a8423a; }
+.spoiler-toggle { min-height: 32px; padding: 0 12px; }
+/* AI 消息里的角色名、会话时间与官网页脚/品牌小字在浅色主题下加深，达到 4.5:1。 */
+html[data-sanye-theme="light"] .message-name { color: #526875; }
+html[data-sanye-theme="light"] .conversation-item small { color: #526875; }
+html[data-sanye-theme="light"] .send-button { color: #fff7ea; }
+/* 官网品牌标记与入口按钮同样改成深主色，白字在深/浅主题都达到 4.5:1。 */
+.brand-mark, .chat-mark { background: var(--sanye-primary, #a8423a); color: #fff7ea; }
+.official-entry { background: var(--sanye-primary, #a8423a); color: #fff7ea; }
+.official-back { display: inline-flex; align-items: center; min-height: 32px; margin-bottom: 12px; }
+html[data-sanye-theme="light"] .official-footer { color: #5f6f7d; }
+html[data-sanye-theme="light"] .official-brand small { color: #5f6f7d; }
+html[data-sanye-theme="light"] .official-legal-menu button { color: #5c6f77; }
+html[data-sanye-theme="dark"] .official-primary { background: var(--sanye-primary, #a8423a); color: #fff7ea; }
+html[data-sanye-theme="dark"] .official-brand-mark, html[data-sanye-theme="dark"] .brand-mark { color: #fff7ea; }
+.official-nav-link { min-width: 44px; justify-content: center; }

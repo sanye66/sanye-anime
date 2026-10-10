@@ -5,11 +5,36 @@ import type Artplayer from 'artplayer'
 import type Hls from 'hls.js'
 import { animeApi, type AnimeUrlPreviewResult } from '@/api/anime'
 import { favoriteApi } from '@/api/favorite'
-import { isAbortError, resolveAssetUrl } from '@/api/http'
-import type { AnimeDetail, AnimeEpisode, AnimePlaybackOption } from '@/api/types'
+import { ApiError, isAbortError, resolveAssetUrl } from '@/api/http'
+import { ErrorCode, type AnimeDetail, type AnimeEpisode, type AnimePlaybackOption } from '@/api/types'
 import { animeCatalogMap } from '@/data/animeCatalog'
-import { ANIME4K_PROFILE_LABELS, startAnime4KVideo, type Anime4KProfile, type Anime4KSession } from '@/video/anime4k'
+import { bundledCover, handleCoverFallback, placeholderCover } from '@/data/coverFallback'
+import { titleKey } from '@/data/titleKey'
+import { desktopMode } from '@/desktop'
+import { ANIME4K_PROFILE_LABELS, startAnime4KEnhancement, type Anime4KProfile, type Anime4KSession } from '@/video/anime4k'
+import { startRealtimeInterpolation, releaseInterpolationAudio, type InterpolationStats } from '@/video/realtimeInterpolation'
+import { installSeekControl, installHlsSeekControl } from '@/video/seekControl'
+import { installPlaybackControl, installRealtimeProgress, useSmoothProgress } from '@/video/playbackControl'
+import { createFragmentCache } from '@/video/hlsFragmentCache'
+import { AdaptationNotice } from '@/video/adaptationNotice'
+import { QualityObservability, type ClarityObservation, type QualityWindow } from '@/video/qualityObservability'
+import { FRAME_RATE_OPTIONS, type FrameRateTarget } from '@/video/frameCadence'
+import { parsePlaybackLine } from '@/video/playbackLines'
 import {
+  readPlaybackPreferences,
+  savePlaybackPreferences,
+  playbackLanguage,
+  rankPlaybackOptions,
+  recordPlaybackRoute,
+  clearStartupQuality,
+  matchStartupQualityIndex,
+  qualityLadderSignature,
+  readStartupQuality,
+  saveStartupQuality,
+  type StartupQualityRecord,
+} from '@/video/playbackPreferences'
+import {
+  clearEpisodeProgress,
   normalizePlaybackEpisodes,
   prefetchNeighborEpisodes,
   readCachedEpisodes,
@@ -24,12 +49,21 @@ import {
 const route = useRoute()
 const router = useRouter()
 
+const PLAYER_STARTUP_TIMEOUT_MS = 15_000
+/** 外站预览已有随包线路可接管时的起播等待上限，减少无效等待。 */
+const EXTERNAL_PREVIEW_STARTUP_TIMEOUT_MS = 8_000
+const PLAYER_STALL_RECOVERY_MS = 10_000
+const PROGRESS_WRITE_INTERVAL_MS = 1_000
+/** 记忆档位首片超过该时间仍未出画即作废记忆并回到低档起播。 */
+const STARTUP_QUALITY_FALLBACK_MS = 2_000
+
 const slug = computed(() => String(route.params.slug ?? ''))
 const previewSourceUrl = computed(() => typeof route.query.sourceUrl === 'string' ? route.query.sourceUrl.trim() : '')
 const isExternalPreview = computed(() => route.name === 'externalWatch' && Boolean(previewSourceUrl.value))
 const detail = ref<AnimeDetail | null>(null)
 const loading = ref(false)
 const failed = ref(false)
+const previewError = ref('')
 const collected = ref(false)
 const favoriteStateVersion = ref(0)
 const favoritePending = ref(false)
@@ -38,20 +72,47 @@ const episodesLoading = ref(false)
 const episodesFailed = ref(false)
 const selectedEpisodeId = ref<number | null>(null)
 const selectedPlaybackUrl = ref('')
+const playerLoading = ref(false)
 const playerError = ref(false)
 const episodesUsingCache = ref(false)
 const episodesRequestVersion = ref(0)
-const anime4KEnabled = ref(false)
-const anime4KProfile = ref<Anime4KProfile>('balanced')
+const preferences = readPlaybackPreferences()
+const anime4KEnabled = ref(preferences.quality !== 'off')
+const interpolationEnabled = ref(preferences.frameRate !== 'off')
+const interpolationTarget = ref<FrameRateTarget>(preferences.frameRate === 'off' ? 'auto' : preferences.frameRate)
+const anime4KProfile = ref<Anime4KProfile>(preferences.quality === 'off' ? 'fast' : preferences.quality)
+const playbackPhase = ref('正在加载视频')
+const attemptedRoutes = new Set<string>()
+const searchReturn = computed(() => ({ path: '/search', query: { keyword: typeof route.query.keyword === 'string' ? route.query.keyword : detail.value?.title || '' } }))
+const playbackKey = computed(() => `${detail.value?.title || slug.value}:${detail.value?.year || ''}:${selectedEpisode.value?.episodeNo || 1}`)
 const anime4KState = ref<'idle' | 'starting' | 'active' | 'unsupported' | 'failed'>('idle')
 const playerContainer = ref<HTMLDivElement | null>(null)
 let artPlayer: Artplayer | null = null
 let artHls: Hls | null = null
 let playerRequestVersion = 0
 let anime4KSession: Anime4KSession | null = null
+let interpolationStats: InterpolationStats | null = null
+/** VQ-30 画质窗口汇总：把清晰度档位与渲染 Worker 的成本证据按秒合并。 */
+let qualityObservability: QualityObservability | null = null
 let anime4KRequestVersion = 0
-let progressTimer = 0
 let mediaLoadTimer = 0
+let stallRecoveryTimer = 0
+let mediaRevealTimer = 0
+let mediaRevealFrameCallback = 0
+let mediaRevealVideo: HTMLVideoElement | null = null
+let mediaRevealVersion = 0
+let flushPlayerProgress: (() => void) | null = null
+let removePlayerProgressListeners: (() => void) | null = null
+interface PlaybackSnapshot { currentTime: number; shouldPlay: boolean; volume: number; muted: boolean; rate: number }
+let pendingPlaybackResume: PlaybackSnapshot | null = null
+let lastPlaybackState: PlaybackSnapshot | null = null
+let pendingPlaybackNotice = ''
+/**
+ * 随包线路备用池：外站预览的线路全部不通时静默接管播放，不进入可见线路面板、不提示失败。
+ */
+const bundledLinePool = ref<AnimePlaybackOption[]>([])
+/** 当前正在接管播放的随包线路；为空表示仍在播外站候选里的线路。 */
+const bundledActiveLine = ref<AnimePlaybackOption | null>(null)
 let detailRequestController: AbortController | null = null
 let episodesRequestController: AbortController | null = null
 
@@ -70,8 +131,128 @@ function getHlsQualityLevels(hls: Hls) {
   return [...levelsByHeight.values()].sort((left, right) => right.height - left.height)
 }
 
+/** 当前清晰度档位采样：生效档位、阶梯最高档、升档带宽需求与限制条件（VQ-30）。 */
+function readClarityObservation(hls: Hls): ClarityObservation {
+  const levels = getHlsQualityLevels(hls)
+  const index = hls.currentLevel >= 0 ? hls.currentLevel : hls.loadLevel
+  const level = index >= 0 ? hls.levels[index] : undefined
+  const height = Number(level?.height) || 0
+  const highest = levels[0]
+  // 比当前档更高的最近一档：升档需要的带宽按播放器的升档系数换算，说明才能与自适应判定一致。
+  const next = levels.filter(candidate => candidate.height > height).at(-1)
+  const upFactor = Number(hls.config.abrBandWidthUpFactor) || 1
+  const capped = hls.autoLevelCapping
+  const bandwidthBps = Number(hls.bandwidthEstimate)
+  return {
+    levelIndex: level ? index : null,
+    height,
+    bitrate: Number(level?.bitrate) || 0,
+    highestHeight: Number(highest?.height) || 0,
+    highestBitrate: Number(highest?.bitrate) || 0,
+    nextHeight: next?.height ?? 0,
+    nextRequiredBps: next ? next.bitrate / upFactor : 0,
+    mode: hls.manualLevel >= 0 ? 'manual' : 'auto',
+    capHeight: capped >= 0 ? Number(hls.levels[capped]?.height) || -1 : -1,
+    bandwidthBps: Number.isFinite(bandwidthBps) && bandwidthBps > 0 ? bandwidthBps : 0,
+    startupFallback: startupQualityFallbackNote?.reason ?? '',
+  }
+}
+
+/**
+ * 采样画质窗口（VQ-30）：档位变化时提示「当前非最高档及原因」，
+ * 窗口记录同时保留清晰度档位与渲染 Worker 的成本证据，供菜单里的可查询说明使用。
+ */
+function sampleQualityWindow(player: Artplayer, hls: Hls, requestVersion: number) {
+  const observability = qualityObservability
+  if (!observability || requestVersion !== playerRequestVersion || artHls !== hls) return
+  const observation = readClarityObservation(hls)
+  if (startupQualityFallbackNote && observation.levelIndex !== startupQualityFallbackNote.level) {
+    startupQualityFallbackNote = null
+  }
+  const notice = observability.observeClarity(observation, performance.now())
+  if (notice) player.notice.show = notice
+}
+
+/** 起播清晰度记忆的超时看门与本次尝试状态，只在播放器会话内有效。 */
+let startupQualityTimer = 0
+let startupQualityAttempt: { source: string; mode: StartupQualityRecord['mode']; index: number } | null = null
+/** 记忆档位回落说明：只在下一次档位变化前的窗口里作为非最高档原因上报。 */
+let startupQualityFallbackNote: { reason: string; level: number } | null = null
+
+function clearStartupQualityTimer() {
+  if (!startupQualityTimer) return
+  window.clearTimeout(startupQualityTimer)
+  startupQualityTimer = 0
+}
+
+/** 放弃本次记忆尝试；作废存储条目由调用方决定。 */
+function abandonStartupQuality() {
+  clearStartupQualityTimer()
+  const attempt = startupQualityAttempt
+  startupQualityAttempt = null
+  return attempt
+}
+
+/** 记忆档位已经出画或已缓冲：本次记忆判定为有效，撤掉回落看门。 */
+function confirmStartupQuality(level?: number) {
+  const attempt = startupQualityAttempt
+  if (!attempt || (level !== undefined && level !== attempt.index)) return
+  clearStartupQualityTimer()
+  startupQualityAttempt = null
+}
+
+/** 记忆档位在超时内没有出画：作废记忆并回到低档，避免首帧继续等待高码率分片。 */
+function fallbackStartupQuality(hls: Hls, player: Artplayer, requestVersion: number) {
+  const attempt = abandonStartupQuality()
+  if (!attempt || requestVersion !== playerRequestVersion || artHls !== hls) return
+  clearStartupQuality(attempt.source, attempt.mode)
+  startupQualityFallbackNote = { reason: '记忆档位未出画，已回落低档', level: 0 }
+  hls.startLevel = 0
+  hls.stopLoad()
+  hls.nextLoadLevel = 0
+  hls.startLoad(Math.max(0, player.video.currentTime))
+}
+
+/** 记忆档位致命失败：作废存储条目，下次起播按低档起步。 */
+function invalidateStartupQuality() {
+  const attempt = abandonStartupQuality()
+  if (attempt) clearStartupQuality(attempt.source, attempt.mode)
+}
+
+/**
+ * 起播清晰度记忆：命中同一地址的历史档位时先按该档取首片，再交回带宽自适应。
+ * 受窗口降档上限约束时取上限档；阶梯里找不到该高度或结果落在低档时，保持原有低档起步。
+ */
+function applyStartupQuality(hls: Hls, source: string, record: StartupQualityRecord | null, player: Artplayer, requestVersion: number) {
+  abandonStartupQuality()
+  if (!record) return
+  const matched = matchStartupQualityIndex(hls.levels, record)
+  const capped = hls.autoLevelCapping
+  const index = capped >= 0 ? Math.min(matched, capped) : matched
+  if (index <= 0) return
+  hls.startLevel = index
+  startupQualityAttempt = { source, mode: record.mode, index }
+  startupQualityTimer = window.setTimeout(
+    () => fallbackStartupQuality(hls, player, requestVersion), STARTUP_QUALITY_FALLBACK_MS)
+}
+
+/** 记录正在播放的实际档位，供下次起播直接使用。 */
+function recordStartupQualityLevel(hls: Hls, source: string, levelIndex: number) {
+  const level = hls.levels[levelIndex]
+  const height = Number(level?.height) || 0
+  if (!level || height <= 0) return false
+  saveStartupQuality(source, {
+    ladder: qualityLadderSignature(hls.levels),
+    mode: 'auto',
+    index: levelIndex,
+    height,
+    bitrate: Number(level.bitrate) || 0,
+  })
+  return true
+}
+
 /** 将 HLS level 接入 ArtPlayer 原生 quality 控件，切换时不重建播放器。 */
-function mountHlsQuality(player: Artplayer, hls: Hls, requestVersion: number) {
+function mountHlsQuality(player: Artplayer, hls: Hls, requestVersion: number, source: string) {
   const levels = getHlsQualityLevels(hls)
   if (levels.length < 2) return
 
@@ -85,10 +266,35 @@ function mountHlsQuality(player: Artplayer, hls: Hls, requestVersion: number) {
     selector: [
       { html: '自动', value: 'auto', default: true },
       ...levels.map((level) => ({ html: `${level.height}P`, value: level.index })),
+      // VQ-30 可查询说明：不改变档位，只解释当前为什么不是最高清晰度。
+      { html: '当前清晰度说明', value: 'explain' },
     ],
     onSelect(item) {
+      if (String(item.value) === 'explain') {
+        const current = hls.manualLevel >= 0 ? String(hls.manualLevel) : 'auto'
+        // 说明项不是档位：恢复档位的选中态，控件标签也回到实际档位。
+        player.template.$player.querySelectorAll<HTMLElement>('.art-control-quality .art-selector-item')
+          .forEach(node => node.classList.toggle('art-current', node.dataset.value === current))
+        player.notice.show = qualityObservability?.explain() || '当前清晰度档位信息尚不可用'
+        return current === 'auto' ? '自动' : `${Number(hls.levels[Number(current)]?.height) || 0}P`
+      }
       if (requestVersion === playerRequestVersion && artHls === hls) {
-        hls.currentLevel = item.value === 'auto' ? -1 : Number(item.value)
+        hls.nextLevel = item.value === 'auto' ? -1 : Number(item.value)
+        // 手动档位视为强偏好；选择自动则交回带宽判定，只清掉手动记忆。
+        if (item.value === 'auto') clearStartupQuality(source, 'manual')
+        else {
+          const level = levels.find(candidate => candidate.index === Number(item.value))
+          if (level) {
+            saveStartupQuality(source, {
+              ladder: qualityLadderSignature(hls.levels),
+              mode: 'manual',
+              index: level.index,
+              height: level.height,
+              bitrate: level.bitrate,
+            })
+          }
+        }
+        sampleQualityWindow(player, hls, requestVersion)
       }
       player.notice.show = `切换清晰度: ${item.html}`
       return item.html
@@ -96,39 +302,55 @@ function mountHlsQuality(player: Artplayer, hls: Hls, requestVersion: number) {
   })
 }
 
-function anime4KControlText() {
-  if (anime4KState.value === 'starting') return '增强…'
-  if (anime4KState.value === 'active') return '增强+'
-  return '增强'
-}
-
 function updateAnime4KControl(player: Artplayer) {
+  const effectiveFps = interpolationStats?.nextTargetFps ?? interpolationTarget.value
+  const effectiveQuality = anime4KEnabled.value ? interpolationStats?.effectiveProfile ?? anime4KProfile.value : 'off'
+  // 帧率只保留播放期的实时补间档位（见下方“帧率”菜单），不再提供离线生成文件的入口。
+  player.controls.update({
+    name: 'interpolation', position: 'right', index: 8, html: '帧率',
+    selector: [
+      { html: '原始', value: 'off', default: !interpolationEnabled.value },
+      { html: '自动', value: 'auto', default: interpolationEnabled.value && effectiveFps === 'auto' },
+      ...FRAME_RATE_OPTIONS.map(value => ({
+        html: `${value} FPS`,
+        value,
+        default: interpolationEnabled.value && effectiveFps === value,
+      })),
+    ],
+    onSelect(item) {
+      interpolationEnabled.value = item.value !== 'off'
+      if (interpolationEnabled.value) interpolationTarget.value = item.value as FrameRateTarget
+      savePlaybackPreferences({ frameRate: interpolationEnabled.value ? interpolationTarget.value : 'off' })
+      void applyAnime4K(player, playerRequestVersion)
+      return '帧率'
+    },
+  })
   player.controls.update({
     name: 'anime4k',
     position: 'right',
     index: 9,
-    html: anime4KControlText(),
-    tooltip: anime4KEnabled.value ? `画质增强：${ANIME4K_PROFILE_LABELS[anime4KProfile.value]}` : '画质增强',
+    html: '画质',
     selector: [
-      { html: '关闭', value: 'off', default: !anime4KEnabled.value },
+      { html: '关闭', value: 'off', default: effectiveQuality === 'off' },
       ...Object.entries(ANIME4K_PROFILE_LABELS).map(([value, html]) => ({
         html,
         value,
-        default: anime4KEnabled.value && value === anime4KProfile.value,
+        default: value === effectiveQuality,
       })),
     ],
     onSelect(item) {
       const value = String(item.value)
       if (value === 'off') {
         anime4KEnabled.value = false
-        stopAnime4K()
-        updateAnime4KControl(player)
-        player.notice.show = '已关闭 Anime4K'
-        return
+        savePlaybackPreferences({ quality: 'off' })
+        void applyAnime4K(player, playerRequestVersion)
+        return '画质'
       }
       anime4KEnabled.value = true
       anime4KProfile.value = value as Anime4KProfile
+      savePlaybackPreferences({ quality: anime4KProfile.value })
       void applyAnime4K(player, playerRequestVersion)
+      return '画质'
     },
   })
 }
@@ -145,17 +367,81 @@ const playerSectionTitle = computed(() => isMovie.value ? '正片播放' : '选�
 const playbackListLabel = computed(() => isMovie.value ? '语言与播放线路' : '剧集列表')
 
 /**
- * 电影优先从来源标题识别语言，无法识别时显示线路编号；
- * 连载作品继续使用接口剧集标题和集数。
+ * 电影优先从来源标题识别语言与字幕（如「国语中字」），无法识别时显示线路编号。
+ * 连载作品保留接口剧集标题；来源把语言写在条目名里（例如被来源分类成连载的电影）时显示规范标签。
  */
 function playbackOptionLabel(episode: AnimeEpisode, index: number): string {
-  if (!isMovie.value) return episode.title || `第 ${episode.episodeNo} 集`
-  const sourceText = `${episode.title ?? ''} ${episode.sourceLabel ?? ''}`
-  if (/国语|国配|普通话|中文配音/.test(sourceText)) return '国语'
-  if (/日语|日文|原声/.test(sourceText)) return '日语原声'
-  if (/粤语|粤配/.test(sourceText)) return '粤语'
-  if (/英语|英文/.test(sourceText)) return '英语'
-  return episodes.value.length === 1 ? '播放正片' : `播放线路 ${index + 1}`
+  // 剧集名和线路标签都可能只写“第 N 集/公开 HLS 播放源”，语言有时只出现在媒体地址里
+  // （例如 `…/nidemingzi/HD中字/index.m3u8`），因此一起参与线路解析。
+  const meta = parsePlaybackLine(episode.title, episode.sourceLabel, safeDecodeUrl(episode.playbackUrl))
+  // 连载作品的按钮必须显示集数：来源把语言写在条目名里时，线路标签只能进分组标题。
+  if (!isMovie.value) return episode.title || meta.label || `第 ${episode.episodeNo} 集`
+  return meta.label || (episodes.value.length === 1 ? '播放正片' : `播放线路 ${index + 1}`)
+}
+
+/** 媒体地址里的百分号编码会影响关键词匹配，解析前先还原成可读文本。 */
+function safeDecodeUrl(value?: string): string {
+  if (!value) return ''
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+interface EpisodeLineGroup {
+  key: string
+  label: string
+  score: number
+  episodes: AnimeEpisode[]
+}
+
+/** 剧集所属线路：用统一的语言/字幕解析结果分组，解析不出时退回来源线路名。 */
+function episodeLineOf(episode: AnimeEpisode) {
+  return parsePlaybackLine(episode.title, episode.sourceLabel, safeDecodeUrl(episode.playbackUrl))
+}
+
+/**
+ * 选集排序：同一线路（例如「国语中字」的多集）排在一起并连续编号，
+ * 线路之间按默认选线优先级排列，保证同一部作品的选集列表不会国语、中字、原声交错出现。
+ */
+const episodeLineGroups = computed<EpisodeLineGroup[]>(() => {
+  if (isMovie.value) return []
+  const groups = new Map<string, EpisodeLineGroup>()
+  for (const episode of episodes.value) {
+    const meta = episodeLineOf(episode)
+    const label = meta.label || episode.sourceLabel?.trim() || '其他线路'
+    const key = label.toLowerCase()
+    const group = groups.get(key) ?? { key, label, score: meta.defaultScore, episodes: [] }
+    group.score = Math.max(group.score, meta.defaultScore)
+    group.episodes.push(episode)
+    groups.set(key, group)
+  }
+  return [...groups.values()]
+    .map((group) => ({ ...group, episodes: [...group.episodes].sort((left, right) => left.episodeNo - right.episodeNo) }))
+    .sort((left, right) => right.score - left.score
+      || left.label.localeCompare(right.label, 'zh-CN', { numeric: true }))
+})
+
+/** 只有确实存在多条线路时才分组展示，单线路作品保持原有的一行选集。 */
+const groupedEpisodeList = computed(() => !isMovie.value && episodeLineGroups.value.length > 1)
+
+/**
+ * 用归一化标题在随包目录里找同一部作品。
+ * 来源标题常只差标点（「你的名字。」与「你的名字」），因此不能按字符串全等比较。
+ */
+function catalogMatchByTitle(title?: string) {
+  const key = titleKey(title)
+  if (!key) return undefined
+  return Object.values(animeCatalogMap).find((entry) => titleKey(entry.title) === key)
+}
+
+/** 归一化作品标题，忽略空白、标点和全半角差异，用来判定多个来源是否是同一部作品。 */
+function normalizeWorkTitle(value?: string) {
+  return (value ?? '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]/gu, '')
 }
 
 /** 兼容旧接口的单地址记录，并去掉外部页面重复声明的线路。 */
@@ -174,19 +460,45 @@ function playbackOptionsOf(episode?: AnimeEpisode): AnimePlaybackOption[] {
   return options
 }
 
-function playbackSourceLabel(option: AnimePlaybackOption, index: number): string {
-  return option.label?.trim() || `线路 ${index + 1}`
-}
-
 /** 当前选中的剧集；默认选择接口返回的第一集。 */
 const selectedEpisode = computed(() =>
   episodes.value.find((episode) => episode.id === selectedEpisodeId.value) ?? episodes.value[0],
 )
 
-const playbackOptions = computed(() => playbackOptionsOf(selectedEpisode.value))
+/**
+ * 线路名在排序前统一解析：把「HD国语」「HD中字」这类来源名与对应剧集标题
+ * 合并成「国语」「中字」等规范标签，让选线优先级与界面文案共用同一份数据。
+ */
+const playbackOptionList = computed(() => playbackOptionsOf(selectedEpisode.value).map((option) => {
+  const matchingEpisode = episodes.value.find((episode) => episode.playbackUrl === option.url)
+  const meta = parsePlaybackLine(option.label, matchingEpisode?.title, safeDecodeUrl(option.url))
+  return meta.label ? { ...option, label: meta.label } : option
+}))
+const playbackOptions = computed(() => rankPlaybackOptions(playbackOptionList.value, playbackKey.value, readPlaybackPreferences().language))
+const showEpisodeList = computed(() => {
+  if (episodes.value.length < 2 || playbackOptions.value.length < 2) return true
+  const sourceUrls = new Set(playbackOptions.value.map((option) => option.url))
+  return !episodes.value.every((episode) => sourceUrls.has(episode.playbackUrl))
+})
 const activePlaybackOption = computed(() => {
+  // 站内线路接管后，播放地址不再来自外站候选列表。
+  if (bundledActiveLine.value) return bundledActiveLine.value
   const options = playbackOptions.value
   return options.find((option) => option.url === selectedPlaybackUrl.value) ?? options[0]
+})
+/** 同一语言可能有多条来源线路，展示名重复时补序号，避免面板里出现无法区分的按钮。 */
+const playbackSourceLabels = computed(() => {
+  const seen = new Map<string, number>()
+  return playbackOptions.value.map((option, index) => {
+    const label = option.label?.trim() || `线路 ${index + 1}`
+    const count = (seen.get(label) ?? 0) + 1
+    seen.set(label, count)
+    return count > 1 ? `${label} ${count}` : label
+  })
+})
+const activePlaybackLabel = computed(() => {
+  const index = playbackOptions.value.findIndex(candidate => candidate.url === activePlaybackOption.value?.url)
+  return index >= 0 ? playbackSourceLabels.value[index] ?? '' : ''
 })
 const activePlaybackUrl = computed(() => activePlaybackOption.value?.url ?? '')
 const activePlaybackIsHls = computed(() => {
@@ -199,9 +511,13 @@ const isVideoElement = computed(() => {
   const option = activePlaybackOption.value
   return Boolean(option && (option.mimeType?.startsWith('video/') || activePlaybackIsHls.value))
 })
+// 来源页未声明直连媒体时，后端会保留白名单来源中的 iframe 播放器地址。
+const isExternalFrame = computed(() => activePlaybackOption.value?.mimeType === 'text/html')
 
 const display = computed(() => {
   if (detail.value) {
+    // 随包作品以包内封面为准：来源页面的海报会串到别的作品（例如相关推荐按天轮换）。
+    const packagedCover = animeCatalogMap[String(detail.value.id)]?.cover ?? catalogMatchByTitle(detail.value.title)?.cover
     return {
       title: detail.value.title,
       subtitle: detail.value.originalTitle,
@@ -209,13 +525,13 @@ const display = computed(() => {
       status: detail.value.status,
       description: detail.value.summary ?? '',
       update: detail.value.updateText ?? '',
-      cover: resolveAssetUrl(animeCatalogMap[String(detail.value.id)]?.cover) ?? resolveAssetUrl(detail.value.coverUrl && !detail.value.coverUrl.includes('anime-placeholder') ? detail.value.coverUrl : undefined) ?? '/covers/mushoku-oad.svg',
+      cover: resolveAssetUrl(packagedCover) ?? resolveAssetUrl(detail.value.coverUrl && !detail.value.coverUrl.includes('anime-placeholder') ? detail.value.coverUrl : undefined) ?? placeholderCover,
       characters: detail.value.characters ?? [],
       similar: (detail.value.similar ?? []).map((item) => ({
         id: String(item.id),
         title: item.title,
         score: item.score,
-        cover: resolveAssetUrl(animeCatalogMap[String(item.id)]?.cover) ?? resolveAssetUrl(item.coverUrl && !item.coverUrl.includes('anime-placeholder') ? item.coverUrl : undefined) ?? '/covers/mushoku-oad.svg',
+        cover: resolveAssetUrl(animeCatalogMap[String(item.id)]?.cover) ?? resolveAssetUrl(item.coverUrl && !item.coverUrl.includes('anime-placeholder') ? item.coverUrl : undefined) ?? placeholderCover,
       })),
       schedule: detail.value.schedule ?? [],
     }
@@ -264,15 +580,62 @@ async function load() {
   detailRequestController = controller
   loading.value = true
   failed.value = false
+  previewError.value = ''
+  attemptedRoutes.clear()
+  lastPlaybackState = null
   try {
     if (isExternalPreview.value) {
-      const preview = await animeApi.previewUrl(previewSourceUrl.value, { signal: controller.signal })
-      detail.value = previewDetail(preview)
-      episodes.value = normalizePlaybackEpisodes(preview.episodes)
-      selectedEpisodeId.value = episodes.value[0]?.id ?? null
-      selectedPlaybackUrl.value = ''
-      episodesLoading.value = false
-      episodesFailed.value = false
+      const alternatives = Array.isArray(route.query.alternatives) ? route.query.alternatives : [route.query.alternatives]
+      const sources = [...new Set([previewSourceUrl.value, ...alternatives.filter((value): value is string => typeof value === 'string')])].slice(0, 4)
+      let accepted: AnimeUrlPreviewResult | undefined
+      const receive = (preview: AnimeUrlPreviewResult) => {
+        controller.signal.throwIfAborted()
+        const playable = normalizePlaybackEpisodes(preview.episodes).filter(episode =>
+          episode.mimeType === 'text/html' || episode.mimeType?.startsWith('video/')
+          || episode.mimeType?.includes('mpegurl') || /\.m3u8(?:$|\?)/i.test(episode.playbackUrl))
+        if (!playable.length) throw new Error('该来源没有可播放的视频资源')
+        if (!accepted) {
+          accepted = { ...preview, episodes: playable }
+          detail.value = previewDetail(preview)
+          episodes.value = playable
+          selectedEpisodeId.value = playable[0]!.id
+          selectedPlaybackUrl.value = ''
+          episodesLoading.value = false
+          episodesFailed.value = false
+          loading.value = false
+          // 同一部作品在随包片库里存在时，先把它的线路准备好，供外站线路失效时静默接管。
+          void prepareBundledLines(preview.title)
+          return
+        }
+        // Append alternatives in place so a late response never remounts a playing video.
+        // 同一部作品的多个来源标题常只差标点（「你的名字。」与「你的名字」），按归一化标题判定，
+        // 否则可用来源的线路会因为标题字符串不相等而被丢弃，只剩失效线路可播。
+        if (accepted.type !== '剧场版' || episodes.value.length !== 1 || playable.length !== 1
+          || normalizeWorkTitle(preview.title) !== normalizeWorkTitle(accepted.title)) return
+        const episode = episodes.value[0]!
+        const options = new Map((episode.playbackOptions ?? []).map(option => [option.url, option]))
+        const next = playable[0]!
+        for (const option of [{ url: next.playbackUrl, mimeType: next.mimeType, label: next.title || next.sourceLabel }, ...(next.playbackOptions ?? [])]) {
+          if (option.url !== episode.playbackUrl && !options.has(option.url)) options.set(option.url, option)
+        }
+        episode.playbackOptions = [...options.values()]
+        if (playerError.value) advancePlaybackOption('已找到备用线路，正在切换')
+      }
+      const results = await Promise.allSettled(sources.map(async source => {
+        let preview: AnimeUrlPreviewResult
+        try { preview = await animeApi.previewUrl(source, { signal: controller.signal, timeout: 30_000, retries: 0 }) }
+        catch (error) {
+          // 来源站点读取偶发很慢：服务暂不可用和客户端超时都再试一次；
+          // 重试通常命中服务端 30 秒预览缓存，不会重复抓取来源页。
+          if (!(error instanceof ApiError)
+            || (error.code !== ErrorCode.SERVICE_UNAVAILABLE && error.code !== ErrorCode.RATE_LIMITED)) throw error
+          controller.signal.throwIfAborted()
+          preview = await animeApi.previewUrl(source, { signal: controller.signal, timeout: 20_000, retries: 0 })
+        }
+        receive(preview)
+      }))
+      controller.signal.throwIfAborted()
+      if (!accepted) throw results.find(result => result.status === 'rejected')?.reason ?? new Error('所有来源暂不可用')
     } else {
       const slugValue = slug.value
       const mappedId = /^\d+$/.test(slugValue) ? Number(slugValue) : undefined
@@ -280,17 +643,21 @@ async function load() {
         // 本地目录作品（后端暂无对应数据面）：直接本地展示，不发起接口请求
         detail.value = null
       } else {
-        detail.value = await animeApi.detail(mappedId, { signal: controller.signal })
+        void loadEpisodes(mappedId)
+        const nextDetail = await animeApi.detail(mappedId, { signal: controller.signal })
+        controller.signal.throwIfAborted()
+        detail.value = nextDetail
         if (detail.value) {
           void recordHistory(detail.value.id)
           void refreshFavorite(detail.value.id)
-          void loadEpisodes(detail.value.id)
         }
       }
     }
   } catch (cause) {
     if (isAbortError(cause)) return
+    episodesRequestController?.abort()
     failed.value = true
+    previewError.value = cause instanceof Error ? cause.message : '来源解析失败，请稍后重试'
     detail.value = null
   } finally {
     if (detailRequestController === controller) {
@@ -300,8 +667,24 @@ async function load() {
   }
 }
 
+/**
+ * 「继续观看」入口的续播约定：`resume=1` 表示这次进入详情页要接着播，
+ * `t` 是记录下来的秒数。位置交给播放器在 `loadedmetadata` 时消费，选中选集仍由 `episode` 决定。
+ */
+function applyRouteResume() {
+  if (isExternalPreview.value || route.query.resume !== '1') return
+  const seconds = Number(route.query.t)
+  pendingPlaybackResume = {
+    currentTime: Number.isFinite(seconds) && seconds > 0 ? seconds : 0,
+    shouldPlay: true,
+    volume: readPlaybackPreferences().volume,
+    muted: false,
+    rate: readPlaybackPreferences().rate,
+  }
+}
+
 watch(
-  () => `${slug.value}|${previewSourceUrl.value}`,
+  () => `${slug.value}|${previewSourceUrl.value}|${JSON.stringify(route.query.alternatives)}`,
   () => {
     detailRequestController?.abort()
     episodesRequestController?.abort()
@@ -310,8 +693,14 @@ watch(
     episodes.value = []
     selectedEpisodeId.value = null
     selectedPlaybackUrl.value = ''
+    pendingPlaybackResume = null
+    pendingPlaybackNotice = ''
+    bundledActiveLine.value = null
+    bundledLinePool.value = []
+    applyRouteResume()
     episodesLoading.value = false
     episodesFailed.value = false
+    playerLoading.value = false
     playerError.value = false
     episodesUsingCache.value = false
     void load()
@@ -344,7 +733,9 @@ async function loadEpisodes(animeId: number) {
   const cached = readCachedEpisodes(animeId)
   if (cached?.length) {
     episodes.value = cached
-    selectedEpisodeId.value = readSelectedEpisodeId(animeId) ?? cached[0].id
+    const requestedEpisode = Number(route.query.episode)
+    selectedEpisodeId.value = (Number.isFinite(requestedEpisode) && requestedEpisode > 0 ? requestedEpisode : null)
+      ?? readSelectedEpisodeId(animeId) ?? cached[0].id
     episodesUsingCache.value = true
     playerError.value = false
   }
@@ -356,10 +747,19 @@ async function loadEpisodes(animeId: number) {
     // 路由快速切换时丢弃旧作品的迟到响应，避免播放器串集。
     if (requestVersion !== episodesRequestVersion.value) return
     const normalized = normalizePlaybackEpisodes(result)
+    const currentId = selectedEpisodeId.value
+    const requestedEpisode = Number(route.query.episode)
+    const remembered = (Number.isFinite(requestedEpisode) && requestedEpisode > 0 ? requestedEpisode : null)
+      ?? readSelectedEpisodeId(animeId)
+    const nextId = normalized.some(episode => episode.id === currentId) ? currentId
+      : normalized.some(episode => episode.id === remembered) ? remembered : normalized[0]?.id ?? null
+    const refreshed = normalized.find(episode => episode.id === nextId)
+    if (artPlayer && nextId === currentId && !playbackOptionsOf(refreshed).some(option => option.url === activePlaybackUrl.value)) {
+      rememberPlaybackPosition()
+    }
     episodes.value = normalized
     writeCachedEpisodes(animeId, normalized)
-    const remembered = readSelectedEpisodeId(animeId)
-    selectedEpisodeId.value = normalized.some((episode) => episode.id === remembered) ? remembered : normalized[0]?.id ?? null
+    selectedEpisodeId.value = nextId
     episodesUsingCache.value = false
   } catch (cause) {
     if (isAbortError(cause)) return
@@ -383,47 +783,127 @@ async function loadEpisodes(animeId: number) {
 
 /** 切换剧集时重置播放器错误状态，允许同一播放器重新加载。 */
 function selectEpisode(episode: AnimeEpisode) {
+  if (episode.id === selectedEpisode.value?.id) return
+  attemptedRoutes.clear()
+  lastPlaybackState = null
+  flushPlayerProgress?.()
+  pendingPlaybackResume = null
+  pendingPlaybackNotice = ''
+  bundledActiveLine.value = null
   selectedEpisodeId.value = episode.id
   selectedPlaybackUrl.value = episode.playbackUrl
   if (detail.value && !isExternalPreview.value) writeSelectedEpisodeId(detail.value.id, episode.id)
   playerError.value = false
 }
 
+/** 记录换线前的播放位置，避免自动或手动切换线路后从头播放。 */
+function rememberPlaybackPosition() {
+  const video = artPlayer?.video
+  if (!video) return
+  if (video.readyState < 2 && lastPlaybackState) {
+    pendingPlaybackResume = { ...lastPlaybackState }
+    return pendingPlaybackResume
+  }
+  pendingPlaybackResume = {
+    currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+    shouldPlay: !video.paused && !video.ended,
+    volume: video.volume, muted: video.muted, rate: video.playbackRate,
+  }
+  return pendingPlaybackResume
+}
+
 /** 手动或自动切换到当前剧集的下一条备用线路。 */
-function advancePlaybackOption() {
+function advancePlaybackOption(notice = '') {
+  // 已经由随包线路接管时，继续在随包线路池里换，不再回到外站候选。
+  if (bundledActiveLine.value) return switchToBundledLine()
   const options = playbackOptions.value
   if (options.length < 2) return false
-  const currentIndex = Math.max(0, options.findIndex((option) => option.url === activePlaybackUrl.value))
-  const next = options[currentIndex + 1]
+  attemptedRoutes.add(activePlaybackUrl.value)
+  const language = playbackLanguage(activePlaybackOption.value?.label) || readPlaybackPreferences().language
+  const next = rankPlaybackOptions(options, playbackKey.value, language).find(option => !attemptedRoutes.has(option.url)
+    && (!language || !playbackLanguage(option.label) || playbackLanguage(option.label) === language))
   if (!next) return false
+  if (!pendingPlaybackResume) rememberPlaybackPosition()
+  if (pendingPlaybackResume && pendingPlaybackResume.currentTime === 0 && isExternalPreview.value
+    && artPlayer && artPlayer.video.readyState < 2) pendingPlaybackResume.shouldPlay = true
+  playbackPhase.value = '正在切换备用线路'
+  pendingPlaybackNotice = notice
   selectedPlaybackUrl.value = next.url
   playerError.value = false
   return true
 }
 
 function selectPlaybackOption(option: AnimePlaybackOption) {
+  if (option.url === activePlaybackUrl.value) return
+  rememberPlaybackPosition()
+  attemptedRoutes.clear()
+  bundledActiveLine.value = null
+  const language = playbackLanguage(option.label)
+  if (language) savePlaybackPreferences({ language })
+  pendingPlaybackNotice = ''
   selectedPlaybackUrl.value = option.url
   playerError.value = false
+}
+
+/**
+ * 外站预览时预取随包线路：来源站点给出的直连地址会失效（例如 v8 线路 NXDOMAIN），
+ * 这时用随包片库里的同一部作品接管播放，用户只看到画面继续出来。
+ */
+async function prepareBundledLines(title?: string) {
+  bundledLinePool.value = []
+  const match = catalogMatchByTitle(title)
+  if (!match || !/^\d+$/.test(match.slug)) return
+  try {
+    const list = normalizePlaybackEpisodes(await animeApi.episodes(match.slug))
+    bundledLinePool.value = list
+      .flatMap((episode) => playbackOptionsOf(episode))
+      .filter((option) => Boolean(option?.url))
+  } catch {
+    bundledLinePool.value = []
+  }
+}
+
+/** 线路池里还有没试过的随包线路时，静默切过去继续播。 */
+function switchToBundledLine(): boolean {
+  const next = bundledLinePool.value.find((option) => option.url !== activePlaybackUrl.value && !attemptedRoutes.has(option.url))
+  if (!next) return false
+  attemptedRoutes.add(activePlaybackUrl.value)
+  if (!pendingPlaybackResume) rememberPlaybackPosition()
+  if (pendingPlaybackResume && pendingPlaybackResume.currentTime === 0) pendingPlaybackResume.shouldPlay = true
+  pendingPlaybackNotice = ''
+  playerError.value = false
+  playerLoading.value = true
+  playbackPhase.value = '正在加载视频'
+  bundledActiveLine.value = next
+  selectedPlaybackUrl.value = next.url
+  return true
 }
 
 function stopAnime4K() {
   anime4KRequestVersion += 1
   anime4KSession?.stop()
   anime4KSession = null
+  interpolationStats = null
   anime4KState.value = 'idle'
 }
 
 /** 释放 ArtPlayer 和 HLS 实例，避免切换剧集后继续请求上一集的分片。 */
 function destroyVideoPlayer() {
+  flushPlayerProgress?.()
+  flushPlayerProgress = null
+  removePlayerProgressListeners?.()
+  removePlayerProgressListeners = null
   stopAnime4K()
-  if (progressTimer) {
-    window.clearInterval(progressTimer)
-    progressTimer = 0
-  }
+  if (artPlayer) releaseInterpolationAudio(artPlayer.video)
   if (mediaLoadTimer) {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
+  clearStallRecovery()
+  clearPlayerMediaReveal()
+  abandonStartupQuality()
+  qualityObservability = null
+  startupQualityFallbackNote = null
   artHls?.destroy()
   artHls = null
   artPlayer?.destroy()
@@ -431,11 +911,13 @@ function destroyVideoPlayer() {
 }
 
 async function applyAnime4K(player: Artplayer, requestVersion: number) {
+  const adaptationNotice = new AdaptationNotice()
   const anime4KVersion = ++anime4KRequestVersion
   anime4KSession?.stop()
   anime4KSession = null
+  interpolationStats = null
 
-  if (!anime4KEnabled.value) {
+  if (!anime4KEnabled.value && !interpolationEnabled.value) {
     anime4KState.value = 'idle'
     updateAnime4KControl(player)
     return
@@ -443,22 +925,65 @@ async function applyAnime4K(player: Artplayer, requestVersion: number) {
 
   anime4KState.value = 'starting'
   updateAnime4KControl(player)
+  const onError = (message: string) => {
+    if (requestVersion !== playerRequestVersion || anime4KVersion !== anime4KRequestVersion) return
+    anime4KEnabled.value = false
+    interpolationEnabled.value = false
+    stopAnime4K()
+    anime4KState.value = 'failed'
+    updateAnime4KControl(player)
+    player.notice.show = message
+  }
   try {
-    const session = await startAnime4KVideo(player.video, anime4KProfile.value)
-    if (requestVersion !== playerRequestVersion || anime4KVersion !== anime4KRequestVersion || !anime4KEnabled.value) {
+    const onStats = (stats: InterpolationStats) => {
+      if (requestVersion !== playerRequestVersion || anime4KVersion !== anime4KRequestVersion) return
+      // 画质窗口（VQ-30）合并本窗口的落后帧、分析宽度与回退历史，供档位说明自证原因。
+      qualityObservability?.observeStats(stats)
+      // 帧率与档位提示只属于补帧路径：仅增强路径移入 Worker 后不引入新的用户可见文案（VQ-28）。
+      if (interpolationEnabled.value) {
+        const notice = adaptationNotice.next(interpolationStats, stats, performance.now())
+        if (notice) player.notice.show = notice
+      }
+      interpolationStats = stats
+      // Keep the existing open menu and its listeners while reflecting the effective adaptive rate.
+      const selected = String(interpolationEnabled.value ? stats.nextTargetFps : 'off')
+      player.template.$player.querySelectorAll<HTMLElement>('.art-control-interpolation .art-selector-item').forEach(item => {
+        item.classList.toggle('art-current', item.dataset.value === selected)
+      })
+      player.template.$player.querySelectorAll<HTMLElement>('.art-control-anime4k .art-selector-item').forEach(item => {
+        item.classList.toggle('art-current', item.dataset.value === stats.effectiveProfile)
+      })
+    }
+    const session: Anime4KSession = interpolationEnabled.value
+      ? await startRealtimeInterpolation(player.video, {
+        profile: anime4KProfile.value,
+        enhance: anime4KEnabled.value,
+        targetFps: interpolationTarget.value,
+        interpolationDelay: readPlaybackPreferences().interpolationDelay,
+        presentationAlignment: readPlaybackPreferences().presentationAlignment,
+        onStats,
+        onError,
+      })
+      : await startAnime4KEnhancement(player.video, {
+        profile: anime4KProfile.value,
+        path: readPlaybackPreferences().enhancementPath,
+        onStats,
+        onError,
+      })
+    if (requestVersion !== playerRequestVersion || anime4KVersion !== anime4KRequestVersion) {
       session.stop()
       return
     }
     anime4KSession = session
     anime4KState.value = 'active'
     updateAnime4KControl(player)
-    player.notice.show = `Anime4K ${ANIME4K_PROFILE_LABELS[anime4KProfile.value]}模式已开启`
-  } catch {
+  } catch (error) {
     if (requestVersion !== playerRequestVersion || anime4KVersion !== anime4KRequestVersion) return
     anime4KEnabled.value = false
+    interpolationEnabled.value = false
     anime4KState.value = 'failed'
     updateAnime4KControl(player)
-    player.notice.show = '当前浏览器或视频源暂不支持 Anime4K'
+    player.notice.show = error instanceof Error ? error.message : '当前设备或视频源暂不支持运动补帧'
   }
 }
 
@@ -467,8 +992,12 @@ async function applyAnime4K(player: Artplayer, requestVersion: number) {
  * HLS 通过 customType 交给 hls.js，普通视频使用浏览器媒体能力。
  */
 async function mountVideoPlayer() {
-  const requestVersion = ++playerRequestVersion
   destroyVideoPlayer()
+  const requestVersion = ++playerRequestVersion
+  // 画质窗口按播放器会话重建：切换剧集或线路后不沿用上一段的档位与成本证据。
+  const qualityWindows = new QualityObservability()
+  qualityObservability = qualityWindows
+  playerLoading.value = false
   await nextTick()
   if (requestVersion !== playerRequestVersion) return
   const episode = selectedEpisode.value
@@ -477,6 +1006,9 @@ async function mountVideoPlayer() {
   const source = activePlaybackUrl.value
   const isHlsSource = activePlaybackIsHls.value
   if (!source) return
+  selectedPlaybackUrl.value = source
+  playerLoading.value = true
+  if (!pendingPlaybackNotice) playbackPhase.value = '正在加载视频'
   warmMediaSource(source)
 
   try {
@@ -486,6 +1018,7 @@ async function mountVideoPlayer() {
     const [{ default: Artplayer }, HlsModule] = await Promise.all([artplayerModule, hlsModule])
     const HlsConstructor = HlsModule?.default
     if (requestVersion !== playerRequestVersion) return
+    useSmoothProgress(Artplayer)
     const player = new Artplayer({
       id: `sanye-anime-${detail.value?.id ?? 'unknown'}`,
       container,
@@ -494,11 +1027,14 @@ async function mountVideoPlayer() {
       poster: display.value?.cover,
       theme: '#e77d65',
       lang: 'zh-cn',
-      volume: 0.7,
-      autoplay: false,
-      autoSize: true,
+      volume: pendingPlaybackResume?.volume ?? readPlaybackPreferences().volume,
+      // 浏览器只稳定允许静音自动播放；外部“直接观看”应在解析完成后立即开始。
+      autoplay: pendingPlaybackResume?.shouldPlay ?? isExternalPreview.value,
+      muted: pendingPlaybackResume?.muted ?? isExternalPreview.value,
+      autoSize: false,
       autoMini: false,
-      autoPlayback: true,
+      // 续播由按剧集区分的 sanye 缓存负责，避免 ArtPlayer 以作品 id 混用不同剧集的时间。
+      autoPlayback: false,
       backdrop: true,
       flip: true,
       setting: true,
@@ -520,7 +1056,7 @@ async function mountVideoPlayer() {
       moreVideoAttr: {
         crossOrigin: 'anonymous',
         playsInline: true,
-        preload: 'metadata',
+        preload: isHlsSource ? 'auto' : 'metadata',
       },
       customType: isHlsSource
         ? {
@@ -541,109 +1077,260 @@ async function mountVideoPlayer() {
                 markPlayerError()
                 return
               }
-              const hls = new HlsConstructor({
+              const fragmentCache = createFragmentCache(HlsConstructor, () => hls.latestLevelDetails?.live === false)
+              const startupQuality = readStartupQuality(url)
+              const hls: Hls = new HlsConstructor({
+                fLoader: fragmentCache.Loader,
+                // 起播由本地清晰度记忆接管：清单解析后先定档，再显式开始加载。
+                autoStartLoad: false,
                 enableWorker: true,
                 lowLatencyMode: false,
-                backBufferLength: 30,
-                maxBufferLength: 30,
-                maxMaxBufferLength: 60,
+                backBufferLength: 90,
+                maxBufferLength: 90,
+                maxMaxBufferLength: 180,
+                // 先用低档尽快出首帧，再按实测带宽升档，减少高码率首片阻塞。
+                startLevel: 0,
                 capLevelToPlayerSize: true,
-                manifestLoadingTimeOut: 4_000,
-                levelLoadingTimeOut: 4_000,
-                fragLoadingTimeOut: 5_000,
-                manifestLoadingMaxRetry: 0,
-                levelLoadingMaxRetry: 0,
-                fragLoadingMaxRetry: 0,
+                // 带宽存在短时抖动时不要立即升档，避免清晰度来回跳变导致重新缓冲。
+                abrBandWidthFactor: 0.9,
+                abrBandWidthUpFactor: 0.85,
+                abrEwmaFastVoD: 4,
+                abrEwmaSlowVoD: 15,
+                abrEwmaFastLive: 3,
+                abrEwmaSlowLive: 9,
+                maxStarvationDelay: 4,
+                maxLoadingDelay: 4,
+                manifestLoadingTimeOut: 12_000,
+                levelLoadingTimeOut: 12_000,
+                fragLoadingTimeOut: 20_000,
+                manifestLoadingMaxRetry: 2,
+                manifestLoadingRetryDelay: 1_000,
+                manifestLoadingMaxRetryTimeout: 8_000,
+                levelLoadingMaxRetry: 3,
+                levelLoadingRetryDelay: 1_000,
+                levelLoadingMaxRetryTimeout: 8_000,
+                fragLoadingMaxRetry: 4,
+                fragLoadingRetryDelay: 1_000,
+                fragLoadingMaxRetryTimeout: 10_000,
                 startFragPrefetch: true,
               })
               let networkRetries = 0
               let mediaRetries = 0
               artHls = hls
               art.hls = hls
+              hls.on(HlsConstructor.Events.DESTROYING, fragmentCache.clear)
               hls.on(HlsConstructor.Events.MEDIA_ATTACHED, () => {
                 if (requestVersion === playerRequestVersion) hls.loadSource(url)
               })
               hls.on(HlsConstructor.Events.MANIFEST_PARSED, () => {
                 if (requestVersion !== playerRequestVersion) return
-                mountHlsQuality(player, hls, requestVersion)
-                markPlayerLoaded()
+                mountHlsQuality(player, hls, requestVersion, url)
+                applyStartupQuality(hls, url, startupQuality, player, requestVersion)
+                sampleQualityWindow(player, hls, requestVersion)
+                hls.startLoad()
+              })
+              // 档位切换时立即采样：瞬时提示不必等到下一次 timeupdate。
+              hls.on(HlsConstructor.Events.LEVEL_SWITCHED, () => {
+                if (requestVersion !== playerRequestVersion) return
+                sampleQualityWindow(player, hls, requestVersion)
+              })
+              hls.on(HlsConstructor.Events.FRAG_BUFFERED, (_event, data) => {
+                if (requestVersion === playerRequestVersion) confirmStartupQuality(data.frag.level)
               })
               hls.on(HlsConstructor.Events.ERROR, (_event, data) => {
                 if (!data.fatal || requestVersion !== playerRequestVersion) return
+                // 记忆档位致命失败时作废记录，下次起播回到低档起步。
+                invalidateStartupQuality()
                 if (data.type === HlsConstructor.ErrorTypes.NETWORK_ERROR) {
                   // 只重试一次，持续 DNS/CDN 失败时交给备用线路处理，避免播放器无限空转。
                   if (networkRetries < 1) {
                     networkRetries += 1
                     hls.startLoad()
                   } else {
-                    markPlayerError()
+                    markPlayerError('当前线路网络异常，已尝试切换备用线路')
                   }
                 } else if (data.type === HlsConstructor.ErrorTypes.MEDIA_ERROR) {
                   if (mediaRetries < 1) {
                     mediaRetries += 1
                     hls.recoverMediaError()
                   } else {
-                    markPlayerError()
+                    markPlayerError('当前线路解码异常，已尝试切换备用线路')
                   }
                 } else {
-                  markPlayerError()
+                  markPlayerError('当前线路不可用，已尝试切换备用线路')
                 }
               })
               hls.attachMedia(video)
+              installHlsSeekControl(video, hls)
             },
           }
-        : undefined,
+        : {},
     }, () => {
       // ArtPlayer 构造完成不代表清单已经可用，加载状态由媒体事件和超时统一判断。
     })
     artPlayer = player
+    // 诊断通道：把按窗口汇总的画质记录（VQ-30）挂到播放器实例上，供自证与自动化读取，不进入界面。
+    const diagnostics = player as Artplayer & { sanyeQualityWindows?: readonly QualityWindow[] }
+    diagnostics.sanyeQualityWindows = qualityWindows.history
+    installSeekControl(player)
+    installPlaybackControl(player)
+    installRealtimeProgress(player)
     mediaLoadTimer = window.setTimeout(() => {
-      if (requestVersion === playerRequestVersion && player.video.readyState < HTMLMediaElement.HAVE_METADATA) {
+      if (requestVersion === playerRequestVersion && player.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
         markPlayerError()
       }
-    }, 8_000)
+      // 已有随包线路可接管时收紧等待：外站线路失效（例如 v8 线路解析不到）不再让用户白等 15 秒。
+    }, isExternalPreview.value && bundledLinePool.value.length ? EXTERNAL_PREVIEW_STARTUP_TIMEOUT_MS : PLAYER_STARTUP_TIMEOUT_MS)
     updateAnime4KControl(player)
+    let hasAppliedInitialResume = false
     player.video.addEventListener('loadedmetadata', () => {
-      if (requestVersion !== playerRequestVersion || !detail.value || isExternalPreview.value) return
-      const progress = readEpisodeProgress(detail.value.id, episode.id)
-      if (progress > 0 && progress < player.video.duration - 5) {
-        player.video.currentTime = progress
-        player.notice.show = `已恢复到 ${Math.floor(progress / 60)}:${String(Math.floor(progress % 60)).padStart(2, '0')}`
+      if (requestVersion !== playerRequestVersion || hasAppliedInitialResume) return
+      hasAppliedInitialResume = true
+      const resume = pendingPlaybackResume
+      pendingPlaybackResume = null
+      player.video.playbackRate = resume?.rate ?? readPlaybackPreferences().rate
+      if (resume) {
+        player.video.volume = resume.volume
+        player.video.muted = resume.muted
+        const canResume = resume.currentTime > 0
+          && (!Number.isFinite(player.video.duration) || resume.currentTime < player.video.duration - 1)
+        if (canResume) player.video.currentTime = resume.currentTime
+        if (resume.shouldPlay) void player.video.play().catch(() => undefined)
+        else player.video.pause()
+        return
+      }
+      if (detail.value && !isExternalPreview.value) {
+        const progress = readEpisodeProgress(detail.value.id, episode.id)
+        if (progress > 0 && progress < player.video.duration - 5) {
+          player.video.currentTime = progress
+          player.notice.show = `已恢复到 ${Math.floor(progress / 60)}:${String(Math.floor(progress % 60)).padStart(2, '0')}`
+        }
       }
     })
     player.video.addEventListener('loadeddata', () => {
       if (requestVersion !== playerRequestVersion) return
       markPlayerLoaded()
+      confirmStartupQuality()
+      selectedPlaybackUrl.value = source
+      clearStallRecovery()
       clearPlayerMediaPendingSoon(player, requestVersion)
-      if (anime4KEnabled.value && !anime4KSession) void applyAnime4K(player, requestVersion)
+      if (pendingPlaybackNotice) {
+        player.notice.show = pendingPlaybackNotice
+        pendingPlaybackNotice = ''
+      }
+      if (!player.video.paused && (anime4KEnabled.value || interpolationEnabled.value) && !anime4KSession
+        && anime4KState.value !== 'starting') void applyAnime4K(player, requestVersion)
+    })
+    let successfulPlayback = false
+    for (const event of ['timeupdate', 'pause', 'seeked', 'volumechange', 'ratechange']) {
+      player.video.addEventListener(event, () => {
+        const video = player.video
+        if (requestVersion !== playerRequestVersion || video.readyState < 2 || video.seeking) return
+        lastPlaybackState = { currentTime: video.currentTime, shouldPlay: !video.paused && !video.ended, volume: video.volume, muted: video.muted, rate: video.playbackRate }
+      })
+    }
+    player.video.addEventListener('timeupdate', () => {
+      if (requestVersion !== playerRequestVersion || successfulPlayback || player.video.currentTime < 2 || player.video.readyState < 2) return
+      successfulPlayback = true
+      recordPlaybackRoute(playbackKey.value, source, true)
+    })
+    // 只在实际播放档位发生变化时更新记忆：既记录升档后的真实档位，也不把带宽回落写成长期偏好。
+    let recordedQualityLevel = -1
+    player.video.addEventListener('timeupdate', () => {
+      const hls = artHls
+      if (!hls || requestVersion !== playerRequestVersion || player.video.currentTime < 1 || player.video.readyState < 2) return
+      const levelIndex = hls.currentLevel >= 0 ? hls.currentLevel : hls.loadLevel
+      if (levelIndex === recordedQualityLevel) return
+      if (recordStartupQualityLevel(hls, source, levelIndex)) recordedQualityLevel = levelIndex
+    })
+    // 播放期持续采样清晰度档位：跨窗口边界时汇总画质窗口并说明非最高档原因（VQ-30）。
+    player.video.addEventListener('timeupdate', () => {
+      const hls = artHls
+      if (!hls || requestVersion !== playerRequestVersion || player.video.paused) return
+      sampleQualityWindow(player, hls, requestVersion)
+    })
+    player.video.addEventListener('volumechange', () => {
+      if (requestVersion === playerRequestVersion) savePlaybackPreferences({ volume: player.video.volume })
+    })
+    player.video.addEventListener('ratechange', () => {
+      if (requestVersion === playerRequestVersion) savePlaybackPreferences({ rate: player.video.playbackRate })
     })
     player.video.addEventListener('seeking', () => {
       if (requestVersion !== playerRequestVersion) return
       setPlayerMediaPending(player, true)
-      artHls?.startLoad(player.video.currentTime)
     })
     player.video.addEventListener('seeked', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
+      if (requestVersion === playerRequestVersion) {
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
+      }
     })
     player.video.addEventListener('waiting', () => {
-      if (requestVersion === playerRequestVersion) setPlayerMediaPending(player, true)
+      if (requestVersion === playerRequestVersion) {
+        // 补间层已接管呈现时不得露出原视频：画布比媒体元素晚一个插值延迟（约 150ms），
+        // 露出原视频会让画面向前跳一个延迟、恢复后再跳回来。持续中断由渲染 Worker 在
+        // 内容停止推进 800ms 后整层回退，届时这里看到的补间层已自行收起。
+        if (!isInterpolationLayerActive(player)) setPlayerMediaPending(player, true)
+        scheduleStallRecovery(player, requestVersion)
+        qualityObservability?.noteWaiting()
+      }
     })
     player.video.addEventListener('canplay', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
+      if (requestVersion === playerRequestVersion) {
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
+      }
     })
     player.video.addEventListener('playing', () => {
-      if (requestVersion === playerRequestVersion) clearPlayerMediaPendingSoon(player, requestVersion)
-    })
-    progressTimer = window.setInterval(() => {
-      if (requestVersion === playerRequestVersion && detail.value && !isExternalPreview.value && !player.video.paused) {
-        writeEpisodeProgress(detail.value.id, episode, player.video)
+      if (requestVersion === playerRequestVersion) {
+        if ((anime4KEnabled.value || interpolationEnabled.value) && !anime4KSession
+          && anime4KState.value !== 'starting') void applyAnime4K(player, requestVersion)
+        clearStallRecovery()
+        clearPlayerMediaPendingSoon(player, requestVersion)
       }
-    }, 5_000)
+    })
+    if (detail.value && !isExternalPreview.value) {
+      const animeId = detail.value.id
+      let lastProgressWriteAt = 0
+      const persistProgress = (force = false) => {
+        const now = Date.now()
+        if (!force && now - lastProgressWriteAt < PROGRESS_WRITE_INTERVAL_MS) return
+        writeEpisodeProgress(animeId, episode, player.video)
+        void favoriteApi.saveContinueWatching({
+          animeId,
+          episodeId: episode.id,
+          episodeTitle: episode.title,
+          positionSeconds: Math.max(0, Math.floor(player.video.currentTime)),
+          durationSeconds: Number.isFinite(player.video.duration) ? Math.max(0, Math.floor(player.video.duration)) : 0,
+          completed: player.video.ended || (Number.isFinite(player.video.duration) && player.video.duration > 0 && player.video.duration - player.video.currentTime < 5),
+        }).catch(() => undefined)
+        lastProgressWriteAt = now
+      }
+      const handleTimeUpdate = () => persistProgress()
+      const handleProgressBoundary = () => persistProgress(true)
+      const handleSeeked = () => {
+        if (player.video.currentTime < 1) clearEpisodeProgress(animeId, episode.id)
+        else persistProgress(true)
+      }
+      player.video.addEventListener('timeupdate', handleTimeUpdate)
+      player.video.addEventListener('seeked', handleSeeked)
+      player.video.addEventListener('pause', handleProgressBoundary)
+      player.video.addEventListener('ended', handleProgressBoundary)
+      window.addEventListener('pagehide', handleProgressBoundary)
+      flushPlayerProgress = handleProgressBoundary
+      removePlayerProgressListeners = () => {
+        player.video.removeEventListener('timeupdate', handleTimeUpdate)
+        player.video.removeEventListener('seeked', handleSeeked)
+        player.video.removeEventListener('pause', handleProgressBoundary)
+        player.video.removeEventListener('ended', handleProgressBoundary)
+        window.removeEventListener('pagehide', handleProgressBoundary)
+      }
+    }
     player.video.addEventListener('error', () => {
-      if (requestVersion === playerRequestVersion) markPlayerError()
+      if (requestVersion === playerRequestVersion) markPlayerError('当前线路播放失败，已尝试切换备用线路')
     })
   } catch {
-    if (requestVersion === playerRequestVersion) markPlayerError()
+    if (requestVersion === playerRequestVersion) markPlayerError('播放器加载失败，已尝试切换备用线路')
   }
 }
 
@@ -653,17 +1340,49 @@ function markPlayerLoaded() {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
+  playerLoading.value = false
   playerError.value = false
 }
 
 /** 媒体元素报告错误时显示统一的播放器失败状态。 */
-function markPlayerError() {
+function markPlayerError(notice = '') {
+  if (!pendingPlaybackResume) rememberPlaybackPosition()
+  recordPlaybackRoute(playbackKey.value, activePlaybackUrl.value, false)
   if (mediaLoadTimer) {
     window.clearTimeout(mediaLoadTimer)
     mediaLoadTimer = 0
   }
-  if (advancePlaybackOption()) return
+  clearStallRecovery()
+  if (advancePlaybackOption(notice)) return
+  // 外站线路全部不通时改用随包线路：不显示失败态，保持加载态继续播放。
+  if (isExternalPreview.value && switchToBundledLine()) return
+  playerLoading.value = false
   playerError.value = true
+}
+
+function clearStallRecovery() {
+  if (!stallRecoveryTimer) return
+  window.clearTimeout(stallRecoveryTimer)
+  stallRecoveryTimer = 0
+}
+
+/** 持续缓冲超过阈值时切换备用线路；单线路则重新连接当前媒体。 */
+function scheduleStallRecovery(player: Artplayer, requestVersion: number) {
+  clearStallRecovery()
+  stallRecoveryTimer = window.setTimeout(() => {
+    stallRecoveryTimer = 0
+    const video = player.video
+    if (requestVersion !== playerRequestVersion || video.paused || video.ended || video.seeking
+      || video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return
+    if (advancePlaybackOption('当前线路持续缓冲，已自动切换备用线路')) return
+    if (artHls) {
+      artHls.startLoad(video.currentTime)
+    } else {
+      rememberPlaybackPosition()
+      video.load()
+    }
+    player.notice.show = '当前线路较慢，正在重新连接'
+  }, PLAYER_STALL_RECOVERY_MS)
 }
 
 /** seek 或缓冲期间临时露出原视频，避免增强 canvas 尚未绘制时出现黑屏。 */
@@ -671,24 +1390,55 @@ function setPlayerMediaPending(player: Artplayer, pending: boolean) {
   player.video.closest('.art-video-player')?.classList.toggle('sanye-media-pending', pending)
 }
 
-/** 等媒体元素确认已有当前帧后再恢复增强层，避免 seek 后 canvas 空帧闪黑。 */
+/**
+ * 补间层是否正在呈现画面。
+ *
+ * 该层比媒体元素晚一个插值延迟呈现，因此只要它在显示，就不允许用「临时露出原视频」的方式
+ * 掩盖缓冲：那会让画面每次缓冲都前后跳一个延迟，比短暂保持最后一帧更明显。
+ */
+function isInterpolationLayerActive(player: Artplayer) {
+  return Boolean(player.video.closest('.art-video-player')?.classList.contains('sanye-realtime-interpolation-active'))
+}
+
+/** seek 后的首张解码帧一到就恢复增强层；旧浏览器保留短延时回退。 */
 function clearPlayerMediaPendingSoon(player: Artplayer, requestVersion: number) {
-  window.setTimeout(() => {
-    if (requestVersion === playerRequestVersion && player.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      setPlayerMediaPending(player, false)
-    }
-  }, 120)
+  clearPlayerMediaReveal()
+  const video = player.video
+  const revealVersion = ++mediaRevealVersion
+  mediaRevealVideo = video
+  const reveal = () => {
+    if (revealVersion !== mediaRevealVersion || requestVersion !== playerRequestVersion
+      || player.video !== video || video.seeking || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+    clearPlayerMediaReveal()
+    if (requestVersion === playerRequestVersion) setPlayerMediaPending(player, false)
+  }
+  if (video.requestVideoFrameCallback) mediaRevealFrameCallback = video.requestVideoFrameCallback(reveal)
+  mediaRevealTimer = window.setTimeout(reveal, 120)
+}
+
+function clearPlayerMediaReveal() {
+  mediaRevealVersion += 1
+  if (mediaRevealTimer) window.clearTimeout(mediaRevealTimer)
+  if (mediaRevealFrameCallback && mediaRevealVideo?.cancelVideoFrameCallback) {
+    mediaRevealVideo.cancelVideoFrameCallback(mediaRevealFrameCallback)
+  }
+  mediaRevealTimer = 0
+  mediaRevealFrameCallback = 0
+  mediaRevealVideo = null
 }
 
 /** 手动重新加载当前剧集视频。 */
 function retryPlayer() {
   playerError.value = false
-  if (advancePlaybackOption()) return
+  if (advancePlaybackOption('已切换备用线路')) return
+  const resume = pendingPlaybackResume ?? rememberPlaybackPosition()
+  if (resume && isExternalPreview.value && resume.currentTime === 0) resume.shouldPlay = true
+  attemptedRoutes.clear()
   void mountVideoPlayer()
 }
 
 /** 选集或播放线路变化后重新挂载播放器，保证 ArtPlayer 地址和按钮同步。 */
-watch([selectedEpisode, activePlaybackUrl], () => {
+watch([() => detail.value?.id, () => selectedEpisode.value?.id, activePlaybackUrl], () => {
   void mountVideoPlayer()
   prefetchNeighborEpisodes(episodes.value, selectedEpisode.value)
 }, { flush: 'post' })
@@ -746,8 +1496,13 @@ function goBack() {
   <div class="page-stack anime-detail-page">
     <button class="back-link detail-back-button" type="button" @click="goBack"><span aria-hidden="true">←</span> 返回</button>
 
-    <div v-if="loading" class="feed-skeleton" aria-label="正在加载作品详情">
-      <span></span><span></span><span></span>
+    <div v-if="loading" class="detail-loading-state" role="status" aria-live="polite">
+      <span class="detail-loading-face" aria-hidden="true"><i></i><i></i><b></b></span>
+      <span class="detail-loading-copy">
+        <strong>{{ isExternalPreview ? '正在解析来源' : '正在打开作品' }}</strong>
+        <small>{{ isExternalPreview ? '读取作品与播放线路…' : '准备作品详情与播放列表…' }}</small>
+      </span>
+      <span class="detail-loading-progress" role="progressbar" :aria-label="isExternalPreview ? '正在读取直接观看资源' : '正在加载作品详情'"><i></i></span>
     </div>
 
     <section v-if="display && detail" class="anime-player-section" aria-label="剧集播放器">
@@ -773,6 +1528,16 @@ function goBack() {
             class="artplayer-container"
             aria-label="ArtPlayer 视频播放器"
           ></div>
+          <iframe
+            v-else-if="isExternalFrame"
+            :key="`${selectedEpisode?.id ?? 'episode'}:${activePlaybackUrl}`"
+            class="external-player-frame"
+            :src="activePlaybackUrl"
+            :title="`${display?.title || '动漫'} 外部播放器`"
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowfullscreen
+            referrerpolicy="no-referrer"
+          ></iframe>
           <div v-else class="player-external" role="status">
             <span>当前剧集暂未解析到直连视频源。</span>
             <a
@@ -785,26 +1550,55 @@ function goBack() {
               打开来源页
             </a>
           </div>
+          <div v-if="playerLoading && !playerError" class="player-loading-overlay" role="status" aria-live="polite">
+            <span class="detail-loading-face compact" aria-hidden="true"><i></i><i></i><b></b></span>
+            <strong>{{ playbackPhase }}</strong>
+            <small>正在连接播放线路…</small>
+            <span class="detail-loading-progress compact" role="progressbar" aria-label="正在加载视频"><i></i></span>
+          </div>
           <div v-if="playerError" class="player-overlay" role="status">
             <span>播放器加载失败，请稍后重试或打开来源页。</span>
+            <button v-if="playbackOptions.length > 1" class="text-button" type="button" @click="retryPlayer">切换线路</button>
+            <button v-if="isExternalPreview" class="text-button" type="button" @click="void load()">重新解析来源</button>
+            <RouterLink class="text-button" :to="searchReturn">返回搜索结果</RouterLink>
             <button class="secondary-button" type="button" @click="retryPlayer">重新加载</button>
           </div>
         </div>
-        <div v-if="playbackOptions.length > 1" class="anime-playback-sources" role="group" aria-label="播放线路">
-          <span>播放线路</span>
-          <button
-            v-for="(option, index) in playbackOptions"
-            :key="option.url"
-            class="episode-button source-button"
-            :class="{ active: option.url === activePlaybackUrl }"
-            type="button"
-            :aria-pressed="option.url === activePlaybackUrl"
-            @click="selectPlaybackOption(option)"
-          >
-            {{ playbackSourceLabel(option, index) }}
-          </button>
+        <details v-if="playbackOptions.length > 1" class="anime-playback-sources">
+          <summary>播放线路 · {{ playbackOptions.length }} 条 <small>当前：{{ activePlaybackLabel }}</small></summary>
+          <div class="anime-playback-source-options" role="group" aria-label="播放线路">
+            <button
+              v-for="(option, index) in playbackOptions"
+              :key="option.url"
+              class="episode-button source-button"
+              :class="{ active: option.url === activePlaybackUrl }"
+              type="button"
+              :aria-pressed="option.url === activePlaybackUrl"
+              @click="selectPlaybackOption(option)"
+            >
+              {{ playbackSourceLabels[index] }}
+            </button>
+          </div>
+        </details>
+        <div v-if="showEpisodeList && groupedEpisodeList" class="anime-episode-list episode-grouped-list" role="list" :aria-label="playbackListLabel">
+          <div v-for="group in episodeLineGroups" :key="group.key" class="episode-group" role="group" :aria-label="group.label">
+            <span class="episode-group-label">{{ group.label }}<small class="episode-group-count">{{ group.episodes.length }} 集</small></span>
+            <div class="episode-group-buttons">
+              <button
+                v-for="(episode, index) in group.episodes"
+                :key="episode.id"
+                class="episode-button"
+                :class="{ active: episode.id === selectedEpisode?.id }"
+                type="button"
+                :aria-pressed="episode.id === selectedEpisode?.id"
+                @click="selectEpisode(episode)"
+              >
+                {{ playbackOptionLabel(episode, index) }}
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="anime-episode-list" role="list" :aria-label="playbackListLabel">
+        <div v-else-if="showEpisodeList" class="anime-episode-list" role="list" :aria-label="playbackListLabel">
           <button
             v-for="(episode, index) in episodes"
             :key="episode.id"
@@ -822,7 +1616,7 @@ function goBack() {
 
     <section v-if="display" class="anime-detail-hero">
       <div class="anime-detail-cover">
-        <img :src="display.cover" :alt="`${display.title} 动漫封面`" loading="eager" decoding="async" />
+        <img :src="display.cover" :data-bundled-cover="bundledCover(display.title)" :alt="`${display.title} 动漫封面`" loading="eager" decoding="async" @error="handleCoverFallback" />
       </div>
       <div class="anime-detail-copy">
         <span class="eyebrow">作品详情</span>
@@ -837,6 +1631,7 @@ function goBack() {
         <p v-if="failed" class="detail-fallback-note">接口暂不可用，当前展示本地演示数据。</p>
         <div v-if="!isExternalPreview" class="anime-detail-actions">
           <RouterLink
+            v-if="!desktopMode"
             class="primary-button"
             :to="
               detail
@@ -851,15 +1646,15 @@ function goBack() {
           </button>
         </div>
         <div v-else class="anime-detail-actions">
-          <RouterLink class="secondary-button" to="/search">返回搜索结果</RouterLink>
+          <RouterLink class="secondary-button" :to="searchReturn">返回搜索结果</RouterLink>
         </div>
       </div>
     </section>
 
-    <section v-else class="empty-state">
+    <section v-else-if="!loading" class="empty-state">
       <span class="empty-mark" aria-hidden="true">▣</span>
       <h3>{{ failed ? (isExternalPreview ? '暂时无法加载站内播放' : '网络异常，加载失败') : '作品不存在或已下架' }}</h3>
-      <p>{{ failed ? (isExternalPreview ? '来源页面仍可打开，也可以稍后重试。' : '请检查网络后重试，或返回首页继续浏览。') : '返回首页继续发现其他作品。' }}</p>
+      <p>{{ failed ? (isExternalPreview ? previewError : '请检查网络后重试，或返回首页继续浏览。') : '返回首页继续发现其他作品。' }}</p>
       <template v-if="failed">
         <button class="primary-button" type="button" @click="void load()">重试</button>
         <a v-if="isExternalPreview" class="secondary-button" :href="previewSourceUrl" target="_blank" rel="noreferrer noopener">打开来源页</a>
@@ -868,7 +1663,7 @@ function goBack() {
       <RouterLink v-else class="primary-button" to="/">返回首页 →</RouterLink>
     </section>
 
-    <section v-if="display" class="anime-detail-section">
+    <section v-if="display && !desktopMode" class="anime-detail-section">
       <div><span class="eyebrow">观看前先了解</span><h3>故事线索</h3></div>
       <p>打开 AI 助手可以继续询问角色关系、观看顺序和不剧透的剧情解释。</p>
     </section>
@@ -898,7 +1693,7 @@ function goBack() {
       <div><span class="eyebrow">你可能也会喜欢</span><h3>相似作品</h3></div>
       <div class="detail-similar">
         <RouterLink v-for="item in display.similar" :key="item.id" class="detail-similar-card" :to="`/anime/${item.id}`">
-          <img :src="item.cover" :alt="`${item.title} 封面`" loading="lazy" decoding="async" />
+          <img :src="item.cover" :data-bundled-cover="bundledCover(item.title)" :alt="`${item.title} 封面`" loading="lazy" decoding="async" @error="handleCoverFallback" />
           <div class="detail-similar-copy">
             <strong>{{ item.title }}</strong>
             <small>{{ item.score !== undefined ? `★ ${item.score}` : '相似推荐' }}</small>

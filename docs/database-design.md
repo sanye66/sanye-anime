@@ -2,11 +2,47 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.4 |
+| 文档版本 | v1.11 |
 | 文档状态 | 基线（数据唯一基准） |
 | 唯一基准 | 是（表、字段、约束、索引、迁移） |
 | 关联文档 | [接口契约](./api-contract.md)、[环境配置](./environment-config.md)、[安全设计](./security-design.md)、[监控方案](./monitoring-design.md) |
-| 更新时间 | 2026-08-25 |
+| 更新时间 | 2026-10-09 |
+
+## 安卓设备端本地片库（2026-10-09）
+
+`sanye_android` 的私有 SQLite 库为 `sanye_catalog.db`，当前版本 7。v1 的 `saved_media` 字段：`id INTEGER PRIMARY KEY AUTOINCREMENT`、`title TEXT NOT NULL`、`url TEXT NOT NULL UNIQUE`、`favorite INTEGER NOT NULL DEFAULT 0`、`updated_at INTEGER NOT NULL`（毫秒时间戳）。按 `updated_at DESC, id DESC` 读取；重复保存同一 URL 更新标题和时间，不清除收藏。
+
+v2 新增 `watch_history(media_url, title, episode_id, episode_title, line_id, position_seconds, duration_seconds, completed, updated_at)`；前三者中的 `media_url + episode_id + line_id` 为组合主键，按 `updated_at DESC` 索引查询。直接播放不自动插入 `saved_media`。新增 `app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)` 保存非敏感主题、自动播放与倍速（后续版本继续按同一键值表加入画质档位、帧率档位与音量，VQ-61）。v1→v2 只创建新表及索引，不删改旧表；未来版本不能自动删库重建。应用清除数据会删除库；覆盖安装与真机迁移须以设备实测验证。当前保存的用户地址不等于已解析内容或验证可播放。
+
+v3 仅为 `saved_media` 增加 `cover_url TEXT NOT NULL DEFAULT ''` 和 `summary TEXT NOT NULL DEFAULT ''`；v1→v3 先按 v2 创建个人数据表，再添加字段，v2→v3 只添加字段。保存同一 URL 时，未提交新封面/简介保留原元数据；封面只接受已适配 HTTPS 来源且不含查询参数，简介最多 500 字。无设备时只能验证迁移实现与原生单测，不能声称已在真实 v1/v2 库中覆盖升级。
+
+v4 给 `watch_history` 增加 `cover_url TEXT NOT NULL DEFAULT ''`；v5 给 `saved_media` 建 `saved_media_recent (updated_at DESC, id DESC)`；v6 回填历史封面（先按 `saved_media.url`、再按 `saved_media.title` 关联，只填空值）。
+
+v7 只建索引、不改数据，用于把两处全表开销消掉：`saved_media_title (title)` 让 v6 的按标题回填不再逐行全扫片库；`watch_history_recent_full (updated_at DESC, media_url ASC, episode_id ASC, line_id ASC)` 与 `listHistory()` 的排序完全一致，历史不再需要临时 B 树排序。v7 的标题索引在升级流程中先于 v6 回填执行，因此从 v5 及更早版本直接升到 v7 时，回填本身也走索引。`watch_history` 原有的单列索引 `watch_history_recent (updated_at DESC)` 保留不动以保持历史版本可回退。v1→v7 的完整链路（建表、加字段、建索引、回填）由原生单测覆盖到 SQL 语句与执行顺序，但**真机跨版本升级仍未实测**：插件装载时会在线程池外预热一次数据库，把升级开销从用户首次操作前移，失败只记录日志，由后续调用按各自错误码上报。
+
+更新记录：2026-10-09，v1.11，`app_settings` 的键集合新增 `volume`（VQ-61）：音量与主题、自动播放、倍速、画质档位、帧率档位一样按字符串键值落盘（写入前转为 `0`–`1` 的十进制字符串，读取时解析为 0–1 的有限数，超范围或非数字按 1 兜底），键值表结构不变、**数据库版本仍为 7、无迁移**；原生 `validSetting`/`readSettings` 与客户端 `settings.volume` 同步，单测锁定 0／0.35／1 合法与 1.5／-0.1／NaN／字符串非法。真机落盘仍待环境。
+
+更新记录：2026-10-09，v1.10，登记安卓 SQLite v4–v7（历史封面字段、片库与历史排序索引、封面回填与 v7 索引顺序）；真机跨版本升级仍待环境。
+
+更新记录：2026-09-24，v1.7，登记安卓 SQLite 首版字段、URL 去重与迁移保护；安卓真机持久化与覆盖安装尚待环境。
+
+更新记录：2026-09-24，v1.8，登记安卓 v2 历史与非敏感设置表、v1→v2 增量迁移；实际设备迁移与持久化仍待环境。
+
+更新记录：2026-09-24，v1.9，安卓 SQLite v3 增量保存来源封面与简介，保留旧库作品和个人数据；真机跨版本迁移仍待验收。
+
+## 当前核对（2026-09-10）
+
+当前迁移不止历史 V1 至 V4：动漫已到 V13、搜索到 V3，各服务版本独立。T-R-04 最终恢复演练使用八个业务 schema 的真实 Flyway 初始化/校验/重复迁移并保留迁移历史，详见[任务清单](./development-tasks.md)。本次普通单元测试未重跑数据库升级或恢复，不能把旧库验证推广到目标数据库。
+
+更新记录：2026-09-10，v1.6，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
+
+## 可靠事件迁移
+
+动漫 V11 增加 Outbox 版本、重试、发送时间等字段；V12/V13 补齐并初始化主键序列默认值。已应用迁移保持原校验和，不执行 repair。搜索 V2/V3 建立 `sanye_search.sanye_search_event_inbox`。空库迁移、重复迁移无新增、旧库升级均有 T-R-02 测试记录。
+
+Outbox 的 `PENDING`、`SENT`、`DEAD` 对应等待投递、确认投递和重试耗尽；领取采用 `FOR UPDATE SKIP LOCKED` 原子更新 30 秒租约，每轮一条。业务写入、作品版本递增、快照追加位于同一事务；消费者先占位后加行锁，ES 成功后推进 inbox，删除也保留版本。主数据与搜索分别使用自己的 schema。重放允许重复投递，但不允许旧版本复活下架作品。
+
+回滚应用前须确认兼容新增事件和迁移；不倒退已应用迁移、不删除 Outbox 或 inbox。测试库 `sanye_tr02_persistence_20260909` 与验收作品 142 均为本次合成数据，故障记录保留供复核。
 
 ## 1. 数据库实例与 Schema 划分
 
@@ -254,6 +290,8 @@ sanye_file_object 1─1 磁盘文件（object_key 定位）
 | 正式环境 | 环境变量注入（DB_USERNAME/DB_PASSWORD） | 最小权限账号；口令不入库，见 environment-config |
 
 ## 更新记录
+
+2026-09-09，v1.5：登记事件迁移、事务与租约、消费者版本、回滚边界；证据为 ReliableEventPersistenceIT 和真实链路验收脚本。
 
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |

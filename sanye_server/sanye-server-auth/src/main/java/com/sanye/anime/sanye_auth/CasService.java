@@ -42,7 +42,7 @@ public class CasService {
     public CasService(JdbcTemplate jdbc,
                       @Value("${sanye.auth.cas-server-url:http://localhost:8095}") String casServerUrl,
                       @Value("${sanye.auth.schema:sanye_auth}") String schema,
-                      @Value("${sanye.auth.token-secret:sanye-local-jwt-secret-2026}") String tokenSecret,
+                      @Value("${sanye.auth.token-secret}") String tokenSecret,
                       @Value("${sanye.auth.access-ttl-seconds:1800}") long accessTtlSeconds) {
         this.jdbc = jdbc;
         this.jwtService = new JwtService(tokenSecret, accessTtlSeconds);

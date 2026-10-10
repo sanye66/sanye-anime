@@ -66,7 +66,7 @@ onMounted(() => {
     </div>
 
     <template v-else-if="modelInfo">
-      <section class="settings-form-panel">
+      <form class="settings-form-panel" @submit.prevent="void saveConfig()">
         <div class="settings-form-section">
           <div class="form-section-heading"><div><span class="eyebrow">连接设置</span><h3>模型服务</h3></div><span class="connection-state connection-online"><i></i>已连接</span></div>
           <div class="model-status-grid">
@@ -85,10 +85,10 @@ onMounted(() => {
           <label class="form-field"><span>上下文长度</span><select v-model="contextLength"><option value="">跟随服务端默认</option><option value="4096">4,096 个词元（记忆 10 条）</option><option value="8192">8,192 个词元（记忆 20 条）</option><option value="16384">16,384 个词元（记忆 30 条）</option></select></label>
           <div class="preference-note"><span class="note-mark">✦</span><div><strong>三叶的对话会记住什么？</strong><p>上下文长度决定 AI 会话的记忆窗口：越长越能理解当前对话；偏好按设备保存，并随你的账号一起迁移。</p></div></div>
         </div>
-        <div class="form-actions"><button class="secondary-button" type="button" @click="$router.push('/mine')">取消</button><button class="primary-button" type="button" :disabled="saving" @click="saveConfig">{{ saving ? '保存中…' : '保存配置' }}</button></div>
+        <div class="form-actions"><button class="secondary-button" type="button" @click="$router.push('/mine')">取消</button><button class="primary-button" type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存配置' }}</button></div>
         <p v-if="saved" class="form-success" role="status">回答偏好已保存，AI 会话将按新设置生效。</p>
         <p v-else-if="saveError" class="form-error" role="alert">保存失败，请稍后重试。</p>
-      </section>
+      </form>
     </template>
   </div>
 </template>

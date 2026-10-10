@@ -12,10 +12,12 @@ function check(name, condition, detail) {
   else failures.push(`${name}：${detail}`)
 }
 
-// 递归收集 Markdown 文件，跳过依赖、Git 元数据和本地备份产物。
+// 递归收集 Markdown 文件，跳过依赖、Git 元数据、本地备份产物与生成的运行库目录。
+// sanye_desktop/runtime 由 pnpm desktop:prepare 生成（含随包第三方 README 与其相对图片链接），
+// 不参与仓库文档基线检查；其他名为 runtime 的目录都位于 .local 或 dist 之下。
 function collectMarkdown(dir, result = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['.git', 'node_modules', 'backups'].includes(entry.name)) continue
+    if (['.git', '.local', 'node_modules', 'backups', 'dist', 'dist-desktop', 'target', 'runtime'].includes(entry.name)) continue
     const fullPath = path.join(dir, entry.name)
     if (entry.isDirectory()) collectMarkdown(fullPath, result)
     else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) result.push(fullPath)

@@ -2,13 +2,19 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.1 |
+| 文档版本 | v0.7 |
 | 文档状态 | 已完成自评审；TD-01 至 TD-16 为后续业务/环境决策清单 |
 | 关联任务 | PRE-TODO-006（开始技术设计） |
 | 关联文档 | [技术架构](./technical-architecture.md)、[版本基线](./version-baseline.md)、[决策记录](./decision-log.md)、[开发计划](./development-plan.md)、[后端 MVP 说明](./backend-mvp.md)、[MVP 冻结清单](../product/mvp-freeze.md)、[页面状态矩阵](../product/page-state-matrix.md) |
-| 更新时间 | 2026-08-20 |
+| 更新时间 | 2026-09-10 |
 
 本文档是 [技术架构](./technical-architecture.md) 的实现级细化：技术架构确定“用什么、边界在哪”，本文档确定“每一步怎么实现”，覆盖数据模型、接口契约、模块实现、安全、并发、分布式、缓存安全、异常降级、测试和部署。凡与本文档冲突的实现，以本文档为准并回填架构文档。
+
+## 当前核对（2026-09-10）
+
+设计能力的实际验收范围见[当前审计](./current-status-audit.md)。事件、重建与迁移当前以[接口契约](./api-contract.md)、[数据设计](./database-design.md)和 T-R-02/03 为准；两库/对象恢复以 T-R-04 为准；配置缺失启动拒绝已在 T-R-05 实现。设计中的性能目标和生产拓扑不是运行验收结果。
+
+更新记录：2026-09-10，v0.7，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 设计输入与范围
 
@@ -177,7 +183,7 @@ stateDiagram-v2
 
 所有表名使用 `sanye_` 前缀；主键统一 `BIGINT` 雪花 ID；核心表必须包含 `created_at`、`updated_at`；删除策略：用户私有数据逻辑删除（`deleted_at`），任务/事件表物理清理。迁移使用 Flyway（`V1__init.sql` 等），禁止手改生产表。
 
-迁移落地：Flyway 已接入 8 个业务服务（`flyway-core`、`flyway-database-postgresql`、PostgreSQL 驱动、`spring.flyway` 配置与各服务 `V1__init.sql`），每个服务维护自己的 schema；空库/重复执行验证在 T-B-04 完成（待 PostgreSQL 就绪）。
+迁移落地：Flyway 已接入 8 个业务服务（`flyway-core`、`flyway-database-postgresql`、PostgreSQL 驱动、`spring.flyway` 配置与各服务 `V1__init.sql`），每个服务维护自己的 schema；空库/重复执行及升级证据见 T-R-01/02，独立恢复中的 Flyway 校验见 T-R-04；目标数据库仍须逐环境验证。
 
 ### 3.1 用户与认证
 
@@ -507,7 +513,7 @@ create index idx_sanye_outbox_pending on sanye_event_outbox (status, next_retry_
 
 #### 5.3.2 写入与同步
 
-- 全量：XXL-JOB `rebuildAnimeIndex` 写 `anime_search_v2`，完成后别名原子切换。
+- 全量：XXL-JOB `rebuildAnimeIndex` 调用受控搜索接口，写入 `<ES_INDEX>_<UUID>` 物理索引；分页总数、作品唯一性、公开状态、批量写入结果和刷新后的数量全部通过后，原子切换 `ES_INDEX` 别名。默认别名 `sanye_anime_live`，旧索引及失败候选保留供排查，不自动删除。
 - 增量：消费 `anime.published` / `anime.updated` 事件，按 `animeId` upsert；下架消费 `anime.unpublished` 删除文档。
 - 写入失败：事件进死信并告警；由对账任务每小时比对 DB 已发布集合与索引数量。
 
@@ -845,13 +851,13 @@ spring:
 
 ```text
 本地事务：写业务表 + INSERT sanye_event_outbox
-  -> 事件发布器（XXL-JOB 每 5 秒扫 PENDING，或同事务后立即触发）
+  -> anime 本地定时发布器每秒领取一条 PENDING，原子租约 30 秒，过期可重领
   -> RabbitMQ 发布（confirm 模式）
-  -> 发布成功标记 PUBLISHED；失败 retry_count+1，next_retry_at 指数退避，超过 5 次进 FAILED 告警
-  -> 消费者幂等：按 event_id 去重（消费记录表或 Redis），重复投递不重复处理
+  -> 等待 ACK 且没有 return 才标记 SENT；失败 attempts+1，next_retry_at 指数退避，第 5 次失败进 DEAD
+  -> 消费者按聚合行锁和持久版本处理，记录 event_id；重复或旧版本不重复应用
 ```
 
-- 消费者失败：自动重试 3 次（含死信路由），死信队列人工/自动补偿；补偿任务按 `aggregate_id` 对账。
+- 消费者失败：尝试 3 次后路由至死信队列；受控补偿接口按 `aggregate_id` 从主数据产生新版本快照，故障排除后亦可重放原事件。XXL-JOB 索引对账任务单列 T-R-03。
 - 事件正文只传 ID 与必要字段，禁止携带大段 AI 正文与敏感内容。
 
 ### 8.4 最终一致性场景
@@ -885,8 +891,14 @@ queue:  sanye.feedback-stat  <- feedback.handled
 
 ### 8.7 XXL-JOB 分布式执行
 
-- Admin 独立部署，执行器组 `sanye-job-group`；业务服务注册为执行器，支持分片广播与故障转移。
+- Admin 独立部署，执行器组默认 `sanye_job`；当前 `sanye-server-job` 注册 `rebuildAnimeIndex`。首批任务使用单实例执行，不启用分片广播；调度台使用 `DISCARD_LATER`，搜索端以 PostgreSQL 事务级 advisory lock `731903` 拒绝跨实例并发重建，事件消费者在同一数据库取得共享事务锁直到 inbox 提交。
 - 任务幂等由业务保证（分布式锁 + 游标/分页），调度只负责触发与记录。
+
+T-R-03 已完成 RuoYi 统一读取 XXL-JOB 日志与代理触发，Quartz 保持原实现。管理页面通过标签区分两类任务；服务端独立登录调度台，只允许配置的任务编号与执行器组，并复核处理器及防重入配置。日志按任务和组再次校验，使用固定摘要而不透传调度台 HTML 或堆栈。触发须通过方法级权限并记录操作审计，网络失败不自动重试。实际适配 XXL-JOB 3.1.0 的登录会话接口，不假定存在令牌式任务管理 OpenAPI。进程终止后数据库事务释放互斥锁；请求超时不能直接推断远端任务已停止，应核对任务日志和别名后重跑。历史索引需要后续人工保留策略，不能自动删除正在使用的索引。
+
+更新记录：2026-09-09，v0.6，完成 RuoYi 管理代理和页面设计回填；依据管理测试与真实浏览器验收。
+
+更新记录：2026-09-09，v0.5，固定索引版本、别名切换、数据库锁与独立调度台边界；依据 T-R-03 实现及验收脚本。
 
 ### 8.8 网关（sanye_gateway）
 
@@ -1110,6 +1122,9 @@ queue:  sanye.feedback-stat  <- feedback.handled
 
 ## 更新记录
 
+2026-09-09，v0.4：将可靠事件设计同步为 T-R-02 实际实现：持久租约、ACK/return、状态命名、行锁版本、死信和受控补偿；运行证据见开发任务清单。
+
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-19 | v0.2 | 补充请求链路时序图、核心状态机（内容/消息/反馈/会话）、AI 对话主链路时序图 | 企业级文档深化 |
+| 2026-09-09 | v0.3 | 将当前 Java 兼容性约束与应用运行时统一为 Java 21；具体工具补丁版本及验证证据引用版本基线 | 用户确认、[版本基线](./version-baseline.md) |

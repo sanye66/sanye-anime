@@ -1,6 +1,19 @@
 # sanye_server 后端实现与验证边界
 
-> 状态说明（2026-08-20）：本文记录当前实现和本地联调边界。早期内存 MVP 设计已被 PostgreSQL、Redis、CAS 本地 Mock、受控管理接口和安全过滤器实现替代；历史任务证据见 [开发任务清单](./development-tasks.md)。
+| 项目 | 内容 |
+| --- | --- |
+| 文档版本 | v0.3 |
+| 文档状态 | 基线 |
+| 关联文档 | [版本基线](./version-baseline.md)、[开发任务清单](./development-tasks.md) |
+| 更新时间 | 2026-09-10 |
+
+> 状态说明（2026-09-09）：本文记录当前实现和本地联调边界。早期内存 MVP 设计已被 PostgreSQL、Redis、CAS 本地 Mock、受控管理接口和安全过滤器实现替代；可靠业务事件已在受控 Compose 环境完成发布、更新、下架、断连恢复、死信和补偿验收，证据见 [开发任务清单](./development-tasks.md)。
+
+## 当前核对（2026-09-10）
+
+当前后端已通过业务 291 项和管理 23 项测试，详见[审计](./current-status-audit.md)。真实事件与调度的受控完成证据分别归 T-R-02/03，完整目标环境启动、真实 CAS/AI 和发布回滚仍未验收。
+
+更新记录：2026-09-10，v0.3，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
 ## 1. 文档目的
 
@@ -50,10 +63,10 @@
 
 ## 4. 启动与验证
 
-工程基线要求 Java 21 或更高版本、Maven 3.9.x。推荐使用本地 PostgreSQL 5433、Redis 6379 和部署脚本启动服务：
+工程基线统一为当前本机 Java 21.0.12、Maven 3.9.16。新工具链验证结果以 [开发任务清单](./development-tasks.md) 为准，历史联调记录不替代本轮验证。推荐使用本地 PostgreSQL 5433、Redis 6379 和部署脚本启动服务：
 
 ```powershell
-$env:JAVA_HOME='C:\Users\10121\.jdks\openjdk-26.0.2'
+$env:JAVA_HOME='C:\Users\10121\.jdks\microsoft-jdk-21.0.12'
 $env:Path="$env:JAVA_HOME\bin;$env:Path"
 mvn spring-boot:run
 ```
@@ -66,7 +79,7 @@ http://localhost:8091/api/v1/system/ping
 
 ## 5. 明确的实现限制
 
-- Elasticsearch 搜索/RAG、MinIO 对象导入和 Nacos 配置数据面已完成本地 Docker 验证；当前文件接口仍使用本地磁盘，MinIO 应用适配和扫描待实现。RabbitMQ 目前仅完成拓扑初始化，尚无真实业务生产者/消费者；XXL-JOB 管理台已启动但暂无业务任务；动态 Nacos 应用注册和完整应用容器部署仍待实现。
+- Elasticsearch 搜索/RAG、MinIO 对象导入和 Nacos 配置数据面已完成本地 Docker 验证；可靠业务事件已接入 RabbitMQ 生产者/消费者和 Outbox，XXL-JOB 已接入索引重建执行器及 RuoYi 管理整合（T-R-03）；动态 Nacos 应用注册和完整应用容器部署已有核验脚本，真实目标实例验收仍待环境。
 - 正式 CAS、生产数据库/Redis 凭据、AI 供应商成本上限和正式 SLO 尚未完成。
 - 正式动漫数据、图片来源、版权授权、法律文案和官网域名/TLS 尚未完成。
 - 发布环境的备份恢复、签名升级、回滚和多机性能验收尚未完成。
@@ -75,5 +88,13 @@ http://localhost:8091/api/v1/system/ping
 
 1. 将业务服务、管理端和网关加入 Compose 网络，完成动态 Nacos 注册与容器内路由验证。
 2. 替换正式 CAS、生产凭据和受控服务间令牌，完成安全与发布门禁。
-3. 接入 RabbitMQ 事件生产者/消费者、XXL-JOB 执行器任务、MinIO 文件扫描和监控采集联调。
+3. 在目标环境复验已有 RabbitMQ 事件生产者/消费者、XXL-JOB 执行器任务；MinIO 文件扫描和监控采集按各自出口补充验收。
 4. 完成授权内容、法律文案、备份恢复和正式发布回滚演练。
+
+## 更新记录
+
+2026-09-09，v0.2：可靠事件本地验收完成，引用 T-R-02，保留其他业务和正式环境差距。
+
+| 日期 | 版本 | 变更 | 依据 |
+| --- | --- | --- | --- |
+| 2026-09-09 | v0.1 | 统一当前本机 Java/Maven 基线与启动命令，保留历史验证边界 | 用户确认、[版本基线](./version-baseline.md) |

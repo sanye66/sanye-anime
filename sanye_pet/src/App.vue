@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import MitsuhaPet, { type PetState } from '@/components/MitsuhaPet.vue'
+import ProgressRunner from '@/components/ProgressRunner.vue'
 
 type PetSettings = {
   scale: number
@@ -25,6 +26,7 @@ const defaultSettings: PetSettings = {
 }
 
 const state = ref<PetState>('idle')
+const isProgressRunner = new URLSearchParams(window.location.search).has('progressRunner')
 const bubble = ref('')
 const bubbleDismissed = ref(false)
 const panelOpen = ref(false)
@@ -300,7 +302,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <ProgressRunner v-if="isProgressRunner" />
   <div
+    v-else
     class="pet-stage"
     :class="{ sleeping: state === 'sleep', 'motion-off': !settings.animation }"
     :style="{ opacity: settings.opacity, '--pet-scale': String(settings.scale) }"

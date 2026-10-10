@@ -1,0 +1,6 @@
+{
+  "appId": "com.sanye.sanye_anime",
+  "appName": "三叶动漫",
+  "webDir": "../sanye_client/dist-android",
+  "backgroundColor": "#081428"
+}

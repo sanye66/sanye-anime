@@ -124,21 +124,24 @@ public class MediaImportService {
             if (playbacks.isEmpty()) {
                 continue;
             }
-            PlaybackSource playback = playbacks.getFirst();
-            String playbackUrl = normalizeHttpsUrl(playback.url(), "播放器地址");
+            PlaybackSource playback = playbacks.get(0);
+            String playbackUrl = normalizeHttpsUrl(playback.url(), pageUri, "播放器地址");
             String title = playback.title().isBlank() ? cleanTitle(document.title()) : playback.title();
             if (title.isBlank()) {
                 title = "第 " + episodeNo + " 集";
             }
             List<AnimePlaybackOption> playbackOptions = new ArrayList<>(playbacks.stream()
                     .map(option -> new AnimePlaybackOption(
-                            normalizeHttpsUrl(option.url(), "备用播放器地址"),
+                            normalizeHttpsUrl(option.url(), pageUri, "备用播放器地址"),
                             option.mimeType(),
                             option.title().isBlank() ? option.label() : option.title()))
                     .filter(option -> !option.url().equals(playbackUrl))
                     .toList());
-            for (PlaybackSource option : rootLineOptions) {
-                String optionUrl = normalizeHttpsUrl(option.url(), "备用播放器地址");
+            // Root alternatives belong to this episode only when its primary URL is in that list.
+            List<PlaybackSource> episodeLineOptions = rootLineOptions.stream()
+                    .anyMatch(option -> option.url().equals(playbackUrl)) ? rootLineOptions : List.of();
+            for (PlaybackSource option : episodeLineOptions) {
+                String optionUrl = normalizeHttpsUrl(option.url(), pageUri, "备用播放器地址");
                 if (playbackOptions.stream().noneMatch(item -> item.url().equals(optionUrl))
                         && !optionUrl.equals(playbackUrl)) {
                     playbackOptions.add(new AnimePlaybackOption(optionUrl, option.mimeType(),
@@ -146,7 +149,7 @@ public class MediaImportService {
                 }
             }
             playbackOptions.add(0, new AnimePlaybackOption(playbackUrl, playback.mimeType(),
-                    rootLineOptions.isEmpty()
+                    episodeLineOptions.isEmpty()
                             ? (playback.title().isBlank() ? playback.label() : playback.title())
                             : "当前线路"));
             episodes.add(new AnimeEpisode(episodeNo, episodeNo, title, page.getKey(), playbackUrl,
@@ -335,6 +338,13 @@ public class MediaImportService {
         Map<String, String> pages = new LinkedHashMap<>();
         Document document = Jsoup.parse(rootHtml, root.toString());
         List<Element> selectedLinks = selectEpisodeLinks(document, root);
+        if (isLineOptionList(extractPlaybacks(document, root)) && !selectedLinks.isEmpty()
+                && selectedLinks.stream().noneMatch(this::hasEpisodeLabel)) {
+            // The current movie player already declares its language/backup URLs.
+            // Do not replace them with an unrelated historical episode playlist.
+            pages.put(root.toString(), rootHtml);
+            return pages;
+        }
         boolean hasStructuredPlaylist = !document.select(".module-play-list").isEmpty();
         if (!hasStructuredPlaylist || selectedLinks.isEmpty()) {
             pages.put(root.toString(), rootHtml);
@@ -429,12 +439,29 @@ public class MediaImportService {
         if (groups.isEmpty()) {
             return validEpisodeLinks(document.select("a[href]"), root);
         }
+        Set<Long> currentLineIds = new java.util.HashSet<>();
+        for (Element script : document.select("script")) {
+            String config = extractAssignedArray(script.data(), TEM_LINE_LIST_VARIABLE);
+            if (config.isBlank()) continue;
+            try {
+                for (JsonNode line : objectMapper.readTree(config)) {
+                    if (line.path("id").canConvertToLong()) currentLineIds.add(line.path("id").asLong());
+                }
+            } catch (java.io.IOException ignored) {
+                // Malformed optional configuration keeps the existing playlist fallback.
+            }
+        }
+        for (List<Element> group : groups) {
+            if (group.stream().anyMatch(link -> currentLineIds.contains(playbackLineId(URI.create(link.absUrl("href")))))) {
+                return group;
+            }
+        }
         for (List<Element> group : groups) {
             if (group.stream().anyMatch(this::hasEpisodeLabel)) {
                 return group;
             }
         }
-        return groups.getFirst();
+        return groups.get(0);
     }
 
     /** 过滤为同源的播放页链接，保留旧页面没有播放列表容器时的兼容回退。 */
@@ -477,8 +504,15 @@ public class MediaImportService {
 
     /** 只接受 HTTPS 播放器地址，播放器地址本身不由服务端继续请求。 */
     private String normalizeHttpsUrl(String value, String label) {
+        return normalizeHttpsUrl(value, null, label);
+    }
+
+    private String normalizeHttpsUrl(String value, URI baseUri, String label) {
         try {
             URI uri = URI.create(value);
+            if (!uri.isAbsolute() && baseUri != null) {
+                uri = baseUri.resolve(uri);
+            }
             if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
                 throw new BusinessException(ErrorCode.PARAM_INVALID, label + "必须是 HTTPS 地址");
             }

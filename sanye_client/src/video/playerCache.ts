@@ -99,10 +99,13 @@ export function writeCachedEpisodes(animeId: string | number, data: AnimeEpisode
 }
 
 export function readSelectedEpisodeId(animeId: string | number) {
-  const store = storage()
-  const value = store?.getItem(selectedEpisodeKey(animeId))
-  const id = Number(value)
-  return Number.isFinite(id) && id > 0 ? id : null
+  try {
+    const value = storage()?.getItem(selectedEpisodeKey(animeId))
+    const id = Number(value)
+    return Number.isFinite(id) && id > 0 ? id : null
+  } catch {
+    return null
+  }
 }
 
 export function writeSelectedEpisodeId(animeId: string | number, episodeId: string | number) {
@@ -122,7 +125,7 @@ export function readEpisodeProgress(animeId: string | number, episodeId: string 
     const entry = JSON.parse(raw) as ProgressCacheEntry
     if (Date.now() - entry.updatedAt > MAX_PROGRESS_AGE_MS) return 0
     if (entry.episodeId !== Number(episodeId)) return 0
-    if (!Number.isFinite(entry.currentTime) || entry.currentTime < 5) return 0
+    if (!Number.isFinite(entry.currentTime) || entry.currentTime < 1) return 0
     if (Number.isFinite(entry.duration) && entry.duration > 0 && entry.duration - entry.currentTime < 10) return 0
     return entry.currentTime
   } catch {
@@ -131,7 +134,7 @@ export function readEpisodeProgress(animeId: string | number, episodeId: string 
 }
 
 export function writeEpisodeProgress(animeId: string | number, episode: AnimeEpisode, video: HTMLVideoElement) {
-  if (!Number.isFinite(video.currentTime) || video.currentTime < 5) return
+  if (!Number.isFinite(video.currentTime) || video.currentTime < 1) return
   const entry: ProgressCacheEntry = {
     episodeId: episode.id,
     currentTime: video.currentTime,
@@ -142,6 +145,14 @@ export function writeEpisodeProgress(animeId: string | number, episode: AnimeEpi
     storage()?.setItem(progressKey(animeId, episode.id), JSON.stringify(entry))
   } catch {
     // 观看进度缓存失败不阻断播放器。
+  }
+}
+
+export function clearEpisodeProgress(animeId: string | number, episodeId: string | number) {
+  try {
+    storage()?.removeItem(progressKey(animeId, episodeId))
+  } catch {
+    // 清理观看进度失败不阻断播放器。
   }
 }
 
@@ -180,8 +191,9 @@ export function prefetchNeighborEpisodes(list: AnimeEpisode[], selected?: AnimeE
   if (currentIndex >= 0) {
     const next = list[currentIndex + 1]
     if (next) {
-      // 只预热下一集的连接，不抢当前视频的清单和首片段带宽。
+      // 只预取体积很小的清单，不提前下载下一集视频分片。
       warmMediaSource(next.playbackUrl)
+      prefetchHlsManifest(next)
     }
   }
 }
