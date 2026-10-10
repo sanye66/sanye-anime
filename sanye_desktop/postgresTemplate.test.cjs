@@ -323,7 +323,11 @@ test('a cluster without the application role gets it created', async t => {
   } finally { await fs.rm(base, { recursive: true, force: true }) }
 })
 
-test('template copy restores ZIP-omitted directories and preserves existing databases', { skip: process.platform !== 'win32' }, async () => {
+// `runtime/` 被 .gitignore 忽略，需要在本地执行 `pnpm desktop:prepare` 才会生成；CI 的干净
+// runner 上没有这份模板，缺 postgres-template 时跳过，与 runtimeClosure／seedCoverage 的守卫一致。
+const templatePrepared = require('node:fs').existsSync(path.join(__dirname, 'runtime', 'postgres-template'))
+
+test('template copy restores ZIP-omitted directories and preserves existing databases', { skip: process.platform !== 'win32' || !templatePrepared }, async () => {
   const original = path.join(__dirname, 'runtime')
   const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/template-test-'))
   const root = path.join(base, '中文软件')
