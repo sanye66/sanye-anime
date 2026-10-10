@@ -14,6 +14,9 @@ on:
       - 'docs/android-development-plan.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      # 交付资源一致性门禁自身的改动也要跑这道门（只改脚本时否则不会触发）。
+      - 'sanye_deploy/verify-android-assets.mjs'
+      - 'sanye_deploy/verify-android-assets.test.mjs'
       - '.github/workflows/android-check.yml'
   pull_request:
     paths:
@@ -24,6 +27,8 @@ on:
       - 'docs/android-development-plan.md'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'sanye_deploy/verify-android-assets.mjs'
+      - 'sanye_deploy/verify-android-assets.test.mjs'
       - '.github/workflows/android-check.yml'
 
 concurrency:
