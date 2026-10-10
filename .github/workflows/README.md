@@ -2,14 +2,14 @@
 
 本目录用于存放构建、测试、依赖扫描、密钥扫描、镜像构建和发布验证工作流。门禁定义与本地等价命令见 [CI/CD](../../docs/ci-cd.md)；分支模型与提交规范见 [AGENTS.md](../../AGENTS.md)。
 
-当前工作流（2026-10-09）：
+当前工作流（2026-10-10）：
 
 - `ci.yml`：推送 `feature-*`、`dev`、`test`、`release` 或创建 PR 时执行，同分支取消旧任务。
   - `docs`：`node sanye_deploy/check-docs.mjs`（Markdown 链接与当前事实）。
   - `frontend`：`pnpm typecheck`、播放策略与管理端会话等纯逻辑回归、`pnpm build`。
   - `backend`：`sanye_server` 与 `sanye_admin_server` 编译与测试，Maven 由固定脚本安装并校验 SHA-512。
   - `browser-security`：`pnpm e2e:ci` 自包含 Playwright 回归。
-  - `dependency-scan`：`pnpm audit --audit-level high` 与 Trivy 文件系统扫描。
+  - `dependency-scan`：`pnpm audit:deps` 与 Trivy 文件系统扫描（结果交 `pnpm audit:trivy` 判定，两者共用 `sanye_deploy/audit-exemptions.json` 登记式豁免）。
   - `secret-scan`：Gitleaks（含提交历史）。
 - `android-check.yml`：推送 `feature-*`、`dev`、`test`、`release` 或创建 PR，且命中 `sanye_client/`、`sanye_android/`、`e2e/`、安卓需求与计划文档、`package.json`、`pnpm-lock.yaml`、本工作流时执行。
   - 构建安卓前端产物、安装 Chromium，执行 `pnpm test:player-policy` 与 15 个安卓端 e2e 文件。

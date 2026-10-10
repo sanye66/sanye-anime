@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.12 |
+| 文档版本 | v1.13 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
@@ -67,7 +67,9 @@
 
 - `pnpm audit:deps`（[sanye_deploy/audit-dependencies.mjs](../sanye_deploy/audit-dependencies.mjs)）：解析 `pnpm audit --json`，**只为可升级修复的高危/严重告警阻断**；上游没有修复版本（`patched_versions` 为 `<0.0.0`）的条目必须登记在 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 才放行，登记项写明 advisory、包名、引入路径、原因与 `reviewBy` 复核期限——期限一过、或审计结果里已不存在该登记项，作业都会失败；有修复版本却仍被登记的高危告警不享受豁免。判定逻辑与下面 Trivy 的 `ignore-unfixed: true` 语义对齐，两边对「上游无修复」的处置不再一个忽略、一个阻断。
 - 复核入口：`pnpm audit:deps`（现场执行）、`pnpm audit:deps --report <审计 JSON>`（离线复核已落盘的报告）、`pnpm test:audit-deps`（[门禁判定逻辑的 13 项单元测试](../sanye_deploy/audit-dependencies.test.mjs)）。
-- Trivy Action v0.36.0 使用 Trivy v0.74.0 执行文件系统漏洞扫描：先以 JDK 21 跳过测试构建两套后端并安装到本地 Maven 仓库，复用 Maven 缓存以避免远端仓库限流；仅 HIGH/CRITICAL 阻断，并忽略尚无上游修复的条目。密钥扫描由独立 Gitleaks 作业负责。
+- Trivy Action v0.36.0 使用 Trivy v0.74.0 执行文件系统漏洞扫描：先以 JDK 21 跳过测试构建两套后端并安装到本地 Maven 仓库，复用 Maven 缓存以避免远端仓库限流；只扫漏洞、只按 HIGH/CRITICAL 取数、并带 `ignore-unfixed: true`。扫描结果写成 `trivy-report.json` 后交 `pnpm audit:trivy` 判定，作业自身的 `exit-code` 恒为 0——判定与阻断都由门禁脚本负责，避免 Action 与登记式豁免两套结论打架。密钥扫描由独立 Gitleaks 作业负责。
+- `pnpm audit:trivy`（[sanye_deploy/audit-trivy.mjs](../sanye_deploy/audit-trivy.mjs)）：把报告里的命中按「漏洞 ID ＋ 包名 ＋ 已安装版本」去重（同一个 CVE 会在各模块 `pom.xml` 与 fat jar 里重复出现），再逐条判定：可升级修复的高危/严重命中阻断；上游只在更高主版本修复、当前兼容线没有回补版本的命中，必须与 `pnpm audit:deps` 一样登记在 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 才放行（`source` 为 `trivy`，advisory 用 CVE 编号，两个门禁各看各的来源）；豁免过期或登记项在本次扫描里不再出现同样判失败。
+- 复核入口：`pnpm audit:trivy --report <Trivy JSON>`（离线复核已落盘的报告）、`pnpm test:audit-trivy`（[门禁判定逻辑的 12 项单元测试](../sanye_deploy/audit-trivy.test.mjs)）。失败时门禁结论会整段打成 `::error::` 注解并随 `trivy-report.json` 一起上传，公开仓库不登录也能读到命中项。
 - 结果纳入 PR 检查。
 
 ### 2.5 secret-scan：密钥扫描
@@ -152,6 +154,8 @@ mvn -B -f sanye_admin_server/pom.xml test
 pnpm e2e:ci
 pnpm audit:deps
 pnpm test:audit-deps
+pnpm audit:trivy --report <Trivy JSON 报告>
+pnpm test:audit-trivy
 pnpm docs:check
 pnpm --filter @sanye/sanye_client build:android
 cd sanye_android/android; ./gradlew --offline :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
@@ -175,6 +179,7 @@ pnpm test:desktop
 | 2026-08-26 | v1.3 | 按 HIGH/CRITICAL 门槛修正 Trivy 扫描范围，升级后端安全补丁并固定 Trivy 引擎版本 | Maven 依赖树、Trivy v0.74.0、GitHub Actions 远端执行 |
 | 2026-08-26 | v1.4 | Trivy 扫描前预填并缓存两套后端 Maven 依赖，避免 Maven Central HTTP 429；关闭与 Gitleaks 重复的 secret scanner | `.github/workflows/ci.yml`、GitHub Actions 远端日志 |
 | 2026-09-09 | v1.5 | 同步 Node.js 26.5.0 与 Java 21 工具链；本机补丁版本和 CI 执行证据分别登记，本次修改不代表远端流水线通过 | 用户确认、[版本基线](./version-baseline.md)、`.github/workflows/ci.yml` |
-| 2026-10-09 | v1.10 | 补记 `android-check`（含新增 `:app:lintDebug` 与报告上传、推送触发、并发取消）与 `desktop-check`（补推送触发）两个专项工作流，并在本地等价命令里登记安卓与桌面入口 | [android-check.yml](../.github/workflows/android-check.yml)、[desktop-check.yml](../.github/workflows/desktop-check.yml)、`pnpm docs:check` 1897 项通过 |
+| 2026-10-09 | v1.10 | 补记 `android-check`（含新增 `:app:lintDebug` 与报告上传、推送触发、并发取消）与 `desktop-check`（补推送触发）两个专项工作流，并在本地等价命令里登记安卓与桌面入口 | [android-check.yml](../.github/workflows/android-check.yml)、[desktop-check.yml](../.github/workflows/desktop-check.yml)、`pnpm docs:check` 1910 项通过 |
 | 2026-10-10 | v1.11 | 修正工作流的 JDK 版本漂移：`ci.yml` 两处与 `android-check.yml` 回到下载源可用的 21.0.11（原写成 21.0.12，`actions/setup-java` 在准备阶段即失败，`后端编译与测试`／`依赖漏洞扫描`／`android-check` 三个作业都没走到实际检查），候选发布保留 21.0.12 严格门禁；同时登记桌面门禁在干净检出下的 65 通过 / 4 跳过边界 | GitHub Actions 注解 `No matching version found for SemVer '21.0.12'`（run 38012739529 的 `后端编译与测试`／`依赖漏洞扫描`、run 38012739524 的 `android-check`）、本机 `pnpm test:desktop` 移除 `runtime/` 模拟 65 通过 4 跳过 0 失败 |
 | 2026-10-10 | v1.12 | 依赖审计改为登记式门禁并升级可修依赖：`electron-builder` 26.0.12→26.15.3（连带 `app-builder-lib` 26.15.3、`tar` 7.5.22，`@electron/rebuild` 4.2.1 与 `node-gyp` 12.4.0 改走 registry，锁文件里不再有 `@electron/node-gyp` 的 git 依赖）、`vue` 3.5.13→3.5.43，并为 `brace-expansion`／`source-map-js`／`undici`／`ip-address` 增加根 `overrides`；告警由 43 条（21 high／1 critical）降到 7 条（1 high／6 moderate），无上游修复的 `http-cache-semantics`（high）与 `sprintf-js`（moderate）登记在 `sanye_deploy/audit-exemptions.json`（2027-01-10 前复核），`ci.yml` 的 `前端依赖审计` 改为 `pnpm audit:deps` | 本机 `pnpm install --frozen-lockfile`、`pnpm audit:deps`（7 条、0 阻断、0 过期、0 失效）、`pnpm test:audit-deps`（13 通过）、`pnpm typecheck`、`pnpm build` |
+| 2026-10-10 | v1.13 | 收口 Trivy 侧门禁：`前端依赖审计` 转绿后失败点前移到 `文件系统漏洞扫描`（34 条命中，30 高／4 严重，其中 30 条高都是 `jackson-core` 2.21.5 的两条 CVE 在各模块 fat jar 里重复出现）。其一，两套后端 Jackson 2.21.5→2.21.7（`jackson-bom.version`／`jackson.version`），命中降到 4 条。其二，Trivy 改为输出 `trivy-report.json` 且作业内 `exit-code: 0`，判定交给新增的 `sanye_deploy/audit-trivy.mjs`：按「漏洞 ID ＋ 包名 ＋ 已安装版本」去重后只阻断可升级修复的高危/严重命中，与 `pnpm audit:deps` 共用 `sanye_deploy/audit-exemptions.json`（`source` 区分来源）。其三，剩余 2 条严重命中 `spring-webmvc` CVE-2026-47884 与 `spring-webflux` CVE-2026-47890 只在 Spring Framework 7.x 修复、6.2.x 线（已到 6.2.19）无回补版本，登记为待 Spring Boot 4.x 迁移项，复核期限 2027-01-10；门禁结论打成 `::error::` 注解并连同 JSON 报告上传，公开仓库不登录也可读 | 本机 `pnpm test:audit-trivy`（12 通过）、`pnpm test:audit-deps`（13 通过）、`pnpm audit:deps`（7 条、0 阻断）、按远端报告复刻的 `trivy-report.json` 模拟（4 条重复命中 → 2 条唯一命中，0 阻断，退出码 0；把 CVE 换成未登记编号则退出码 1）、`mvn -B -ntp -f sanye_server/pom.xml test` 与 `-f sanye_admin_server/pom.xml test`（JDK 21.0.12，均 BUILD SUCCESS，`dependency:list` 回读 Jackson 2.21.7）、GitHub Actions 注解（run 38015791524 的 `Total: 34`、run 38016685345 的 `Total: 4`） |

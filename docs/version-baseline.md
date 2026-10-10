@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.12 |
+| 文档版本 | v0.13 |
 | 文档状态 | 基线（按当前本机工具链执行兼容性验证） |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
-| 更新时间 | 2026-09-21 |
+| 更新时间 | 2026-10-10 |
 
 ## 当前核对（2026-09-10）
 
@@ -19,6 +19,8 @@
 更新记录：2026-09-21，v0.11，桌面打包链维持 `electron-builder` 26.15.3 并保留 Squirrel：临时安装器先签名后执行的补丁由 `patches/app-builder-lib@26.15.3.patch`（`packager.signIf`）承载，签名失败直接终止；26.0.12 依赖的 `app-builder-lib <26.15.0` 及 `tar`、`builder-util-runtime` 存在 high/critical 告警，不能通过 `pnpm audit --audit-level high`。原因、补丁边界和依赖升级复核要求见[本地桌面专项](./local-desktop.md)。两套后端 Tomcat 10.1.59 与 AMQP 客户端 5.33.1 维持 v0.10 结论。
 
 更新记录：2026-09-21，v0.12，按交付分支 Trivy 结果修正业务后端两个传递依赖：AMQP 客户端 5.33.1 → 5.34.0（CVE-2026-75516，高），Bouncy Castle `bcprov-jdk18on` 1.84 → 1.85（CVE-2026-8763 严重、CVE-2026-13506 高）。两个目标版本均经 Maven Central 确认可下载；升级后 `mvn -f sanye_server/pom.xml test` 通过，`mvn dependency:tree -Dincludes=org.bouncycastle:*,com.rabbitmq:*` 确认解析为 1.85 与 5.34.0。Tomcat 10.1.59 维持 v0.10 结论；远端 Trivy 复跑结果以交付分支 CI 为准。
+
+更新记录：2026-10-10，v0.13，按交付分支 Trivy 结果把 Jackson 由 2.21.5 升到 2.21.7（CVE-2026-89407、CVE-2026-89425，均为高；报告给出的修复版本为 2.18.11／2.21.7／2.22.3），两套后端各改一处属性：`sanye_server` 的 `jackson-bom.version`、`sanye_admin_server` 的 `jackson.version`。本机 `mvn -B -ntp -f sanye_server/pom.xml test` 与 `mvn -B -ntp -f sanye_admin_server/pom.xml test`（JDK 21.0.12）均 BUILD SUCCESS，`dependency:list` 回读 `jackson-core`／`jackson-databind` 为 2.21.7。升级后剩余的 2 条严重命中——`spring-webmvc` CVE-2026-47884 与 `spring-webflux` CVE-2026-47890——只在 Spring Framework 7.x 线修复，而 6.2.x 线已到 6.2.19 仍无回补版本，故按登记式豁免写入 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json)（`reviewBy` 2027-01-10），随 Spring Boot 4.x 迁移一并消除；Tomcat 10.1.59、AMQP 客户端 5.34.0 与 Bouncy Castle 1.85 维持 v0.10／v0.12 结论。
 
 ## 1. 版本选择结论
 
@@ -56,7 +58,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | OpenFeign | 随 Spring Cloud 2025.0.x | managed | 不单独指定版本 |
 | MyBatis-Plus | 3.5.x | review | 与 Spring Boot 3.5、JDK 21 做启动和事务验证 |
 | Lombok | 1.18.36+ | review | 必须验证 JDK 21 编译和 IDE 注解处理 |
-| Jackson | 2.21.5 | managed | 父工程按安全修复版本统一覆盖 BOM，禁止业务模块单独覆盖 |
+| Jackson | 2.21.7 | managed | 父工程按安全修复版本统一覆盖 BOM，禁止业务模块单独覆盖；2.21.5 存在 CVE-2026-89407 与 CVE-2026-89425（均为高，修复版本 2.18.11／2.21.7／2.22.3） |
+| Spring Framework | 6.2.19 | managed/待迁移 | 随 Spring Boot 3.5.16 管理，不单独覆盖；CVE-2026-47884（`spring-webmvc`）与 CVE-2026-47890（`spring-webflux`）只在 7.x 线修复，6.2.x 已到 6.2.19 无回补版本，登记在 [audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 并随 Spring Boot 4.x 迁移处理 |
 | Netty | 4.1.137.Final | managed | 两套父工程统一覆盖安全补丁版本，禁止业务模块单独覆盖 |
 | Apache HttpCore 5 | 5.4.3 | managed | 微服务父工程统一覆盖 Nacos Client 的传递依赖版本 |
 | Commons FileUpload | 1.6.0 | managed | 微服务父工程统一覆盖 OpenFeign 表单支持的传递依赖版本 |

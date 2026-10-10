@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.3 |
+| 文档版本 | v1.4 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
-| 更新时间 | 2026-09-16 |
+| 更新时间 | 2026-10-10 |
+
+更新记录：2026-10-10，v1.4，依赖漏洞门禁改为「登记式」：前端侧 `pnpm audit --audit-level high` 换成 `pnpm audit:deps`，Trivy 侧由 `sanye_deploy/audit-trivy.mjs` 判定，两者共用 `sanye_deploy/audit-exemptions.json`，只有**可升级修复**的高危/严重命中阻断，上游无回补版本的命中必须登记原因与复核期限才放行；两套后端 Jackson 同步升到 2.21.7，Spring Framework 6.2.19 的两条严重命中登记为待 Spring Boot 4.x 迁移项，详见 [CI/CD](./ci-cd.md) §2.4。
 
 更新记录：2026-09-16，v1.3，增加 D-027 播放质量专项门禁：执行 `node --test e2e/player-quality.test.cjs` 与 `node --test e2e/realtime-interpolation.test.cjs`，分别检查运动像素、增强实际输出与成本、目标帧率及回退、播放器操作与资源释放。受控 GPU 吞吐量不替代真实高刷屏、长片和跨显卡验收，证据见[播放器报告](./media-player-test-report.md)。
 
@@ -63,7 +65,7 @@
 | 管理后端编译测试 | mvn -B -f sanye_admin_server/pom.xml test（含权限契约） | 阻断 |
 | 浏览器安全回归 | pnpm e2e:ci（季度排序、电影线路、清晰度） | 阻断 |
 | 文档一致性 | pnpm docs:check | 阻断 |
-| 依赖漏洞 | pnpm audit --audit-level high + Trivy | 高危阻断 |
+| 依赖漏洞 | pnpm audit:deps + pnpm audit:trivy（共用 audit-exemptions.json 登记式豁免） | 可升级修复的高危/严重阻断 |
 | 密钥扫描 | Gitleaks（含历史） | 命中即阻断 |
 
 ## 5. 合并门禁（合并到 dev 自查）
@@ -94,3 +96,4 @@
 | --- | --- | --- | --- |
 | 2026-08-19 | v1.0 | 建立质量门禁基线：五道门禁、检查清单、执行记录 | 企业级文档完善 |
 | 2026-08-26 | v1.1 | CI 增加管理后端测试、浏览器安全回归和文档一致性检查，依赖审计明确 high/critical 阻断 | `.github/workflows/ci.yml`、`pnpm e2e:ci`、管理端权限契约测试 |
+| 2026-10-10 | v1.4 | 依赖漏洞门禁改为登记式：`pnpm audit:deps`（前端）与 `pnpm audit:trivy`（Trivy 报告判定）共用 `sanye_deploy/audit-exemptions.json`，只阻断可升级修复的高危/严重命中，无回补版本的命中须登记原因与复核期限 | 本机 `pnpm test:audit-trivy`（12 通过）、`pnpm test:audit-deps`（13 通过）、远端 run 38015791524／38016685345 的 Trivy 命中数 34→4、`mvn -B -ntp -f sanye_server/pom.xml test` 与 `mvn -B -ntp -f sanye_admin_server/pom.xml test` |
