@@ -31,6 +31,8 @@
     "docs:check": "node sanye_deploy/check-docs.mjs",
     "audit:deps": "node sanye_deploy/audit-dependencies.mjs",
     "test:audit-deps": "node --test sanye_deploy/audit-dependencies.test.mjs",
+    "audit:trivy": "node sanye_deploy/audit-trivy.mjs",
+    "test:audit-trivy": "node --test sanye_deploy/audit-trivy.test.mjs",
     "test:anime-import": "node --test sanye_deploy/import-anime.test.mjs",
     "import:anime": "node sanye_deploy/import-anime.mjs",
     "e2e:verify": "pnpm --filter @sanye/sanye_e2e test:verify",

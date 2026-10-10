@@ -65,7 +65,9 @@ function dayStart(value) {
  */
 export function analyzeAudit(audit, exemptions, { today = new Date() } = {}) {
   const advisories = Object.values(audit?.advisories ?? {})
-  const byAdvisory = new Map(exemptions.map((entry) => [entry.advisory, entry]))
+  // 登记文件与 Trivy 门禁共用：这里只认 pnpm 来源（缺省即 pnpm）的登记项。
+  const scoped = exemptions.filter((entry) => !entry.source || entry.source === 'pnpm')
+  const byAdvisory = new Map(scoped.map((entry) => [entry.advisory, entry]))
   const used = new Set()
   const blocking = []
   const exempted = []
@@ -118,7 +120,7 @@ export function analyzeAudit(audit, exemptions, { today = new Date() } = {}) {
     else belowGateFixable.push(record)
   }
 
-  const stale = exemptions.filter((entry) => !used.has(entry.advisory))
+  const stale = scoped.filter((entry) => !used.has(entry.advisory))
   const sorted = (items) => [...items].sort((left, right) => (severityOrder[left.severity] ?? 9) - (severityOrder[right.severity] ?? 9) || String(left.package).localeCompare(String(right.package)))
 
   return {

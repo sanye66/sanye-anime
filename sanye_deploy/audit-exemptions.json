@@ -2,7 +2,8 @@
   "comment": [
     "依赖漏洞门禁（pnpm audit:deps，对应 .github/workflows/ci.yml 的 dependency-scan 作业）的豁免登记。",
     "只有上游确实没有修复版本（审计结果里 patched_versions 为 <0.0.0）的条目才能登记；有修复版本的高危/严重告警必须靠升级消除，不能豁免（登记了也会被判为失效）。",
-    "每条必须写明 advisory、package、引入路径、原因和 reviewBy 复核期限：期限一过门禁即失败，提示重新评估；审计结果里已不存在的登记项同样会让门禁失败，避免豁免长期滞留。"
+    "每条必须写明 advisory、package、引入路径、原因和 reviewBy 复核期限：期限一过门禁即失败，提示重新评估；审计结果里已不存在的登记项同样会让门禁失败，避免豁免长期滞留。",
+    "source 用来区分扫描来源：`pnpm`（pnpm audit，默认值）与 `trivy`（Trivy fs 扫描，advisory 用 CVE 编号），两个门禁各自只看自己来源的登记项。"
   ],
   "exemptions": [
     {
@@ -23,6 +24,31 @@
       "reason": "上游未发布修复版本（vulnerable <=1.1.3，patched_versions 为 <0.0.0），同属构建期依赖链（electron-builder 下载器）；严重度低于门禁阈值，登记以便复核时一并跟踪。",
       "paths": [
         "sanye_desktop>electron-builder>app-builder-lib>@electron/get>global-agent>roarr>sprintf-js"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
+    },
+    {
+      "source": "trivy",
+      "advisory": "CVE-2026-47884",
+      "package": "org.springframework:spring-webmvc",
+      "severity": "critical",
+      "reason": "上游只在 Spring Framework 7.0.9 修复（Trivy 报的 Fixed Version），6.2.x 线已到 6.2.19 仍无回补版本；升级要连带 Spring Boot 3.5 → 4.x（Jakarta EE 11、Spring Security 7）的迁移，属于独立任务，本次登记为待迁移项。",
+      "paths": [
+        "sanye_server>org.springframework:spring-webmvc:6.2.19",
+        "sanye_admin_server>org.springframework:spring-webmvc:6.2.19"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
+    },
+    {
+      "source": "trivy",
+      "advisory": "CVE-2026-47890",
+      "package": "org.springframework:spring-webflux",
+      "severity": "critical",
+      "reason": "与 CVE-2026-47884 同批的 Spring Framework 6.2.19 命中（SSE 流式响应），同样只在 7.x 线修复，6.2.x 无回补版本；随 Spring Boot 4 迁移一并处理。",
+      "paths": [
+        "sanye_server>org.springframework:spring-webflux:6.2.19"
       ],
       "registeredAt": "2026-10-10",
       "reviewBy": "2027-01-10"

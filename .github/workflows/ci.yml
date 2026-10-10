@@ -128,31 +128,34 @@ jobs:
           scan-type: fs
           scan-ref: .
           version: v0.74.0
-          format: table
-          output: trivy-report.txt
-          exit-code: "1"
+          format: json
+          output: trivy-report.json
+          # 判定交给下一步的 audit-trivy.mjs：与 pnpm 审计共用豁免登记文件，
+          # 只有「可升级修复」的高危/严重命中才阻断。
+          exit-code: "0"
           ignore-unfixed: true
           scanners: vuln
           severity: HIGH,CRITICAL
+      - name: 文件系统漏洞门禁
+        run: node sanye_deploy/audit-trivy.mjs --report trivy-report.json --conclusion trivy-conclusion.txt
       - name: 输出漏洞扫描结论
-        # 公开仓库不登录读不到作业日志，注解本身又只保留约 10 条：先把每条命中压成
-        # 「包 漏洞 严重度 状态 已安装 -> 修复版本」，再用一条注解装下全部命中。
+        # 公开仓库不登录读不到作业日志，注解本身又只保留约 10 条：门禁结论早就在
+        # 上一步写进了 trivy-conclusion.txt，这里整段打成 ::error:: 注解。
         if: always()
         run: |
-          if [ ! -f trivy-report.txt ]; then
-            echo "::error::trivy-report.txt 未生成，扫描未执行完成"
-            exit 0
+          if [ -f trivy-conclusion.txt ]; then
+            head -20 trivy-conclusion.txt | sed 's/^/::error::/'
+          else
+            echo "::error::trivy-conclusion.txt 未生成，漏洞门禁未执行完成"
           fi
-          total=$(grep -E 'Total:' trivy-report.txt | head -1)
-          summary=$(sed 's/│/|/g' trivy-report.txt | awk -F'|' '/^\|/ {for (i = 2; i <= 7; i++) gsub(/^ +| +$/, "", $i); if ($2 != "" && $2 !~ /Library/) print $2" "$3" "$4" "$5" -> "$6}' | sort -u | paste -sd '; ' -)
-          echo "::error::${total}｜命中汇总（包 漏洞 严重度 状态 已安装 -> 修复版本）： ${summary}"
-          { grep -nE 'CVE-|GHSA-' trivy-report.txt | head -6; tail -4 trivy-report.txt; } | sed 's/^/::error::/'
       - name: 上传漏洞扫描报告
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sanye_anime-trivy-${{ github.sha }}
-          path: trivy-report.txt
+          path: |
+            trivy-report.json
+            trivy-conclusion.txt
           if-no-files-found: ignore
 
   secret-scan:
