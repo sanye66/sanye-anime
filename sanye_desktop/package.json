@@ -18,7 +18,7 @@
     "dist:self-signed": "node build.cjs --self-signed",
     "verify:exe": "node verify-exe.cjs"
   },
-  "devDependencies": { "electron": "44.0.0", "electron-builder": "26.0.12" },
+  "devDependencies": { "electron": "44.0.0", "electron-builder": "26.15.3", "electron-builder-squirrel-windows": "26.15.3" },
   "build": {
     "npmRebuild": false,
     "electronDist": "node_modules/electron/dist",
