@@ -114,6 +114,21 @@ public class SanyeCatalogPluginTest {
     }
 
     @Test
+    public void controlCharacterCheckDoesNotMissTrailingNewlines() {
+        // 旧实现用 `input.matches(".*[\\p{Cntrl}].*")`，而 `.` 默认不匹配换行：
+        // 只要控制字符后面还跟着一个行终止符就无法整体匹配，校验会被绕过——
+        // 实测 "line1\nline2\n"、"a\n\n"、"t\n" 在修复前全部判成合法。
+        assertFalse(SanyeCatalogPlugin.validLabel("line1\nline2\n", 120));
+        assertFalse(SanyeCatalogPlugin.validLabel("a\n\n", 120));
+        assertFalse(SanyeCatalogPlugin.validOptionalLabel("t\n", 120));
+        assertFalse(SanyeCatalogPlugin.validOptionalLabel("t\r", 120));
+        // 标题里的普通空格与中文标点不受影响。
+        assertTrue(SanyeCatalogPlugin.validLabel("第 1 集 · 正片", 120));
+        assertTrue(SanyeCatalogPlugin.hasControlChars("c.jpg\r\n"));
+        assertFalse(SanyeCatalogPlugin.hasControlChars("c.jpg"));
+    }
+
+    @Test
     public void historyItemMirrorsTheStoredColumnsWithoutReadingBack() {
         // 保存进度不再回读同一条记录（VQ-56），返回项由写入值直接组装；
         // 这里锁定字段名与类型，避免桥接契约在没人察觉的情况下漂移。

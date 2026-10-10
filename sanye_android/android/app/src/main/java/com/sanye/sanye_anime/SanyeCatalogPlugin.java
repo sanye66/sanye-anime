@@ -19,6 +19,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -249,10 +250,13 @@ public class SanyeCatalogPlugin extends Plugin {
 
     @PluginMethod
     public void getSettings(PluginCall call) {
-        SQLiteDatabase db = database.getReadableDatabase();
+        // 取库必须留在 try 里面（VQ-62）：库损坏、磁盘写满、装了更高版本再装回旧版本时，
+        // getReadableDatabase() 会抛异常。它以前在 try 之外，异常会冒到 Capacitor 的插件线程，
+        // 而 Bridge 对插件方法抛出的异常是直接 rethrow：插件线程停摆、这次调用永不返回，
+        // 页面只能等自己的超时，且此后所有本地数据功能一起失效。
         try {
             JSObject result = new JSObject();
-            result.put("settings", readSettings(db));
+            result.put("settings", readSettings(database.getReadableDatabase()));
             call.resolve(result);
         } catch (Exception exception) {
             Log.e(TAG, "读取设置失败", exception);
@@ -292,7 +296,12 @@ public class SanyeCatalogPlugin extends Plugin {
         try {
             db = database.getWritableDatabase();
             db.beginTransaction();
-            for (ContentValues update : updates) db.insertWithOnConflict("app_settings", null, update, SQLiteDatabase.CONFLICT_REPLACE);
+            for (ContentValues update : updates) {
+                // insertWithOnConflict 失败只返回 -1，不抛异常：以前写不进去也会 setTransactionSuccessful()，
+                // 界面收到「保存成功」而实际上什么都没落盘（VQ-62）。
+                if (db.insertWithOnConflict("app_settings", null, update, SQLiteDatabase.CONFLICT_REPLACE) == -1)
+                    throw new IllegalStateException("设置写入失败：" + update.getAsString("key"));
+            }
             saved = readSettings(db);
             db.setTransactionSuccessful();
         } catch (Exception exception) {
@@ -309,14 +318,15 @@ public class SanyeCatalogPlugin extends Plugin {
 
     @PluginMethod
     public void clearMediaCache(PluginCall call) {
-        // Never traverse the application files directory or the SQLite database directory.
-        File mediaCache = new File(getContext().getCacheDir(), "sanye_media_cache");
+        // 这里以前只 catch IOException：SecurityException 等运行期异常同样会冒到插件线程。
+        // 缓存根目录的构造也一并收进 try（VQ-62）。
         try {
-            int removed = deleteMediaCache(mediaCache);
+            // Never traverse the application files directory or the SQLite database directory.
+            int removed = deleteMediaCache(new File(getContext().getCacheDir(), "sanye_media_cache"));
             JSObject result = new JSObject();
             result.put("removed", removed);
             call.resolve(result);
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             Log.e(TAG, "媒体缓存清理失败", exception);
             call.reject("媒体缓存清理失败，请重试", "E_CATALOG_DELETE", exception);
         }
@@ -340,13 +350,24 @@ public class SanyeCatalogPlugin extends Plugin {
         return count;
     }
 
+    /**
+     * 控制字符检测（VQ-62）：以前用 `input.matches(".*[\\p{Cntrl}].*")`，而 `.` 默认不匹配换行，
+     * 只要控制字符后面还跟着换行就无法整体匹配，校验会被绕过（实测 "line1\nline2\n"、"a\n\n" 都判成合法）。
+     * 用 find() 逐个命中，不再依赖 `.` 的匹配范围。
+     */
+    private static final Pattern CONTROL_CHARS = Pattern.compile("[\\p{Cntrl}]");
+
+    static boolean hasControlChars(String input) {
+        return CONTROL_CHARS.matcher(input).find();
+    }
+
     static boolean validLabel(String input, int limit) {
-        return !input.isEmpty() && input.length() <= limit && !input.matches(".*[\\p{Cntrl}].*");
+        return !input.isEmpty() && input.length() <= limit && !hasControlChars(input);
     }
 
     /** 可缺省文本：允许空串，但仍然限制长度与控制字符。 */
     static boolean validOptionalLabel(String input, int limit) {
-        return input.length() <= limit && !input.matches(".*[\\p{Cntrl}].*");
+        return input.length() <= limit && !hasControlChars(input);
     }
 
     static boolean validProgress(Double position, Double duration) {
@@ -484,7 +505,7 @@ public class SanyeCatalogPlugin extends Plugin {
      * https、公网域名、无凭证、无控制字符这条底线，不做查询参数限制。
      */
     static boolean validRecordUrl(String input) {
-        if (input.length() > 2048 || input.matches(".*[\\p{Cntrl}].*")) return false;
+        if (input.length() > 2048 || hasControlChars(input)) return false;
         try {
             URI uri = new URI(input);
             String host = uri.getHost();
@@ -500,7 +521,7 @@ public class SanyeCatalogPlugin extends Plugin {
 
     static boolean validCoverUrl(String input) {
         if (input.isEmpty()) return true;
-        if (input.length() > 2048 || input.matches(".*[\\p{Cntrl}].*")) return false;
+        if (input.length() > 2048 || hasControlChars(input)) return false;
         if (input.startsWith("/assets/")) return !input.contains("..");
         try {
             URI uri = new URI(input);
@@ -563,16 +584,44 @@ public class SanyeCatalogPlugin extends Plugin {
             // watch_history 建好之后才能给它加排序索引（v1 的老库走到这里才刚有这张表）。
             if (oldVersion < 7) createHistorySortIndex(db);
             if (oldVersion < 3) {
-                db.execSQL("ALTER TABLE saved_media ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''");
-                db.execSQL("ALTER TABLE saved_media ADD COLUMN summary TEXT NOT NULL DEFAULT ''");
+                addColumnIfMissing(db, "saved_media", "cover_url", "TEXT NOT NULL DEFAULT ''");
+                addColumnIfMissing(db, "saved_media", "summary", "TEXT NOT NULL DEFAULT ''");
             }
             // v4：观看历史保存封面，历史卡片可以直接显示封面而不是退回占位图。
-            if (oldVersion < 4) db.execSQL("ALTER TABLE watch_history ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''");
+            if (oldVersion < 4) addColumnIfMissing(db, "watch_history", "cover_url", "TEXT NOT NULL DEFAULT ''");
             // v5：片库本来就按 updated_at DESC 读取，但只给 watch_history 建过索引。
             if (oldVersion < 5) createSavedMediaIndex(db);
             // v6：历史封面回填。封面字段是后来才加的，老记录一直是空串，用户看到的就是
             //「观看历史没有封面」。同一作品在片库里已有封面时按地址、再按标题补一次。
             if (oldVersion < 6) backfillHistoryCovers(db);
+        }
+
+        /**
+         * 版本回退（装了更高版本再装回旧版本）：SQLiteOpenHelper 的默认实现直接抛 SQLiteException，
+         * 结果是所有本地数据功能一起失效（VQ-62）。本工程的迁移只做「加列 / 加索引」，
+         * 旧版本按列名读取、多出来的列会被忽略，因此这里保留用户数据，只记一条日志。
+         */
+        @Override
+        public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+            Log.w(TAG, "本地片库版本回退：" + oldVersion + " -> " + newVersion + "，保留现有数据");
+        }
+
+        /**
+         * 加列前先确认列不存在：回退之后再升级会重新走到 `oldVersion < 3`，而列其实已经在了，
+         * 直接 ALTER 会报 duplicate column name，把整次打开数据库变成失败（VQ-62）。
+         */
+        private static void addColumnIfMissing(SQLiteDatabase db, String table, String column, String definition) {
+            if (hasColumn(db, table, column)) return;
+            db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+        }
+
+        private static boolean hasColumn(SQLiteDatabase db, String table, String column) {
+            try (Cursor rows = db.rawQuery("PRAGMA table_info(" + table + ")", null)) {
+                while (rows.moveToNext()) {
+                    if (column.equals(rows.getString(rows.getColumnIndexOrThrow("name")))) return true;
+                }
+            }
+            return false;
         }
 
         private static void backfillHistoryCovers(SQLiteDatabase db) {

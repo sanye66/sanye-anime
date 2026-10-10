@@ -23,6 +23,23 @@ public class SanyeSourcePluginTest {
     }
 
     @Test
+    public void decodesSourcePagesByTheirDeclaredCharset() throws Exception {
+        // 来源站返回 GBK/GB2312 时，固定按 UTF-8 解码会把中文标题解成乱码，
+        // 解析出来的命中又会因为 normalize 对不上而全部落空（VQ-62）。
+        String html = "<html><head><meta charset='gbk'></head><body><h1>天气之子</h1></body></html>";
+        byte[] gbk = html.getBytes("GBK");
+        // ① HTTP 头声明的字符集优先。
+        assertTrue(SanyeSourcePlugin.decodeHtml(gbk, "text/html; charset=GBK").contains("天气之子"));
+        assertTrue(SanyeSourcePlugin.decodeHtml(gbk, "text/html;charset=\"gb2312\"").contains("天气之子"));
+        // ② 头部没写 charset 时回落到页面自己的 meta 声明。
+        assertTrue(SanyeSourcePlugin.decodeHtml(gbk, "text/html").contains("天气之子"));
+        // ③ 两处都没有时保持原来的 UTF-8 行为。
+        assertTrue(SanyeSourcePlugin.decodeHtml("标题".getBytes("UTF-8"), "text/html").contains("标题"));
+        // ④ 认不出的字符集名不能让整次抓取抛异常，仍按 UTF-8 解码。
+        assertTrue(SanyeSourcePlugin.decodeHtml("标题".getBytes("UTF-8"), "text/html; charset=x-unknown-9").contains("标题"));
+    }
+
+    @Test
     public void pcSearchPrefersDetailOverPlaybackForSameTitle() {
         String html = "<div class='module-card-item'><h3>你的名字</h3>" +
             "<a href='/p/844920/364/0'>播放</a><a href='/v/844920/364'>详情</a></div>";

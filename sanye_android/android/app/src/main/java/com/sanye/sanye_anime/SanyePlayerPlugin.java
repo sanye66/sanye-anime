@@ -66,20 +66,17 @@ public class SanyePlayerPlugin extends Plugin {
                 if (enabled) {
                     // 全屏时内容可以铺满整块屏幕（含刘海/挖孔区），与网页侧的 viewport-fit=cover 配套，
                     // 否则横屏会沿挖孔留出一条空白，画面看起来被推到一边。
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                        WindowManager.LayoutParams attributes = window.getAttributes();
-                        attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
-                        window.setAttributes(attributes);
-                    }
+                    // minSdk 29 > P(28)，版本判断是死代码（lint ObsoleteSdkInt），这里直接执行。
+                    WindowManager.LayoutParams attributes = window.getAttributes();
+                    attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                    window.setAttributes(attributes);
                     WindowCompat.setDecorFitsSystemWindows(window, false);
                     controller.hide(WindowInsetsCompat.Type.systemBars());
                 } else {
                     WindowCompat.setDecorFitsSystemWindows(window, true);
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                        WindowManager.LayoutParams attributes = window.getAttributes();
-                        attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
-                        window.setAttributes(attributes);
-                    }
+                    WindowManager.LayoutParams attributes = window.getAttributes();
+                    attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                    window.setAttributes(attributes);
                     controller.show(WindowInsetsCompat.Type.systemBars());
                 }
             } catch (Exception failure) {
@@ -117,9 +114,32 @@ public class SanyePlayerPlugin extends Plugin {
     /**
      * WebView 重载后 JS 侧会重新下发一次横竖屏状态，插件内的标志必须回到初始值，
      * 否则「上次播放退出后仍是横屏」会让下一次进入播放器不再下发横屏请求（VQ-60）。
+     *
+     * 同时把窗口上的状态一起复位（VQ-62）：此前只复位了插件里的两个布尔量，
+     * 「常亮 / 沉浸式 / 方向锁 / 挖孔模式」会留在窗口上；重载后的 JS 只要没有重新下发
+     * enabled=false，用户就会拿到永不熄屏或锁死横屏的残留状态。
      */
     @Override
     protected void handleOnDestroy() {
+        final boolean restoreOrientation = landscapeRequested;
+        final int orientation = previousOrientation;
+        Activity activity = getActivity();
+        if (activity != null) {
+            activity.runOnUiThread(() -> {
+                try {
+                    Window window = activity.getWindow();
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    WindowManager.LayoutParams attributes = window.getAttributes();
+                    attributes.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+                    window.setAttributes(attributes);
+                    WindowCompat.setDecorFitsSystemWindows(window, true);
+                    WindowCompat.getInsetsController(window, window.getDecorView()).show(WindowInsetsCompat.Type.systemBars());
+                    if (restoreOrientation) activity.setRequestedOrientation(orientation);
+                } catch (Exception failure) {
+                    Log.w(TAG, "退出播放器时复位窗口状态失败", failure);
+                }
+            });
+        }
         landscapeRequested = false;
         previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
         super.handleOnDestroy();

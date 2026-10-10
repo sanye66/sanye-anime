@@ -22,6 +22,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.LinkedHashMap;
@@ -122,6 +123,22 @@ public class SanyeSourcePlugin extends Plugin {
 
     int previewCacheSize() { return previewCache.size(); }
 
+    /**
+     * 提交请求任务，并把「线程池已回收」也变成一次明确的错误回调（VQ-62）。
+     *
+     * 池在 Bridge 销毁时 shutdownNow，之后 submit 会抛 RejectedExecutionException；
+     * 这个异常会从 @PluginMethod 里冒出去，而 Capacitor 的 Bridge 对插件方法抛出的异常是
+     * 直接 rethrow（插件线程停摆、这次调用永不返回），所以必须在提交处兜住。
+     */
+    private void submit(ExecutorService pool, Runnable task, PluginCall call) {
+        try {
+            pool.execute(task);
+        } catch (RuntimeException rejected) {
+            Log.w(TAG, "来源请求池已回收，拒绝新任务", rejected);
+            call.reject("来源请求已停止，请重新打开页面", "E_SOURCE_UNAVAILABLE", rejected);
+        }
+    }
+
     @PluginMethod
     public void search(PluginCall call) {
         String keyword = call.getString("keyword", "").trim();
@@ -133,7 +150,7 @@ public class SanyeSourcePlugin extends Plugin {
         // 期限在入队前起算（VQ-60）：以前在任务体里起算，池满时的排队时间完全不计入期限，
         // 从桥接调用到 reject 可以远超 15s，界面只会一直显示「读取中」。
         long deadline = System.nanoTime() + REQUEST_DEADLINE_NANOS;
-        searches.execute(() -> {
+        submit(searches, () -> {
             SearchOutcome outcome;
             try {
                 String encoded = URLEncoder.encode(keyword, StandardCharsets.UTF_8.name());
@@ -159,7 +176,7 @@ public class SanyeSourcePlugin extends Plugin {
             }
             response.put("hits", items);
             call.resolve(response);
-        });
+        }, call);
     }
 
     /**
@@ -223,7 +240,7 @@ public class SanyeSourcePlugin extends Plugin {
         } catch (Exception ignored) { call.reject("来源地址无效", "E_SOURCE_URL"); return; }
         // 同上：期限在入队前起算，池满时的排队时间也计入这次预览的整体期限。
         long deadline = System.nanoTime() + REQUEST_DEADLINE_NANOS;
-        requests.execute(() -> {
+        submit(requests, () -> {
             try {
                 CachedPreview cachedPreview = previewCache.get(sourceUrl);
                 if (cachedPreview != null && cachedPreview.expiresAt() > System.nanoTime()) {
@@ -239,7 +256,7 @@ public class SanyeSourcePlugin extends Plugin {
                 Log.w(TAG, "来源预览失败：" + sourceUrl, failure);
                 call.reject("来源预览暂不可用，请检查网络或稍后重试", "E_SOURCE_UNAVAILABLE", failure);
             }
-        });
+        }, call);
     }
 
     private static JSObject previewJson(SourcePreview preview) {
@@ -701,7 +718,7 @@ public class SanyeSourcePlugin extends Plugin {
                     }
                 }
                 reusable = true;
-                return new String(bytes.toByteArray(), StandardCharsets.UTF_8);
+                return decodeHtml(bytes.toByteArray(), contentType);
             } finally {
                 if (!reusable) connection.disconnect();
             }
@@ -712,6 +729,50 @@ public class SanyeSourcePlugin extends Plugin {
     private static boolean gzipEncoded(HttpURLConnection connection) {
         String encoding = connection.getContentEncoding();
         return encoding != null && encoding.toLowerCase(Locale.ROOT).contains("gzip");
+    }
+
+    private static final Pattern CHARSET_PARAM = Pattern.compile("charset\\s*=\\s*[\"']?([A-Za-z0-9_\\-]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern META_CHARSET = Pattern.compile(
+        "<meta[^>]+charset\\s*=\\s*[\"']?([A-Za-z0-9_\\-]+)|<meta[^>]+content\\s*=\\s*[\"'][^\"']*charset\\s*=\\s*([A-Za-z0-9_\\-]+)",
+        Pattern.CASE_INSENSITIVE);
+    /** meta 只会出现在文档头部：只嗅探前 4KB，不对整页做正则扫描。 */
+    private static final int META_SNIFF_BYTES = 4096;
+
+    /**
+     * 按页面自己声明的字符集解码（VQ-62）：以前固定按 UTF-8 解码、完全不看
+     * `Content-Type: charset` 与 `<meta charset>`。来源站一旦返回 GBK/GB2312，
+     * 中文标题会整片乱码，解析出来的命中又会因为 normalize 对不上而全部落空。
+     * 顺序：HTTP 头 charset → HTML 里的 meta charset → UTF-8（保持原有回落行为）。
+     */
+    static String decodeHtml(byte[] body, String contentType) {
+        Charset charset = charsetFromContentType(contentType);
+        if (charset == null) charset = charsetFromMeta(body);
+        if (charset == null) charset = StandardCharsets.UTF_8;
+        return new String(body, charset);
+    }
+
+    private static Charset charsetFromContentType(String contentType) {
+        if (contentType == null) return null;
+        Matcher matcher = CHARSET_PARAM.matcher(contentType);
+        return matcher.find() ? safeCharset(matcher.group(1)) : null;
+    }
+
+    private static Charset charsetFromMeta(byte[] body) {
+        int limit = Math.min(body.length, META_SNIFF_BYTES);
+        // 头部按单字节编码读，保证 meta 里的 ASCII 声明原样可见。
+        String head = new String(body, 0, limit, StandardCharsets.ISO_8859_1);
+        Matcher matcher = META_CHARSET.matcher(head);
+        if (!matcher.find()) return null;
+        return safeCharset(matcher.group(1) != null ? matcher.group(1) : matcher.group(2));
+    }
+
+    private static Charset safeCharset(String name) {
+        if (name == null || name.isBlank()) return null;
+        try {
+            return Charset.forName(name.trim().replace("\"", "").replace("'", ""));
+        } catch (Exception unsupported) {
+            return null;
+        }
     }
 
     private static String normalize(String input) {
