@@ -8,6 +8,14 @@ const os = require('node:os')
 const path = require('node:path')
 const { localProcessEnvironment } = require('./processEnvironment.cjs')
 
+// `sanye_deploy/.local/**` 被 .gitignore 忽略，干净检出（CI）里没有该目录，而 mkdtemp
+// 不会创建父目录：先前这些用例在 `windows-2025` runner 上统一以 ENOENT 失败。
+async function tempBase(prefix) {
+  const base = path.resolve(__dirname, `../sanye_deploy/.local/${prefix}`)
+  await fs.mkdir(path.dirname(base), { recursive: true })
+  return fs.mkdtemp(base)
+}
+
 test('packaged processes cannot resolve developer tools or native libraries from user PATH', () => {
   const environment = localProcessEnvironment({
     SystemRoot: 'C:\\Windows', Path: 'C:\\Java\\bin;C:\\PostgreSQL\\bin;C:\\DeveloperTools',
@@ -291,7 +299,7 @@ test('runtime resolves PostgreSQL and Java paths without cmd.exe short names', a
 // services fail before their own code runs. The layout must therefore hand the
 // runtime ASCII-only paths for the JARs and the Java executable.
 test('a non-ASCII package path never reaches the JVM', async () => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/jvm-layout-'))
+  const base = await tempBase('jvm-layout-')
   try {
     const root = path.join(base, '三叶动漫_免安装版')
     for (const [file, content] of [

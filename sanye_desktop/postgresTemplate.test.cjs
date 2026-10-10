@@ -7,6 +7,13 @@ const { PassThrough } = require('node:stream')
 const childProcess = require('node:child_process')
 const { provisionDatabase, configureOffline, setRolePassword, prepareRuntimeLayout, asciiRootCandidates, isAsciiPath } = require('./postgresTemplate.cjs')
 
+// `sanye_deploy/.local/**` 被 .gitignore 忽略，干净检出（CI）里没有该目录，而 mkdtemp
+// 不会创建父目录：先前这些用例在 `windows-2025` runner 上统一以 ENOENT 失败。
+async function tempBase(prefix) {
+  const base = path.resolve(__dirname, `../sanye_deploy/.local/${prefix}`)
+  await fs.mkdir(path.dirname(base), { recursive: true })
+  return fs.mkdtemp(base)
+}
 async function fakeRuntime(directory) {
   await fs.mkdir(path.join(directory, 'bin'), { recursive: true })
   await fs.mkdir(path.join(directory, 'share'), { recursive: true })
@@ -30,7 +37,7 @@ async function applicationRoot(base, name = 'app') {
 }
 
 test('ASCII directories are used in place and never mirrored', async () => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/ascii-layout-'))
+  const base = await tempBase('ascii-layout-')
   try {
     const root = await applicationRoot(base)
     const data = path.join(base, 'userdata')
@@ -52,7 +59,7 @@ test('ASCII directories are used in place and never mirrored', async () => {
 })
 
 test('non-ASCII package paths mirror PostgreSQL, Java and the JARs into an ASCII runtime that is reused', async () => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/ascii-layout-'))
+  const base = await tempBase('ascii-layout-')
   try {
     const root = await applicationRoot(base, '三叶动漫_免安装版')
     const data = path.join(base, 'userdata')
@@ -97,7 +104,7 @@ test('non-ASCII package paths mirror PostgreSQL, Java and the JARs into an ASCII
 })
 
 test('a rebuilt package is mirrored again instead of reusing the previous Java runtime', async () => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/ascii-layout-'))
+  const base = await tempBase('ascii-layout-')
   try {
     const root = await applicationRoot(base, '三叶动漫_免安装版')
     const data = path.join(base, 'userdata')
@@ -118,7 +125,7 @@ test('a rebuilt package is mirrored again instead of reusing the previous Java r
 })
 
 test('non-ASCII user data directories move one existing database into the ASCII runtime', async t => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/ascii-layout-'))
+  const base = await tempBase('ascii-layout-')
   try {
     const root = await applicationRoot(base)
     const data = path.join(base, '中文 用户 数据')
@@ -169,7 +176,7 @@ test('non-ASCII user data directories move one existing database into the ASCII 
 })
 
 test('mirror candidates skip unusable directories and report a clear failure', async () => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/ascii-layout-'))
+  const base = await tempBase('ascii-layout-')
   try {
     const root = await applicationRoot(base, '三叶动漫')
     const data = path.join(base, 'userdata')
@@ -210,7 +217,7 @@ test('ASCII mirror candidates come from the local profile before machine-wide di
 })
 
 test('offline configuration reports loader failures and persists diagnostics without credentials', async t => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/provision-log-test-'))
+  const base = await tempBase('provision-log-test-')
   const logFile = path.join(base, 'logs', 'database-provision.log')
   const password = 'c'.repeat(64)
   let scenario = 'missing-dll'
@@ -263,7 +270,7 @@ test('offline configuration reports loader failures and persists diagnostics wit
 // authenticate) and every Java service then exits with "password authentication
 // failed", which the desktop only reported as "anime failed to start".
 test('an existing cluster with a stale credential is repaired instead of failing', async t => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/credential-repair-test-'))
+  const base = await tempBase('credential-repair-test-')
   const logFile = path.join(base, 'logs', 'database-credentials.log')
   const password = 'd'.repeat(64)
   const sql = []
@@ -295,7 +302,7 @@ test('an existing cluster with a stale credential is repaired instead of failing
 })
 
 test('a cluster without the application role gets it created', async t => {
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/credential-create-test-'))
+  const base = await tempBase('credential-create-test-')
   const logFile = path.join(base, 'logs', 'database-credentials.log')
   const password = 'e'.repeat(64)
   const sql = []
@@ -329,7 +336,7 @@ const templatePrepared = require('node:fs').existsSync(path.join(__dirname, 'run
 
 test('template copy restores ZIP-omitted directories and preserves existing databases', { skip: process.platform !== 'win32' || !templatePrepared }, async () => {
   const original = path.join(__dirname, 'runtime')
-  const base = await fs.mkdtemp(path.resolve(__dirname, '../sanye_deploy/.local/template-test-'))
+  const base = await tempBase('template-test-')
   const root = path.join(base, '中文软件')
   const destination = path.join(base, '中文 数据')
   try {
