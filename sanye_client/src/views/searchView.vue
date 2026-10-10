@@ -91,6 +91,31 @@ watch(() => route.fullPath, () => {
   chip.value = chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部'
   void load()
 })
+const filteredInternalResults = computed(() => chip.value === '全部'
+  ? classifiedInternalResults.value
+  : classifiedInternalResults.value.filter((anime) => anime.type === chip.value))
+const resultCount = computed(() => filteredInternalResults.value.length + filteredExternalResults.value.length)
+
+watch(() => route.fullPath, () => {
+  const nextKeyword = String(route.query.keyword ?? '')
+  const nextChip = chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部'
+  const nextPage = routePage()
+  const keywordChanged = loadedQuery !== normalizeSearchInput(nextKeyword)
+  const pageChanged = loadedPage !== nextPage
+  loadedQuery = normalizeSearchInput(nextKeyword)
+  loadedPage = nextPage
+  keyword.value = nextKeyword
+  chip.value = nextChip
+  page.value = nextPage
+  // 分类是对已返回候选的前端筛选；重建请求会清空站内结果与外部类型校正依据。
+  if (keywordChanged) { void load(); return }
+  if (pageChanged) void loadInternal(query.value)
+})
+
+function selectChip(type: string): void {
+  if (chip.value === type) return
+  void router.push({ path: '/search', query: { keyword: route.query.keyword, type: type === '全部' ? undefined : type } })
+}
 
 function selectChip(type: string): void {
   if (chip.value === type) return
@@ -106,6 +131,19 @@ async function load(): Promise<void> {
   externalLoading.value = false
   externalSupplementLoading.value = false
   if (queryText) await loadExternal(queryText)
+}
+
+function toLocalEntry(anime: (typeof animeCatalog)[number]): ResultEntry {
+  return {
+    id: anime.slug,
+    title: anime.title,
+    type: anime.type,
+    meta: `${anime.releaseYear} · ${anime.meta}`,
+    tags: anime.tags.slice(0, 3),
+    score: anime.popularity,
+    summary: anime.description,
+    cover: resolveAssetUrl(anime.cover) ?? fallbackCover,
+  }
 }
 
 async function loadExternal(queryText: string): Promise<void> {

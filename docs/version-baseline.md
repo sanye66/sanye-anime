@@ -54,7 +54,8 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | Netty | 4.1.137.Final | managed | 两套父工程统一覆盖安全补丁版本，禁止业务模块单独覆盖 |
 | Apache HttpCore 5 | 5.4.3 | managed | 微服务父工程统一覆盖 Nacos Client 的传递依赖版本 |
 | Commons FileUpload | 1.6.0 | managed | 微服务父工程统一覆盖 OpenFeign 表单支持的传递依赖版本 |
-| Bouncy Castle | 1.84 | managed | 微服务父工程统一覆盖 Spring Cloud 的传递依赖版本 |
+| Bouncy Castle | 1.85 | managed | 微服务父工程统一覆盖 Spring Cloud 的传递依赖版本；1.84 存在 CVE-2026-8763（严重）与 CVE-2026-13506（高） |
+| RabbitMQ AMQP 客户端 | 5.34.0 | managed | 微服务父工程按 Spring Boot 的 `rabbit-amqp-client.version` 覆盖；5.33.1 存在 CVE-2026-75516（高） |
 | Apache POI | 5.4.0 | managed | 管理后端父工程统一管理，包含 Commons Compress 1.27.1 安全版本 |
 | Commons Compress | 1.27.1 | managed | 随 Apache POI 5.4.0 管理，不在业务模块单独覆盖 |
 | HikariCP | 随 Spring Boot 3.5.x | managed | 统一连接池配置 |

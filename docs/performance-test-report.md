@@ -173,6 +173,8 @@ $m = (Invoke-WebRequest http://localhost:8082/actuator/prometheus).Content  # �
 
 ## 更新记录
 
+2026-09-10，v1.3：将六处被 Git 忽略的本机证据链接改为明确的本机路径，保留历史结果与证据边界；依据独立交付工作区的文档检查结果。
+
 | 日期 | 版本 | 变更 | 依据 |
 | --- | --- | --- | --- |
 | 2026-08-21 | v0.2 | 将真实模型供应商、模型和外部阻塞统一为硅基流动/Qwen2.5-7B-Instruct/HTTP 402 | environment-config、压测联调记录 |

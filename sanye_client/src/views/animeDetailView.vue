@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import type Artplayer from 'artplayer'
 import type Hls from 'hls.js'
@@ -1494,6 +1494,7 @@ function goBack() {
 
 <template>
   <div class="page-stack anime-detail-page">
+    <FrameInterpolationDialog v-if="interpolationOpen" :source="activePlaybackUrl" :hls="activePlaybackIsHls" :title="display?.title || '视频'" @close="closeInterpolation" />
     <button class="back-link detail-back-button" type="button" @click="goBack"><span aria-hidden="true">←</span> 返回</button>
 
     <div v-if="loading" class="detail-loading-state" role="status" aria-live="polite">

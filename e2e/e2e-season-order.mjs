@@ -66,6 +66,10 @@ try {
     contentType: 'application/json',
     body: JSON.stringify({ code: 0, message: 'ok', data: [], requestId: 'season-order-e2e' }),
   }))
+  await page.route('**/api/v1/search/external?**', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ code: 0, message: 'ok', data: [], requestId: 'season-order-e2e' }),
+  }))
 
   await assertOrder(page, '/anime-repository', '.repository-card-title strong', '片库')
   console.log('季度排序 Playwright：通过 1/1')
