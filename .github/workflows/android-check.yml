@@ -2,6 +2,19 @@ name: android-check
 
 on:
   workflow_dispatch:
+  # 分支模型是「任务分支 → dev → test → release」直接推送，安卓门禁只在 PR 上跑等于没跑
+  # （dev/test/release 的推送都过不了这道门），所以与 ci.yml 一样加上推送触发。
+  push:
+    branches: ["feature-*", "dev", "test", "release"]
+    paths:
+      - 'sanye_client/**'
+      - 'sanye_android/**'
+      - 'e2e/**'
+      - 'product/android-requirements.md'
+      - 'docs/android-development-plan.md'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/android-check.yml'
   pull_request:
     paths:
       - 'sanye_client/**'
@@ -12,6 +25,10 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/android-check.yml'
+
+concurrency:
+  group: android-check-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -44,13 +61,18 @@ jobs:
       - name: 同步原生工程
         working-directory: sanye_android
         run: npm ci && npm run sync
-      - name: 原生构建与单元测试
+      - name: 原生构建、单元测试与静态检查
         working-directory: sanye_android/android
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest
-      - name: 保留测试报告
+        # lintDebug 是新增门禁：异常兜底、无效资源与废弃 API 这类问题单元测试看不到，
+        # 而 app/lint.xml 已经登记了少量误报（详见该文件注释）。
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+      - name: 保留测试与检查报告
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: sanye_android-check-${{ github.sha }}
-          path: sanye_android/android/app/build/test-results/testDebugUnitTest/*.xml
+          path: |
+            sanye_android/android/app/build/test-results/testDebugUnitTest/*.xml
+            sanye_android/android/app/build/reports/lint-results-*.txt
+            sanye_android/android/app/build/reports/lint-results-*.html
           if-no-files-found: warn
