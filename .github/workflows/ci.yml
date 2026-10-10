@@ -60,7 +60,10 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: microsoft
-          java-version: "21.0.12"
+          # 微软发行版索引当前只提供到 21.0.11（21.0.12 不在索引里），写 21.0.12 会让
+          # setup-java 直接失败：No matching version found for SemVer '21.0.12'。
+          # 本机工具链仍是 21.0.12，CI 固定 21.0.11，差异见 docs/ci-cd.md §2.2。
+          java-version: "21.0.11"
           cache: maven
       - name: 安装固定 Maven 版本
         run: bash sanye_deploy/setup-ci-maven.sh
@@ -102,7 +105,10 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: microsoft
-          java-version: "21.0.12"
+          # 微软发行版索引当前只提供到 21.0.11（21.0.12 不在索引里），写 21.0.12 会让
+          # setup-java 直接失败：No matching version found for SemVer '21.0.12'。
+          # 本机工具链仍是 21.0.12，CI 固定 21.0.11，差异见 docs/ci-cd.md §2.2。
+          java-version: "21.0.11"
           cache: maven
       - name: 安装固定 Maven 版本
         run: bash sanye_deploy/setup-ci-maven.sh

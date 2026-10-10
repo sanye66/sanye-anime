@@ -48,7 +48,8 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: microsoft
-          java-version: '21.0.12'
+          # 微软发行版索引只提供到 21.0.11，21.0.12 会让 setup-java 直接失败（见 docs/ci-cd.md §2.2）。
+          java-version: '21.0.11'
       - run: pnpm install --frozen-lockfile
       - name: 构建安卓前端
         run: pnpm --filter @sanye/sanye_client build:android

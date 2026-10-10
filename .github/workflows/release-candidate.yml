@@ -33,6 +33,8 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: microsoft
+          # 候选发布按 docs/ci-cd.md 的决策保持 21.0.12 严格门禁：Microsoft 发行版索引暂无
+          # 21.0.12，这里会以 setup-java 失败告终，属登记在案的 blocked-external（供应源待环境）。
           java-version: '21.0.12'
       - name: Require successful CI for the candidate commit
         env:
