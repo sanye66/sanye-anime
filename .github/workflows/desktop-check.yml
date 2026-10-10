@@ -54,12 +54,12 @@ jobs:
       - name: 安装桌面托盘回归所需的 Chromium
         run: pnpm --filter @sanye/sanye_e2e exec playwright install chromium
       - name: 桌面回归
-        # 同 android-check：失败用例打成 ::error:: 注解，便于公开仓库直接定位。
+        # 同 android-check：失败用例与错误行打成 ::error:: 注解，公开仓库不登录也能定位。
         run: |
           log=desktop-check.log
           if ! pnpm test:desktop > "$log" 2>&1; then
-            grep -E '^(not ok|✖)' "$log" | head -30 | sed 's/^/::error::/' || true
-            tail -40 "$log"
+            grep -nE '✖|^not ok|Error:|ERR_|AssertionError|Cannot find' "$log" | head -25 | sed 's/^/::error::/' || true
+            tail -15 "$log" | sed 's/^/::error::/' || true
             exit 1
           fi
       - name: 上传桌面回归日志
