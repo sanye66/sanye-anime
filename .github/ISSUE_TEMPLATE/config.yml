@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 开发与提交规范
+    url: https://github.com/sanye66/sanye-anime/blob/dev/AGENTS.md
+    about: 分支模型、提交信息格式、文档变更规则和门禁命令。
+  - name: 当前项目状态与开发任务
+    url: https://github.com/sanye66/sanye-anime/blob/dev/docs/development-tasks.md
+    about: 先确认问题是否已登记在开发任务清单或差距登记表中。
+  - name: CI/CD 与质量门禁
+    url: https://github.com/sanye66/sanye-anime/blob/dev/docs/ci-cd.md
+    about: 工作流触发条件、检查项与本地等价命令。

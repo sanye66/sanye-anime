@@ -2,6 +2,18 @@ name: desktop-check
 
 on:
   workflow_dispatch:
+  # 分支模型是「任务分支 → dev → test → release」直接推送，只在 PR 上跑等于这道门永远不生效，
+  # 所以与 ci.yml、android-check.yml 一样加上推送触发（路径过滤保持一致）。
+  push:
+    branches: ["feature-*", "dev", "test", "release"]
+    paths:
+      - 'sanye_desktop/**'
+      - 'sanye_client/**'
+      - 'sanye_server/**'
+      - 'patches/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/desktop-check.yml'
   pull_request:
     paths:
       - 'sanye_desktop/**'
@@ -11,6 +23,10 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - '.github/workflows/desktop-check.yml'
+
+concurrency:
+  group: desktop-check-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
