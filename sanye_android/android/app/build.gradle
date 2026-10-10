@@ -1,5 +1,22 @@
 apply plugin: 'com.android.application'
 
+/**
+ * 交付包签名（VQ-62）：仓库里不放 keystore 与口令，签名材料从本地属性或环境变量读取。
+ *
+ * `gradle.properties`（不入库）或环境变量提供任意一组即可：
+ *   SANYE_RELEASE_STORE_FILE / SANYE_RELEASE_STORE_PASSWORD
+ *   SANYE_RELEASE_KEY_ALIAS  / SANYE_RELEASE_KEY_PASSWORD
+ *
+ * 缺少签名材料时 release 仍然可以构建（产物是 `app-release-unsigned.apk`），
+ * 只是不能直接安装到真机上：以前的交付包因此只能用 debug 变体，而 debug 变体
+ * 自带 android:debuggable=true（可 run-as 读本地库，并自动打开 WebView 远程调试）。
+ */
+def releaseStoreFile = project.findProperty('SANYE_RELEASE_STORE_FILE') ?: System.getenv('SANYE_RELEASE_STORE_FILE')
+def releaseStorePassword = project.findProperty('SANYE_RELEASE_STORE_PASSWORD') ?: System.getenv('SANYE_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = project.findProperty('SANYE_RELEASE_KEY_ALIAS') ?: System.getenv('SANYE_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = project.findProperty('SANYE_RELEASE_KEY_PASSWORD') ?: System.getenv('SANYE_RELEASE_KEY_PASSWORD')
+def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace = "com.sanye.sanye_anime"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,20 +24,44 @@ android {
         applicationId "com.sanye.sanye_anime"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 43
-        versionName "5.2"
+        // v66（versionCode 43／versionName 5.2）之后的修复包：启动主题、异常兜底、
+        // 校验与页面侧修复都在这一版里，因此必须换版本号，避免与已交付包同号不同内容。
+        versionCode 44
+        versionName "5.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-        aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    // AGP 8 起 aaptOptions 已废弃，等价配置移到这里。
+    androidResources {
+        // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+        // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 交付包必须开混淆与资源压缩（VQ-62）：此前 minifyEnabled false，
+            // 实测 release dex 7,668,792 字节、debug dex 9,432,940 字节（占 APK 76%）。
+            // Capacitor 通过 consumerProguardFiles 保留插件类与 @PluginMethod，jsoup/gson 无需额外规则。
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
         }
+    }
+    lint {
+        // AppTheme.NoActionBar 由 Capacitor 的 BridgeActivity 在运行时 setTheme(R.style.AppTheme_NoActionBar)
+        // 引用（编译期解析到库里的同名资源），lint 会误报「未使用」；删掉它会让窗口底色与挖孔设置失效。
+        lintConfig file('lint.xml')
+        abortOnError true
     }
 }
 
@@ -45,12 +86,3 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
-
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
-    }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
-}

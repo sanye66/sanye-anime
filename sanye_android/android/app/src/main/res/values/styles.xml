@@ -21,8 +21,20 @@
     </style>
 
 
+    <!--
+        启动主题（VQ-62）：Android 12+ 的系统启动画面读的是 windowSplashScreenBackground 与
+        windowSplashScreenAnimatedIcon 两个属性。此前两者都没设置，父主题 Theme.SplashScreen 会回落到
+        ?android:colorBackground 与系统默认的「机器人」图标——启动瞬间先闪一下系统底色再跳到品牌色，
+        图标也不是应用图标。这里显式指定品牌底色与随包图标。
+        另外，原先的 android:background="@drawable/splash" 在任何 API 上都不会被绘制（窗口背景由
+        windowBackground 决定），11 张 splash.png（共 1014KB）属于死资源，已随本次修改删除。
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/sanye_window_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <!-- 启动画面结束后必须切到「不含启动画面」的主题：父主题的默认值是自引用，会把启动主题再套一次。 -->
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <!-- Android 10/11 没有系统启动画面 API：窗口底色保持纯品牌色，不引入未适配的兼容启动图。 -->
         <item name="android:windowBackground">@color/sanye_window_background</item>
     </style>
 </resources>

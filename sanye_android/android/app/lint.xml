@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+        AppTheme.NoActionBar 由 Capacitor 的 BridgeActivity 在运行时 setTheme(R.style.AppTheme_NoActionBar)
+        引用（编译期解析到库里同名的资源），lint 会误报「未使用」。删掉它会让窗口底色、colorBackground
+        与刘海/挖孔设置一起失效（全屏播放时两侧重新露白）。
+    -->
+    <issue id="UnusedResources">
+        <ignore regexp="AppTheme_NoActionBar" />
+        <!-- config.xml 是 `npx cap sync` 生成的（已列入 .gitignore），lint 看不到引用方。 -->
+        <ignore regexp="R\.xml\.config" />
+        <!--
+            package_name / custom_url_scheme 是 Capacitor（沿用 Cordova）按名字读取的字符串资源，
+            编译期看不到引用方，删掉会让依赖这两个名字的工具链在真机/同步时踩空。
+        -->
+        <ignore regexp="R\.string\.(package_name|custom_url_scheme)" />
+    </issue>
+    <!--
+        minSdk 29 时 android:dataExtractionRules 只在 Android 12+ 生效，lint 因此提示再补一份
+        android:fullBackupContent。本应用 android:allowBackup="false"（Android 11 及以下完全不参与备份），
+        data_extraction_rules.xml 又把 cloud-backup 与 device-transfer 的全部 domain 都排除；
+        再补一份 legacy 规则属于永远不会被读到的死配置。
+    -->
+    <issue id="DataExtractionRules">
+        <ignore regexp="dataExtractionRules" />
+    </issue>
+</lint>

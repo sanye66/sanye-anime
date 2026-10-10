@@ -27,15 +27,12 @@
 
         </activity>
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths"></meta-data>
-        </provider>
+        <!--
+            这里原先声明了一个 androidx.core.content.FileProvider，路径表是 external-path path="."
+            与 cache-path path="."：等于把整个外置存储与缓存目录都可以授权出去，而随包代码里没有任何
+            一处使用 FileProvider（只装了 @capacitor/app，没有文件选择/分享插件），属于纯粹的攻击面。
+            以后真要用到再按最小范围重新声明（VQ-62）。
+        -->
     </application>
 
 </manifest>
