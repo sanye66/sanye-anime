@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.4 |
+| 文档版本 | v1.5 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
 | 更新时间 | 2026-10-10 |
+
+更新记录：2026-10-10，v1.5，CI 门禁新增「安卓交付资源一致性」：`sanye_deploy/verify-android-assets.mjs` 逐文件比对包内 `sanye_android/android/app/src/main/assets/public` 与 `sanye_client/dist-android` 的名字与 SHA-256（忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`），不一致即阻断，`android-check.yml` 在 `npm run sync` 之后执行 `pnpm test:verify-android-assets` 与 `pnpm verify:android-assets`。起因：本地打包漏跑 `cap sync` 时包内页面资源会静默停在旧构建（本轮交付 v68 的第一次打包就是这样，包内 `index-C3meCUND.js` 对当前构建 `index-DhS4HkVu.js`），而包内 `assets/public` 被 `.gitignore` 忽略，git 状态里看不出来。
 
 更新记录：2026-10-10，v1.4，依赖漏洞门禁改为「登记式」：前端侧 `pnpm audit --audit-level high` 换成 `pnpm audit:deps`，Trivy 侧由 `sanye_deploy/audit-trivy.mjs` 判定，两者共用 `sanye_deploy/audit-exemptions.json`，只有**可升级修复**的高危/严重命中阻断，上游无回补版本的命中必须登记原因与复核期限才放行；两套后端 Jackson 同步升到 2.21.7、`org.jsoup:jsoup` 1.18.3→1.23.2（三处声明），Spring Framework 6.2.19 的三条严重命中（CVE-2026-47884／47890／47892）登记为待 Spring Boot 4.x 迁移项，详见 [CI/CD](./ci-cd.md) §2.4。
 
@@ -66,6 +68,7 @@
 | 浏览器安全回归 | pnpm e2e:ci（季度排序、电影线路、清晰度） | 阻断 |
 | 文档一致性 | pnpm docs:check | 阻断 |
 | 依赖漏洞 | pnpm audit:deps + pnpm audit:trivy（共用 audit-exemptions.json 登记式豁免） | 可升级修复的高危/严重阻断 |
+| 安卓交付资源一致性 | pnpm verify:android-assets（包内 assets/public 与 sanye_client/dist-android 逐文件 SHA-256 比对） | 不一致即阻断 |
 | 密钥扫描 | Gitleaks（含历史） | 命中即阻断 |
 
 ## 5. 合并门禁（合并到 dev 自查）
