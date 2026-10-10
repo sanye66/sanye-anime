@@ -52,6 +52,31 @@
       ],
       "registeredAt": "2026-10-10",
       "reviewBy": "2027-01-10"
+    },
+    {
+      "source": "trivy",
+      "advisory": "CVE-2026-47890",
+      "package": "org.springframework:spring-webmvc",
+      "severity": "critical",
+      "reason": "同一个 CVE 在 `spring-webmvc` 上也命中（登记按「漏洞 ID + 包名」配对，同批 CVE 需按包分别登记），修复版本同样只在 7.x 线；随 Spring Boot 4 迁移一并处理。",
+      "paths": [
+        "sanye_server>org.springframework:spring-webmvc:6.2.19",
+        "sanye_admin_server>org.springframework:spring-webmvc:6.2.19"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
+    },
+    {
+      "source": "trivy",
+      "advisory": "CVE-2026-47892",
+      "package": "org.springframework:spring-webflux",
+      "severity": "critical",
+      "reason": "Spring Framework 6.2.19 在 `spring-webflux` 上的第三条同批命中，Maven Central 上 6.2.x 线止于 6.2.19、修复只出现在 7.0.9；随 Spring Boot 4 迁移一并处理。",
+      "paths": [
+        "sanye_server>org.springframework:spring-webflux:6.2.19"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
     }
   ]
 }

@@ -80,10 +80,25 @@ test('豁免过期时阻断', () => {
   assert.equal(formatTrivyReport(result, { today }).passed, false)
 })
 
-test('豁免登记的包名不符时阻断', () => {
+test('豁免登记的包名与命中不一致时不放行', () => {
   const result = analyzeTrivy(reportOf({ 'pom.xml': [vulnerability()] }), [{ ...trivyExemption, package: 'org.springframework:spring-webflux' }], { today })
   assert.equal(result.blocking.length, 1)
-  assert.match(result.blocking[0].reason, /包名/)
+  assert.equal(result.exempted.length, 0)
+  assert.equal(result.stale.length, 1)
+})
+
+test('同一 CVE 命中多个包时按包分别登记', () => {
+  const report = reportOf({
+    'a/pom.xml': [vulnerability()],
+    'b/pom.xml': [vulnerability({ PkgName: 'org.springframework:spring-webflux' })],
+  })
+  const exemptions = [trivyExemption, { ...trivyExemption, package: 'org.springframework:spring-webflux' }]
+  const result = analyzeTrivy(report, exemptions, { today })
+  assert.equal(result.unique, 2)
+  assert.equal(result.blocking.length, 0)
+  assert.equal(result.exempted.length, 2)
+  assert.equal(result.stale.length, 0)
+  assert.equal(formatTrivyReport(result, { today }).passed, true)
 })
 
 test('扫描结果里已不存在的 trivy 豁免判为失效', () => {

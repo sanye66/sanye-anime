@@ -62,7 +62,10 @@ export function analyzeTrivy(report, exemptions, { today = new Date() } = {}) {
   }
 
   const trivyExemptions = exemptions.filter((entry) => entry.source === 'trivy')
-  const byAdvisory = new Map(trivyExemptions.map((entry) => [entry.advisory, entry]))
+  // 同一 CVE 可能同时命中多个包（例如 CVE-2026-47890 既在 spring-webmvc 也在
+  // spring-webflux），登记项因此按「漏洞 ID + 包名」配对，同名包各登记一条。
+  const exemptionKey = (entry) => `${entry.advisory}|${entry.package}`
+  const byKey = new Map(trivyExemptions.map((entry) => [exemptionKey(entry), entry]))
   const used = new Set()
   const counts = {}
   const blocking = []
@@ -77,16 +80,13 @@ export function analyzeTrivy(report, exemptions, { today = new Date() } = {}) {
       informational.push(record)
       continue
     }
-    const entry = byAdvisory.get(finding.advisory)
+    const key = `${finding.advisory}|${finding.package}`
+    const entry = byKey.get(key)
     if (!entry) {
-      blocking.push({ ...record, reason: record.fixed ? `可升级到 ${record.fixed} 修复` : '上游无修复版本，且未登记豁免' })
+      blocking.push({ ...record, reason: record.fixed ? `可升级到 ${record.fixed} 修复，或为「仅在更高主版本修复」的命中登记豁免` : '上游无修复版本，且未登记豁免' })
       continue
     }
-    used.add(entry.advisory)
-    if (entry.package !== record.package) {
-      blocking.push({ ...record, reason: `豁免登记的包名是 ${entry.package}，与扫描结果不符` })
-      continue
-    }
+    used.add(key)
     const reviewBy = Date.parse(entry.reviewBy ?? '')
     if (!Number.isFinite(reviewBy)) {
       expired.push({ ...record, reviewBy: entry.reviewBy ?? '', reason: '豁免登记缺少可解析的 reviewBy' })
@@ -108,7 +108,7 @@ export function analyzeTrivy(report, exemptions, { today = new Date() } = {}) {
     exempted: sorted(exempted),
     expired: sorted(expired),
     informational: sorted(informational),
-    stale: trivyExemptions.filter((entry) => !used.has(entry.advisory)),
+    stale: trivyExemptions.filter((entry) => !used.has(exemptionKey(entry))),
   }
 }
 
