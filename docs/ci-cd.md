@@ -84,7 +84,7 @@
 
 - 工作流：[.github/workflows/android-check.yml](../.github/workflows/android-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_client/`、`sanye_android/`、`e2e/`、[安卓需求草案](../product/android-requirements.md)、[安卓开发计划](./android-development-plan.md)、`package.json`、`pnpm-lock.yaml` 或本工作流；并发：同分支取消旧任务。
 - 步骤：`pnpm install --frozen-lockfile` → `pnpm --filter @sanye/sanye_client build:android` → 安装 Chromium → `pnpm test:player-policy` → 15 个安卓端 e2e 文件 → `sanye_android` 内 `npm ci && npm run sync` → `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`。
-- 门禁：单元测试、`lintDebug`（误报登记在 `sanye_android/android/app/lint.xml`）或原生构建任一失败即阻断；单元测试 XML 与 lint 报告无论成败都作为构建产物上传。
+- 门禁：单元测试、`lintDebug`（误报登记在 `sanye_android/android/app/lint.xml`）或原生构建任一失败即阻断；单元测试 XML 与 lint 报告无论成败都作为构建产物上传。安卓前端回归里有 2 项依赖 `sanye_desktop/runtime/seed.sql`（PC 随包目录与已有线路的比对），该目录被 `.gitignore` 忽略、干净检出上不存在，因此按守卫跳过：CI 为 53 通过 / 2 跳过 / 0 失败，本机准备好运行时后为 55 通过。失败时会把 TAP 的 `not ok` 行打成 `::error::` 注解并上传完整日志，公开仓库不登录也能定位。
 - 本地等价：`pnpm --filter @sanye/sanye_client build:android`；`cd sanye_android/android` 后 `./gradlew --offline :app:testDebugUnitTest :app:lintDebug`（本机需 `JAVA_HOME` 指向 JDK 21、`ANDROID_HOME` 指向已安装的 Android SDK）。
 
 ### 2.8 desktop-check：桌面打包门禁
