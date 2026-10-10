@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.9 |
+| 文档版本 | v1.10 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-10-09 |
 
 ## 当前核对（2026-09-10）
 
@@ -80,6 +80,19 @@
 - 命令：`node sanye_deploy/check-docs.mjs`，本地等价入口为 `pnpm docs:check`。
 - 门禁：Markdown 链接、当前事实或命令基线漂移即阻断。
 
+### 2.7 android-check：安卓原生门禁
+
+- 工作流：[.github/workflows/android-check.yml](../.github/workflows/android-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_client/`、`sanye_android/`、`e2e/`、[安卓需求草案](../product/android-requirements.md)、[安卓开发计划](./android-development-plan.md)、`package.json`、`pnpm-lock.yaml` 或本工作流；并发：同分支取消旧任务。
+- 步骤：`pnpm install --frozen-lockfile` → `pnpm --filter @sanye/sanye_client build:android` → 安装 Chromium → `pnpm test:player-policy` → 15 个安卓端 e2e 文件 → `sanye_android` 内 `npm ci && npm run sync` → `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`。
+- 门禁：单元测试、`lintDebug`（误报登记在 `sanye_android/android/app/lint.xml`）或原生构建任一失败即阻断；单元测试 XML 与 lint 报告无论成败都作为构建产物上传。
+- 本地等价：`pnpm --filter @sanye/sanye_client build:android`；`cd sanye_android/android` 后 `./gradlew --offline :app:testDebugUnitTest :app:lintDebug`（本机需 `JAVA_HOME` 指向 JDK 21、`ANDROID_HOME` 指向已安装的 Android SDK）。
+
+### 2.8 desktop-check：桌面打包门禁
+
+- 工作流：[.github/workflows/desktop-check.yml](../.github/workflows/desktop-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_desktop/**`、`sanye_client/**`、`sanye_server/**`、`patches/**`、`package.json`、`pnpm-lock.yaml` 或本工作流；运行在 `windows-2025`，超时 30 分钟，同分支取消旧任务。
+- 步骤：安装固定 Maven 与 Chromium → `pnpm install --frozen-lockfile` → `pnpm test:desktop` → `pnpm typecheck` → `pnpm build` → `pnpm --filter @sanye/sanye_client build:desktop` → 打包三套桌面服务源码；后端 surefire 报告无论成败都上传。
+- 门禁：桌面回归、类型检查、构建或源码打包任一失败即阻断。发行物本身的强制规则（免安装包 EXE 逐字节一致、不得改写 EXE、依赖闭包等）见[本地桌面运行与打包](./local-desktop.md)。
+
 ## 3. 门禁与分支策略
 
 | 分支 | CI 执行 | 进入条件 | 说明 |
@@ -138,6 +151,9 @@ mvn -B -f sanye_admin_server/pom.xml test
 pnpm e2e:ci
 pnpm audit --audit-level high
 pnpm docs:check
+pnpm --filter @sanye/sanye_client build:android
+cd sanye_android/android; ./gradlew --offline :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+pnpm test:desktop
 ```
 
 ## 6. 待完善（外部环境）
@@ -157,3 +173,4 @@ pnpm docs:check
 | 2026-08-26 | v1.3 | 按 HIGH/CRITICAL 门槛修正 Trivy 扫描范围，升级后端安全补丁并固定 Trivy 引擎版本 | Maven 依赖树、Trivy v0.74.0、GitHub Actions 远端执行 |
 | 2026-08-26 | v1.4 | Trivy 扫描前预填并缓存两套后端 Maven 依赖，避免 Maven Central HTTP 429；关闭与 Gitleaks 重复的 secret scanner | `.github/workflows/ci.yml`、GitHub Actions 远端日志 |
 | 2026-09-09 | v1.5 | 同步 Node.js 26.5.0 与 Java 21 工具链；本机补丁版本和 CI 执行证据分别登记，本次修改不代表远端流水线通过 | 用户确认、[版本基线](./version-baseline.md)、`.github/workflows/ci.yml` |
+| 2026-10-09 | v1.10 | 补记 `android-check`（含新增 `:app:lintDebug` 与报告上传、推送触发、并发取消）与 `desktop-check`（补推送触发）两个专项工作流，并在本地等价命令里登记安卓与桌面入口 | [android-check.yml](../.github/workflows/android-check.yml)、[desktop-check.yml](../.github/workflows/desktop-check.yml)、`pnpm docs:check` 1888 项通过 |
