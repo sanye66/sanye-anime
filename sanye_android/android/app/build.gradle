@@ -24,10 +24,11 @@ android {
         applicationId "com.sanye.sanye_anime"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // v66（versionCode 43／versionName 5.2）之后的修复包：启动主题、异常兜底、
-        // 校验与页面侧修复都在这一版里，因此必须换版本号，避免与已交付包同号不同内容。
-        versionCode 44
-        versionName "5.3"
+        // v44（versionCode 44／versionName 5.3）之上的依赖安全升级：`org.jsoup:jsoup`
+        // 1.18.3→1.23.2（CVE-2026-75140，高），包内容变了必须换版本号，避免与已交付包
+        // 同号不同内容；本轮只升依赖、未改功能，未重新交付到桌面。
+        versionCode 45
+        versionName "5.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     // AGP 8 起 aaptOptions 已废弃，等价配置移到这里。
@@ -77,7 +78,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    implementation 'org.jsoup:jsoup:1.18.3'
+    implementation 'org.jsoup:jsoup:1.23.2'
     implementation 'com.google.code.gson:gson:2.11.0'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
