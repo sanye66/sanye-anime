@@ -77,6 +77,13 @@ jobs:
       - name: 同步原生工程
         working-directory: sanye_android
         run: npm ci && npm run sync
+      - name: 校验包内页面资源与前端构建一致
+        # 交付链路的坑：只跑 build:android + gradle 而不跑 cap sync，包内 assets/public 会停在
+        # 上一次同步（本轮本地交付就发出过一个带 2026-09-30 旧资源的中间产物）。这里逐文件
+        # 比对文件名与 SHA-256，忽略 Capacitor 生成的 cordova.js / cordova_plugins.js。
+        run: |
+          pnpm test:verify-android-assets
+          pnpm verify:android-assets
       - name: 原生构建、单元测试与静态检查
         working-directory: sanye_android/android
         # lintDebug 是新增门禁：异常兜底、无效资源与废弃 API 这类问题单元测试看不到，

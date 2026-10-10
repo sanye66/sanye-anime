@@ -33,6 +33,8 @@
     "test:audit-deps": "node --test sanye_deploy/audit-dependencies.test.mjs",
     "audit:trivy": "node sanye_deploy/audit-trivy.mjs",
     "test:audit-trivy": "node --test sanye_deploy/audit-trivy.test.mjs",
+    "verify:android-assets": "node sanye_deploy/verify-android-assets.mjs",
+    "test:verify-android-assets": "node --test sanye_deploy/verify-android-assets.test.mjs",
     "test:anime-import": "node --test sanye_deploy/import-anime.test.mjs",
     "import:anime": "node sanye_deploy/import-anime.mjs",
     "e2e:verify": "pnpm --filter @sanye/sanye_e2e test:verify",

@@ -13,7 +13,8 @@
   - `secret-scan`：Gitleaks（含提交历史）。
 - `android-check.yml`：推送 `feature-*`、`dev`、`test`、`release` 或创建 PR，且命中 `sanye_client/`、`sanye_android/`、`e2e/`、安卓需求与计划文档、`package.json`、`pnpm-lock.yaml`、本工作流时执行。
   - 构建安卓前端产物、安装 Chromium，执行 `pnpm test:player-policy` 与 15 个安卓端 e2e 文件。
-  - `capacitor sync` 后执行 `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`。
+  - `capacitor sync` 后执行 `pnpm test:verify-android-assets` 与 `pnpm verify:android-assets`：包内 `android/app/src/main/assets/public` 必须与 `sanye_client/dist-android` 逐文件 SHA-256 一致（忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`），防止只跑 `build:android` 而漏 `cap sync` 打出旧页面资源。
+  - 随后执行 `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`。
   - 无论成败都上传单元测试 XML 与 lint 报告（`if: always()`）。
 - `desktop-check.yml`：推送命中桌面相关路径或创建 PR 时执行（`windows-2025`）。
   - `pnpm test:desktop`、`pnpm typecheck`、`pnpm build`、`pnpm --filter @sanye/sanye_client build:desktop`。
