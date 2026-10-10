@@ -81,7 +81,11 @@ jobs:
         working-directory: sanye_android/android
         # lintDebug 是新增门禁：异常兜底、无效资源与废弃 API 这类问题单元测试看不到，
         # 而 app/lint.xml 已经登记了少量误报（详见该文件注释）。
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+        # 仓库从 Windows 提交，干净检出上 gradlew 没有可执行位，直接 ./gradlew 会以
+        # exit 126 结束；先补权限再按本地一致的方式执行。
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
       - name: 保留测试与检查报告
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

@@ -54,7 +54,9 @@ jobs:
       - name: 安装桌面托盘回归所需的 Chromium
         run: pnpm --filter @sanye/sanye_e2e exec playwright install chromium
       - name: 桌面回归
-        # 同 android-check：失败用例与错误行打成 ::error:: 注解，公开仓库不登录也能定位。
+        # windows-2025 的默认 shell 是 PowerShell，下面这段是 bash 语法：必须显式指定
+        # shell，否则脚本本身先报错（表现为 exit code 1，且看不到任何用例信息）。
+        shell: bash
         run: |
           log=desktop-check.log
           if ! pnpm test:desktop > "$log" 2>&1; then
