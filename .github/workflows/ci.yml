@@ -135,14 +135,18 @@ jobs:
           scanners: vuln
           severity: HIGH,CRITICAL
       - name: 输出漏洞扫描结论
-        # 公开仓库不登录读不到作业日志：命中项与报告尾部打成 ::error:: 注解。
+        # 公开仓库不登录读不到作业日志，注解本身又只保留约 10 条：先把每条命中压成
+        # 「包 漏洞 严重度 状态 已安装 -> 修复版本」，再用一条注解装下全部命中。
         if: always()
         run: |
           if [ ! -f trivy-report.txt ]; then
             echo "::error::trivy-report.txt 未生成，扫描未执行完成"
             exit 0
           fi
-          { grep -nE 'CVE-|GHSA-|Total:' trivy-report.txt | head -30; echo '--- 报告尾部 ---'; tail -20 trivy-report.txt; } | sed 's/^/::error::/'
+          total=$(grep -E 'Total:' trivy-report.txt | head -1)
+          summary=$(sed 's/│/|/g' trivy-report.txt | awk -F'|' '/^\|/ {for (i = 2; i <= 7; i++) gsub(/^ +| +$/, "", $i); if ($2 != "" && $2 !~ /Library/) print $2" "$3" "$4" "$5" -> "$6}' | sort -u | paste -sd '; ' -)
+          echo "::error::${total}｜命中汇总（包 漏洞 严重度 状态 已安装 -> 修复版本）： ${summary}"
+          { grep -nE 'CVE-|GHSA-' trivy-report.txt | head -6; tail -4 trivy-report.txt; } | sed 's/^/::error::/'
       - name: 上传漏洞扫描报告
         if: always()
         uses: actions/upload-artifact@v4
