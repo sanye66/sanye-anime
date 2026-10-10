@@ -267,6 +267,14 @@ let lastHitsKeyword = ''
 let lastSavedAt = 0
 let progressQueue = Promise.resolve()
 let backListener: PluginListenerHandle | null = null
+/**
+ * 组件是否已卸载（VQ-62）。
+ *
+ * `App.addListener` 返回的是 Promise：如果它在组件卸载之后才落地，卸载钩子里拿到的
+ * `backListener` 还是 null，这个原生监听就永久留在桥接侧，下一次挂载再叠一条——
+ * 表现为返回键被处理两次（例如一次退全屏、一次退播放器）。
+ */
+let unmounted = false
 const filtered = computed(() => items.value.filter((item) =>
   (filter.value === 'all' || item.favorite) && item.title.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase()),
 ))
@@ -796,7 +804,13 @@ async function applyEnhancement() {
   }
   stopEnhancement()
   if (!wantEnhancement && !wantInterpolation) return
-  if (element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+  if (element.paused || element.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    // 暂停中（或当前帧数据还没就绪）不能起会话：这里以前直接 return，菜单把档位显示成已选中、
+    // 画面却没有任何变化，也没有一句提示，用户看到的就是「选了档位没用」（VQ-62）。
+    // 恢复播放时 onPlayerPlay 会带着同一档位补挂会话，这里只把「稍后生效」讲清楚。
+    showQualityNotice('恢复播放后生效')
+    return
+  }
   const request = enhancementRequest
   // 会话起点重置护栏：起播前两秒的内容跳变来自流水线预热，不作为后端判定依据（VQ-49）。
   motionStability.reset()
@@ -954,6 +968,9 @@ async function switchToFallbackLine() {
 function onPlayerPlay() {
   playing.value = true
   hasFirstFrame.value = true
+  // 起播即撤掉「已从后台返回」的提示（VQ-62）：这条提示的前提是画面停着，
+  // 真正播起来之后还留着它会让用户以为还需要再点一次。
+  backgroundPaused.value = false
   // 结束态下重新起播（点重播或直接拖动后播放）都必须先撤掉结束遮罩。
   playbackEnded.value = false
   clearStallWatchdog()
@@ -965,7 +982,10 @@ function onFirstFrame() {
   hasFirstFrame.value = true
   buffering.value = false
   switchingLine.value = false
-  backgroundPaused.value = false
+  // 只有真的在播时才撤掉「后台暂停」提示（VQ-62）：从后台切回前台时部分机型会重新走一次
+  // loadeddata，而这个回调以前无条件清掉 backgroundPaused —— 画面明明还停着，
+  // 恢复入口却消失了，用户只能盯着一张定格画面。
+  if (!video.value?.paused) backgroundPaused.value = false
   clearStallWatchdog()
   clearPlaybackStallWatchdog()
   syncPlaybackDuration()
@@ -2433,12 +2453,15 @@ async function closePlayer() {
   setNativeLandscape(false)
   setNativeImmersive(false)
   setNativeKeepAwake(false)
-  // 退出观看页面即保存：disposePlayer 在清空 src 之前落一次进度，
-  // 这里等这条写入真正落库后再刷新历史列表（VQ-55），用户马上点进观看历史就是最新的。
+  // 退出观看页面即保存：disposePlayer 在清空 src 之前落一次进度。
+  // 刷新历史列表不再阻塞关闭动作（VQ-62）：写入已经排在 progressQueue 上，而读取侧
+  // reloadHistory 自己会等在途写入落库（VQ-55 的原意由此保留，退出后马上点进历史仍是新数据）；
+  // 这里 await 的代价是「换作品/换集前先关播放器」的三处调用（playBundledEpisode 等）
+  // 每次都要多等一次原生写入 + 一次列表读取，点下一集因此先卡一个往返。
   disposePlayer()
   selected.value = null
   playerError.value = ''
-  await reloadHistory()
+  void reloadHistory()
 }
 
 function onVisibilityChange() {
@@ -2448,6 +2471,12 @@ function onVisibilityChange() {
     backgroundPaused.value = Boolean(selected.value) && !playbackEnded.value
     video.value.pause()
     void persistProgress()
+    return
+  }
+  if (!document.hidden && video.value?.paused && selected.value && !playbackEnded.value) {
+    // 回到前台如果画面仍是暂停的，恢复入口必须还在（VQ-62）：loadeddata／play 这些回调
+    // 都有机会把 backgroundPaused 清掉，一旦清了，用户看到的就是定格画面 + 没有任何提示。
+    backgroundPaused.value = true
   }
 }
 /** 从后台恢复：用户点提示里的按钮才继续播放。 */
@@ -2649,10 +2678,15 @@ onMounted(() => {
     if (section.value === 'detail') { section.value = detailReturn.value; return }
     if (section.value !== 'home') { section.value = 'home'; return }
     void App.exitApp()
-  }).then((listener) => { backListener = listener }).catch(() => { /* 浏览器样例不提供安卓返回键。 */ })
+  }).then((listener) => {
+    // 卸载后才落地就直接摘掉，不留悬挂监听（VQ-62）。
+    if (unmounted) { void listener.remove(); return }
+    backListener = listener
+  }).catch(() => { /* 浏览器样例不提供安卓返回键。 */ })
 })
 onBeforeUnmount(() => {
   const element = video.value
+  unmounted = true
   // 组件卸载时把在途计时器全部收掉（VQ-61）：此前只有部分计时器被清，退出播放页后
   // 提示、按住态、搜索防抖等回调仍会跑一次，甚至会碰到已经销毁的播放器状态。
   const timers: Array<ReturnType<typeof setTimeout> | number | null | undefined> = [
