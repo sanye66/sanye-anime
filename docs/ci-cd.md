@@ -50,7 +50,7 @@
 
 ### 2.2 backend：后端编译与测试
 
-- 环境：ubuntu-latest，Microsoft JDK 21.0.11（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。本机 JDK 为 21.0.12，CI 下载源差异见当前核对；远端实际执行结果以作业日志为准。
+- 环境：ubuntu-latest，Microsoft JDK 21.0.11（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。本机 JDK 为 21.0.12。Microsoft 发行版索引当前只提供到 21.0.11，把工作流写成 `21.0.12` 会让 `actions/setup-java` 在准备阶段直接失败（注解原文：`No matching version found for SemVer '21.0.12'`，可用版本列表为 25.0.3、21.0.11、21.0.10…），因此 CI 固定 21.0.11；2026-10-10 修正了三处回退到 `21.0.12` 的漂移（[CI 38012739529](https://github.com/sanye66/sanye-anime/actions/runs/38012739529)、[android-check 38012739524](https://github.com/sanye66/sanye-anime/actions/runs/38012739524)），候选发布工作流仍按发布门禁要求 21.0.12，属登记在案的 `blocked-external`。远端实际执行结果以作业日志为准。
 - 步骤：
   - `mvn -B -f sanye_server/pom.xml test`：全模块编译 + 单测 + JaCoCo 覆盖率门禁（6 模块阈值，见 testing-strategy）。
   - `mvn -B -f sanye_admin_server/pom.xml test`：RuoYi 管理后端编译与测试，包含管理代理端点方法级权限契约。
@@ -91,7 +91,7 @@
 
 - 工作流：[.github/workflows/desktop-check.yml](../.github/workflows/desktop-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_desktop/**`、`sanye_client/**`、`sanye_server/**`、`patches/**`、`package.json`、`pnpm-lock.yaml` 或本工作流；运行在 `windows-2025`，超时 30 分钟，同分支取消旧任务。
 - 步骤：安装固定 Maven 与 Chromium → `pnpm install --frozen-lockfile` → `pnpm test:desktop` → `pnpm typecheck` → `pnpm build` → `pnpm --filter @sanye/sanye_client build:desktop` → 打包三套桌面服务源码；后端 surefire 报告无论成败都上传。
-- 门禁：桌面回归、类型检查、构建或源码打包任一失败即阻断。发行物本身的强制规则（免安装包 EXE 逐字节一致、不得改写 EXE、依赖闭包等）见[本地桌面运行与打包](./local-desktop.md)。
+- 门禁：桌面回归、类型检查、构建或源码打包任一失败即阻断。`sanye_desktop/runtime/**`（约 548MB，含 PostgreSQL 模板与 Java 运行时）被 `.gitignore` 忽略，需要在本地执行 `pnpm desktop:prepare` 生成，所以 CI 上依赖该目录的用例按守卫跳过（`pnpm test:desktop` 在干净检出下为 65 通过 / 4 跳过 / 0 失败，本机准备好运行时后为 69 通过）。发行物本身的强制规则（免安装包 EXE 逐字节一致、不得改写 EXE、依赖闭包等）见[本地桌面运行与打包](./local-desktop.md)。
 
 ## 3. 门禁与分支策略
 
@@ -173,4 +173,5 @@ pnpm test:desktop
 | 2026-08-26 | v1.3 | 按 HIGH/CRITICAL 门槛修正 Trivy 扫描范围，升级后端安全补丁并固定 Trivy 引擎版本 | Maven 依赖树、Trivy v0.74.0、GitHub Actions 远端执行 |
 | 2026-08-26 | v1.4 | Trivy 扫描前预填并缓存两套后端 Maven 依赖，避免 Maven Central HTTP 429；关闭与 Gitleaks 重复的 secret scanner | `.github/workflows/ci.yml`、GitHub Actions 远端日志 |
 | 2026-09-09 | v1.5 | 同步 Node.js 26.5.0 与 Java 21 工具链；本机补丁版本和 CI 执行证据分别登记，本次修改不代表远端流水线通过 | 用户确认、[版本基线](./version-baseline.md)、`.github/workflows/ci.yml` |
-| 2026-10-09 | v1.10 | 补记 `android-check`（含新增 `:app:lintDebug` 与报告上传、推送触发、并发取消）与 `desktop-check`（补推送触发）两个专项工作流，并在本地等价命令里登记安卓与桌面入口 | [android-check.yml](../.github/workflows/android-check.yml)、[desktop-check.yml](../.github/workflows/desktop-check.yml)、`pnpm docs:check` 1888 项通过 |
+| 2026-10-09 | v1.10 | 补记 `android-check`（含新增 `:app:lintDebug` 与报告上传、推送触发、并发取消）与 `desktop-check`（补推送触发）两个专项工作流，并在本地等价命令里登记安卓与桌面入口 | [android-check.yml](../.github/workflows/android-check.yml)、[desktop-check.yml](../.github/workflows/desktop-check.yml)、`pnpm docs:check` 1890 项通过 |
+| 2026-10-10 | v1.11 | 修正工作流的 JDK 版本漂移：`ci.yml` 两处与 `android-check.yml` 回到下载源可用的 21.0.11（原写成 21.0.12，`actions/setup-java` 在准备阶段即失败，`后端编译与测试`／`依赖漏洞扫描`／`android-check` 三个作业都没走到实际检查），候选发布保留 21.0.12 严格门禁；同时登记桌面门禁在干净检出下的 65 通过 / 4 跳过边界 | GitHub Actions 注解 `No matching version found for SemVer '21.0.12'`（run 38012739529 的 `后端编译与测试`／`依赖漏洞扫描`、run 38012739524 的 `android-check`）、本机 `pnpm test:desktop` 移除 `runtime/` 模拟 65 通过 4 跳过 0 失败 |
