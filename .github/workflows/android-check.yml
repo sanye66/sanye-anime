@@ -58,7 +58,22 @@ jobs:
       - name: 播放策略纯逻辑回归
         run: pnpm test:player-policy
       - name: 安卓前端回归（隔离桥接）
-        run: node --test e2e/player-policy.test.mjs e2e/android-ui.test.cjs e2e/android-media-source.test.cjs e2e/android-catalog-snapshot.test.cjs e2e/android-schedule.test.mjs e2e/android-bundled-fallback.test.cjs e2e/android-episode-order.test.cjs e2e/android-search-retry.test.cjs e2e/android-player-preferences.test.cjs e2e/android-player-stability.test.cjs e2e/android-enhancement-tiers.test.cjs e2e/android-ui-polish.test.cjs e2e/android-theme-parity.test.cjs e2e/android-button-response.test.cjs e2e/android-playback-resilience.test.cjs
+        # 失败时把 TAP 的 not ok 行打成 ::error:: 注解：公开仓库不登录也能通过
+        # check-runs/{id}/annotations 读到失败用例名，否则只剩 "exit code 1"。
+        run: |
+          log=e2e-android.log
+          if ! node --test --test-reporter=tap e2e/player-policy.test.mjs e2e/android-ui.test.cjs e2e/android-media-source.test.cjs e2e/android-catalog-snapshot.test.cjs e2e/android-schedule.test.mjs e2e/android-bundled-fallback.test.cjs e2e/android-episode-order.test.cjs e2e/android-search-retry.test.cjs e2e/android-player-preferences.test.cjs e2e/android-player-stability.test.cjs e2e/android-enhancement-tiers.test.cjs e2e/android-ui-polish.test.cjs e2e/android-theme-parity.test.cjs e2e/android-button-response.test.cjs e2e/android-playback-resilience.test.cjs > "$log" 2>&1; then
+            grep -E '^not ok' "$log" | head -30 | sed 's/^/::error::/' || true
+            tail -40 "$log"
+            exit 1
+          fi
+      - name: 上传安卓前端回归日志
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sanye_android-e2e-${{ github.sha }}
+          path: e2e-android.log
+          if-no-files-found: ignore
       - name: 同步原生工程
         working-directory: sanye_android
         run: npm ci && npm run sync

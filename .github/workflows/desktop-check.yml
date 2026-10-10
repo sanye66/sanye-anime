@@ -53,7 +53,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: 安装桌面托盘回归所需的 Chromium
         run: pnpm --filter @sanye/sanye_e2e exec playwright install chromium
-      - run: pnpm test:desktop
+      - name: 桌面回归
+        # 同 android-check：失败用例打成 ::error:: 注解，便于公开仓库直接定位。
+        run: |
+          log=desktop-check.log
+          if ! pnpm test:desktop > "$log" 2>&1; then
+            grep -E '^(not ok|✖)' "$log" | head -30 | sed 's/^/::error::/' || true
+            tail -40 "$log"
+            exit 1
+          fi
+      - name: 上传桌面回归日志
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sanye_desktop-test-${{ github.sha }}
+          path: desktop-check.log
+          if-no-files-found: ignore
       - run: pnpm typecheck
       - run: pnpm build
       - run: pnpm --filter @sanye/sanye_client build:desktop
