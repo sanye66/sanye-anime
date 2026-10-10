@@ -1,16 +1,21 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { readFileSync } = require('node:fs')
+const { existsSync, readFileSync } = require('node:fs')
 const path = require('node:path')
 const { rankCandidates, lineUrls, searchKeywords } = require('../sanye_android/sourceCandidates.cjs')
 
 const root = path.resolve(__dirname, '..')
-const sql = readFileSync(path.join(root, 'sanye_desktop/runtime/seed.sql'), 'utf8')
-const match = sql.match(/json_populate_recordset\(null::sanye_anime\.sanye_anime, '(\[[^\r\n]*\])'\)/)
-const published = JSON.parse(match[1]).filter((item) => item.status === '已发布' && item.source)
+// `sanye_desktop/runtime/**` 被 .gitignore 忽略（约 548MB，含 PostgreSQL 模板、Java 运行时与
+// seed.sql，需要本地执行 `pnpm desktop:prepare`）：CI 的干净检出没有 seed.sql，此前顶层
+// `readFileSync` 直接 ENOENT，整个文件失败。现在依赖 seed 的两项按守卫跳过，只比对
+// catalogSnapshot.ts 与来源候选逻辑的那项照常执行。
+const seedPath = path.join(root, 'sanye_desktop/runtime/seed.sql')
+const seed = existsSync(seedPath) ? readFileSync(seedPath, 'utf8') : ''
+const catalogMatch = seed.match(/json_populate_recordset\(null::sanye_anime\.sanye_anime, '(\[[^\r\n]*\])'\)/)
+const published = catalogMatch ? JSON.parse(catalogMatch[1]).filter((item) => item.status === '已发布' && item.source) : []
 const snapshot = readFileSync(path.join(root, 'sanye_client/src/platform/android/catalogSnapshot.ts'), 'utf8')
 
-test('安卓随包目录只取 PC 已发布作品，来源候选都在白名单内', () => {
+test('安卓随包目录只取 PC 已发布作品，来源候选都在白名单内', { skip: !seed }, () => {
   assert.equal((snapshot.match(/\{ id: \d+, title:/g) || []).length, published.length)
   for (const item of published) {
     assert.ok(snapshot.includes(`{ id: ${item.id}, title: ${JSON.stringify(item.title)}, sourceUrl:`), `缺少作品 ${item.id}`)
@@ -31,8 +36,8 @@ test('安卓随包目录只取 PC 已发布作品，来源候选都在白名单�
   }
 })
 
-test('随包已有线路与 PC 随包选集逐条一致，可直接起播', () => {
-  const episodeMatch = sql.match(/json_populate_recordset\(null::sanye_anime\.sanye_anime_episode, '(\[[^\r\n]*\])'\)/)
+test('随包已有线路与 PC 随包选集逐条一致，可直接起播', { skip: !seed }, () => {
+  const episodeMatch = seed.match(/json_populate_recordset\(null::sanye_anime\.sanye_anime_episode, '(\[[^\r\n]*\])'\)/)
   assert.ok(episodeMatch, 'PC 随包选集格式已变化')
   const episodes = JSON.parse(episodeMatch[1])
   const entries = [...snapshot.matchAll(/\{ id: (\d+), title: .*?lines: (\[[^\]]*\]), summary:/g)]
