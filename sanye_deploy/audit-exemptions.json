@@ -1,0 +1,31 @@
+{
+  "comment": [
+    "依赖漏洞门禁（pnpm audit:deps，对应 .github/workflows/ci.yml 的 dependency-scan 作业）的豁免登记。",
+    "只有上游确实没有修复版本（审计结果里 patched_versions 为 <0.0.0）的条目才能登记；有修复版本的高危/严重告警必须靠升级消除，不能豁免（登记了也会被判为失效）。",
+    "每条必须写明 advisory、package、引入路径、原因和 reviewBy 复核期限：期限一过门禁即失败，提示重新评估；审计结果里已不存在的登记项同样会让门禁失败，避免豁免长期滞留。"
+  ],
+  "exemptions": [
+    {
+      "advisory": "GHSA-ch52-4w7c-c8xp",
+      "package": "http-cache-semantics",
+      "severity": "high",
+      "reason": "上游未发布修复版本（vulnerable <=4.2.0，patched_versions 为 <0.0.0），只能在依赖链上等 electron-builder 侧更新；该包只出现在构建期的 HTTP 缓存链，不进入桌面运行时的运行路径。",
+      "paths": [
+        "sanye_desktop>electron-builder>app-builder-lib>@electron/get>got>cacheable-request>http-cache-semantics"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
+    },
+    {
+      "advisory": "GHSA-hp3w-g68c-fv3c",
+      "package": "sprintf-js",
+      "severity": "moderate",
+      "reason": "上游未发布修复版本（vulnerable <=1.1.3，patched_versions 为 <0.0.0），同属构建期依赖链（electron-builder 下载器）；严重度低于门禁阈值，登记以便复核时一并跟踪。",
+      "paths": [
+        "sanye_desktop>electron-builder>app-builder-lib>@electron/get>global-agent>roarr>sprintf-js"
+      ],
+      "registeredAt": "2026-10-10",
+      "reviewBy": "2027-01-10"
+    }
+  ]
+}

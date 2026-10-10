@@ -29,6 +29,8 @@
     "security:config-scan": "node sanye_deploy/scan-sensitive-config.mjs --history",
     "perf:check": "pnpm --filter @sanye/sanye_client build && pnpm --filter @sanye/sanye_admin build && pnpm --filter @sanye/sanye_pet build && node sanye_deploy/check-bundle-size.mjs",
     "docs:check": "node sanye_deploy/check-docs.mjs",
+    "audit:deps": "node sanye_deploy/audit-dependencies.mjs",
+    "test:audit-deps": "node --test sanye_deploy/audit-dependencies.test.mjs",
     "test:anime-import": "node --test sanye_deploy/import-anime.test.mjs",
     "import:anime": "node sanye_deploy/import-anime.mjs",
     "e2e:verify": "pnpm --filter @sanye/sanye_e2e test:verify",

@@ -115,7 +115,9 @@ jobs:
       - name: 安装前端依赖
         run: pnpm install --frozen-lockfile
       - name: 前端依赖审计
-        run: pnpm audit --audit-level high
+        # 语义与下面 Trivy 的 ignore-unfixed 对齐：上游没有修复版本的告警必须登记在
+        # sanye_deploy/audit-exemptions.json 才放行（含复核期限），其余高危/严重告警阻断。
+        run: pnpm audit:deps
       - name: 预填 Maven 依赖缓存
         run: |
           mvn -B -ntp -DskipTests -Djacoco.skip=true -f sanye_server/pom.xml install
