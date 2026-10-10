@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.2 |
+| 文档版本 | v1.3 |
 | 文档状态 | 基线 |
 | 关联文档 | [当前审计](./current-status-audit.md) |
 | 更新时间 | 2026-09-10 |
@@ -25,7 +25,7 @@
 
 后续修复记录（2026-09-10，v1.2）：监控已从请求内同步回源改为单个后台线程采样，每次完成后间隔 5 秒刷新；HTTP 请求仅取快照。没有成功样本或样本超过 30 秒时明确返回不可用，失败不会延长旧数据有效期，应用关闭时停止线程。下文 5 秒同步快照属于第一轮历史实现，不是当前实现。
 
-持续复测 `node sanye_deploy/verify-monitor-performance.mjs` 跨越约 22.4 秒，80 次请求、错误 0、p95 29.6 毫秒、p99/最大值 89.5 毫秒，见[跨刷新周期原始证据](../sanye_deploy/.local/performance/monitor-refresh.json)。该测试特意在请求之间间隔 250 毫秒，避免只覆盖瞬时热缓存。首个后台样本完成前可能短暂返回不可用，不再在 HTTP 请求内等待 CPU 采样。
+持续复测 `node sanye_deploy/verify-monitor-performance.mjs` 跨越约 22.4 秒，80 次请求、错误 0、p95 29.6 毫秒、p99/最大值 89.5 毫秒，本机跨刷新周期原始证据为 `sanye_deploy/.local/performance/monitor-refresh.json`。该测试特意在请求之间间隔 250 毫秒，避免只覆盖瞬时热缓存。首个后台样本完成前可能短暂返回不可用，不再在 HTTP 请求内等待 CPU 采样。
 
 同类 SQL 排查发现 `SysDeptMapper.selectNormalChildrenDeptById` 也将字符字段 `status` 与数字比较，已修正为 `'0'`；通过 XML 读取真实映射并绑定测试部门 100，在本机 PostgreSQL 5433 的管理库只读执行成功，返回正常子部门数 9。本轮没有实际停用或修改现有部门。
 
@@ -33,11 +33,11 @@
 
 | 轮次 | 参数 | 计量请求 | 结果和证据 |
 | --- | --- | ---: | --- |
-| 优化前 | 并发 10，每场景 200 次 | 9200 | [原始基线](../sanye_deploy/.local/performance/baseline-c10.json)；监控慢，路由业务 500 |
-| 优化后扩容复测 | 并发 20，常规场景 400 次 | 20840 | [原始结果](../sanye_deploy/.local/performance/after-c20.json)；成功场景 p95 最大 73.4 毫秒；XXL-JOB 状态仅测未配置响应，不算调度通过 |
-| 最终核验 | 并发 10，常规场景 200 次；上传和反馈为并发 2、20 次 | 11640 | [原始结果](../sanye_deploy/.local/performance/final-c10-verified.json)；62 场景中 60 通过、2 受阻；计量请求错误数 0，成功场景 p95 最大 34.7 毫秒 |
+| 优化前 | 并发 10，每场景 200 次 | 9200 | 本机 `sanye_deploy/.local/performance/baseline-c10.json`；监控慢，路由业务 500 |
+| 优化后扩容复测 | 并发 20，常规场景 400 次 | 20840 | 本机 `sanye_deploy/.local/performance/after-c20.json`；成功场景 p95 最大 73.4 毫秒；XXL-JOB 状态仅测未配置响应，不算调度通过 |
+| 最终核验 | 并发 10，常规场景 200 次；上传和反馈为并发 2、20 次 | 11640 | 本机 `sanye_deploy/.local/performance/final-c10-verified.json`；62 场景中 60 通过、2 受阻；计量请求错误数 0，成功场景 p95 最大 34.7 毫秒 |
 
-逐接口 QPS、p50/p95/p99、首次耗时见[完整明细](../sanye_deploy/.local/performance/current-report.md)，未测接口见[源码覆盖清单](../sanye_deploy/.local/performance/inventory.json)。这些 `.local` 文件为本机生成证据，不进入 Git，正式归档应同时保存原始产物。
+逐接口 QPS、p50/p95/p99、首次耗时见本机 `sanye_deploy/.local/performance/current-report.md`，未测接口见本机 `sanye_deploy/.local/performance/inventory.json`。这些 `.local` 文件为本机生成证据，不进入 Git，正式归档应同时保存原始产物；干净检出及 GitHub 页面不提供这些原始文件。
 
 源码静态扫描发现 217 条直接控制器映射，最终场景匹配 59 条，其中 57 条通过、2 条受阻，剩余 158 条未压测。筛选场景不等于独立接口；共享控制器不按服务副本重复计数。扫描不解析继承、组合注解、多路径别名、Actuator、静态资源，不能作为运行时路由全集证明。
 

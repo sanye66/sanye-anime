@@ -1,11 +1,17 @@
 # sanye_anime
 
+[![持续集成](https://github.com/sanye66/sanye-anime/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/sanye66/sanye-anime/actions/workflows/ci.yml)
+
+面向 PC Web 的动漫发现与 AI 助手项目，包含 Vue 客户端、Spring 业务服务和 RuoYi 管理平台。当前处于内部集成阶段，正式发布待环境验收。
+
+[项目现状](docs/current-status-audit.md) · [开发任务](docs/development-tasks.md) · [环境配置](docs/environment-config.md) · [开发协作](docs/development-plan.md) · [问题反馈](https://github.com/sanye66/sanye-anime/issues)
+
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.3 |
+| 文档版本 | v0.4 |
 | 文档状态 | 基线 |
 | 关联文档 | [版本基线](docs/version-baseline.md)、[开发任务清单](docs/development-tasks.md) |
-| 更新时间 | 2026-09-10 |
+| 更新时间 | 2026-09-21 |
 
 sanye_anime 是一个面向 PC Web 的动漫发现产品，核心能力是 AI 动漫助手。
 
@@ -17,11 +23,26 @@ sanye_anime 是一个面向 PC Web 的动漫发现产品，核心能力是 AI �
 
 更新记录：2026-09-10，v0.2，按当前代码与进度校正本文事实或证据范围；依据上述源码、任务与审计引用。
 
+更新记录：2026-09-10，v0.3，完善 GitHub 首页导航、持续集成状态和分支用途，补充桌面及性能专项入口；依据开发任务、当前审计及相关专项报告。
+
+更新记录：2026-09-21，v0.4，经维护者授权为项目自有代码增加 MIT 许可，明确第三方组件与素材边界；依据 [LICENSE](./LICENSE) 与[第三方许可说明](./docs/third-party-notices.md)。
+
+## 分支与参与
+
+| 分支 | 用途 |
+| --- | --- |
+| `feature-<task>` | 独立任务开发与验证 |
+| `dev` | 日常集成，也是仓库默认展示分支 |
+| `test` | 通过门禁后推进的验收基线 |
+| `release` | 完成目标环境验收后推进的稳定发布基线 |
+
+反馈问题时请提供所在分支或提交、复现步骤、预期与实际结果，并删除凭据和个人数据。提交修改前请阅读 [AGENTS.md](AGENTS.md) 与[开发流程](docs/development-plan.md)，执行对应测试及文档门禁。
+
+本地桌面版本的启动、签名和安装限制见[桌面专项](docs/local-desktop.md)；接口压测覆盖与未测范围见[性能报告](docs/performance-test-report.md)。构建或受控测试成功不代表生产容量、完整业务可用性或正式发布完成。
+
 ## 功能范围
 
 项目自有代码采用 [MIT 许可证](./LICENSE)。第三方代码、运行时和依赖保留原作者版权与各自许可证，不因根许可证而重新授权；动漫视频、封面、商标及其他第三方素材不属于本项目 MIT 授权范围，参见[第三方许可说明](./docs/third-party-notices.md)。
-
-更新记录：2026-09-10，v0.3，经维护者授权为项目自有代码增加 MIT 许可，明确第三方组件与素材边界；免费签名申请状态见[桌面运行与打包](./docs/local-desktop.md)。
 
 ### sanye_anime（客户端产品，技术工程为 sanye_client）
 
