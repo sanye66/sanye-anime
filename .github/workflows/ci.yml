@@ -129,10 +129,27 @@ jobs:
           scan-ref: .
           version: v0.74.0
           format: table
+          output: trivy-report.txt
           exit-code: "1"
           ignore-unfixed: true
           scanners: vuln
           severity: HIGH,CRITICAL
+      - name: 输出漏洞扫描结论
+        # 公开仓库不登录读不到作业日志：命中项与报告尾部打成 ::error:: 注解。
+        if: always()
+        run: |
+          if [ ! -f trivy-report.txt ]; then
+            echo "::error::trivy-report.txt 未生成，扫描未执行完成"
+            exit 0
+          fi
+          { grep -nE 'CVE-|GHSA-|Total:' trivy-report.txt | head -30; echo '--- 报告尾部 ---'; tail -20 trivy-report.txt; } | sed 's/^/::error::/'
+      - name: 上传漏洞扫描报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanye_anime-trivy-${{ github.sha }}
+          path: trivy-report.txt
+          if-no-files-found: ignore
 
   secret-scan:
     name: 密钥与敏感信息扫描
