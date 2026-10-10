@@ -8,7 +8,7 @@
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
 | 更新时间 | 2026-10-10 |
 
-更新记录：2026-10-10，v1.4，依赖漏洞门禁改为「登记式」：前端侧 `pnpm audit --audit-level high` 换成 `pnpm audit:deps`，Trivy 侧由 `sanye_deploy/audit-trivy.mjs` 判定，两者共用 `sanye_deploy/audit-exemptions.json`，只有**可升级修复**的高危/严重命中阻断，上游无回补版本的命中必须登记原因与复核期限才放行；两套后端 Jackson 同步升到 2.21.7，Spring Framework 6.2.19 的两条严重命中登记为待 Spring Boot 4.x 迁移项，详见 [CI/CD](./ci-cd.md) §2.4。
+更新记录：2026-10-10，v1.4，依赖漏洞门禁改为「登记式」：前端侧 `pnpm audit --audit-level high` 换成 `pnpm audit:deps`，Trivy 侧由 `sanye_deploy/audit-trivy.mjs` 判定，两者共用 `sanye_deploy/audit-exemptions.json`，只有**可升级修复**的高危/严重命中阻断，上游无回补版本的命中必须登记原因与复核期限才放行；两套后端 Jackson 同步升到 2.21.7、`org.jsoup:jsoup` 1.18.3→1.23.2（三处声明），Spring Framework 6.2.19 的三条严重命中（CVE-2026-47884／47890／47892）登记为待 Spring Boot 4.x 迁移项，详见 [CI/CD](./ci-cd.md) §2.4。
 
 更新记录：2026-09-16，v1.3，增加 D-027 播放质量专项门禁：执行 `node --test e2e/player-quality.test.cjs` 与 `node --test e2e/realtime-interpolation.test.cjs`，分别检查运动像素、增强实际输出与成本、目标帧率及回退、播放器操作与资源释放。受控 GPU 吞吐量不替代真实高刷屏、长片和跨显卡验收，证据见[播放器报告](./media-player-test-report.md)。
 
