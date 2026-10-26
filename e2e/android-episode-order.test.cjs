@@ -48,6 +48,8 @@ test('带集数的选集从第一集开始排序，不同线路可直接区分',
         mimeType: 'application/vnd.apple.mpegurl',
         lineId: line.name,
       })))
+      // 来源页的两个选择器可能重复命中同一条线路的同一地址。
+      episodes.push({ ...episodes[0] }, { ...episodes[1] })
       const names = (methodNames) => methodNames.map((name) => ({ name, rtype: 'promise' }))
       window.Capacitor = {
         getPlatform: () => 'android',
@@ -71,16 +73,17 @@ test('带集数的选集从第一集开始排序，不同线路可直接区分',
     await page.getByRole('button', { name: '搜索来源' }).click()
     await page.getByText('无职转生', { exact: true }).waitFor()
     await page.getByRole('button', { name: '立即观看' }).first().click()
-    await page.getByRole('heading', { name: '选集与线路' }).waitFor()
+    await page.getByRole('heading', { name: '选集', exact: true }).waitFor()
 
     const groups = page.locator('.android-detail .android-episode-group')
-    assert.equal(await groups.count(), 3, '三条线路应各成一组')
+    assert.equal(await groups.count(), 1, '只展开当前线路，不把三条线路集数铺成长页面')
     const firstLine = await groups.nth(0).locator('button').allTextContents()
     // 每条线路各自从第 1 集开始，按集数升序（来源页的 55100 / 4652467 这类条目 id 不参与排序）。
-    assert.deepEqual(firstLine, Array.from({ length: 12 }, (_, index) => `第${String(index + 1).padStart(2, '0')}集`))
-    assert.deepEqual(await groups.nth(1).locator('button').allTextContents().then((items) => items.slice(0, 2)), ['第01集', '第02集'])
+    assert.deepEqual(firstLine, Array.from({ length: 12 }, (_, index) => `第${index + 1}集`))
+    await page.getByRole('group', { name: '选择播放线路' }).getByRole('button', { name: '免费云', exact: true }).click()
+    assert.deepEqual((await groups.first().locator('button').allTextContents()).slice(0, 2), ['第1集', '第2集'])
     // 线路名来自来源页签（面板名），不再退化成来源内部编号「线路 153」，也不把线路名拼到集数上。
-    assert.deepEqual(await page.locator('.android-detail .android-episode-group h4').allTextContents(), ['加速云', '免费云', '火箭云'])
+    assert.deepEqual(await page.getByRole('group', { name: '选择播放线路' }).locator('button').allTextContents(), ['加速云', '免费云', '火箭云'])
 
     // 播放器浮层用的是同一份顺序：放大后打开「选集」同样从第一集开始。
     await page.setViewportSize({ width: 844, height: 390 })
@@ -90,7 +93,15 @@ test('带集数的选集从第一集开始排序，不同线路可直接区分',
     const menuGroups = page.locator('.android-player-menu .android-player-menu-group')
     assert.deepEqual(await menuGroups.locator('h4').allTextContents(), ['加速云', '免费云', '火箭云'], '浮层里也要标明每条线路')
     const menuButtons = menuGroups.nth(0).locator('button')
-    assert.deepEqual((await menuButtons.allTextContents()).slice(0, 3), ['第01集', '第02集', '第03集'])
+    assert.deepEqual((await menuButtons.allTextContents()).slice(0, 3), ['第1集', '第2集', '第3集'])
+    await page.locator('.android-player-stage:fullscreen').getByRole('button', { name: '退出横屏' }).click()
+    await page.locator('.android-player-stage:fullscreen').waitFor({ state: 'hidden' })
+    await page.locator('.android-player video').evaluate(video => {
+      video.dispatchEvent(new Event('loadeddata'))
+      video.dispatchEvent(new Event('error'))
+    })
+    await page.locator('.android-player-error').waitFor()
+    assert.equal(await page.locator('.android-player-error').evaluate(element => element.previousElementSibling?.classList.contains('android-player-stage')), true, '播放失败提示应紧跟播放器')
   } finally {
     await browser.close()
     await new Promise((resolve) => server.close(resolve))

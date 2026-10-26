@@ -19,6 +19,86 @@ public class SanyePlayerPlugin extends Plugin {
     private static final String TAG = "SanyePlayer";
     private int previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private boolean landscapeRequested;
+    private SystemPlaybackController systemPlayback;
+    private boolean foreground = true;
+
+    @PluginMethod
+    public void getSystemPlaybackCapabilities(PluginCall call) {
+        call.resolve(new JSObject().put("supported", true));
+    }
+
+    @PluginMethod
+    public void updateSystemPlayback(PluginCall call) {
+        Activity activity = getActivity();
+        String id = call.getString("id");
+        if (activity == null || id == null || id.isEmpty()) {
+            call.reject("系统播放会话不可用", "E_PLAYER_SESSION");
+            return;
+        }
+        activity.runOnUiThread(() -> {
+            try {
+                if (systemPlayback == null || !systemPlayback.owns(id)) {
+                    if (!Boolean.TRUE.equals(call.getBoolean("initialize"))) {
+                        call.resolve(new JSObject().put("accepted", false));
+                        return;
+                    }
+                    if (systemPlayback != null) systemPlayback.close();
+                    systemPlayback = new SystemPlaybackController(activity, id,
+                        event -> notifyListeners("systemPlaybackAction", event), foreground);
+                }
+                boolean accepted = systemPlayback.update(call.getString("title", "sanye_anime"),
+                    call.getString("episode", ""), call.getDouble("duration", 0.0), call.getDouble("position", 0.0),
+                    Boolean.TRUE.equals(call.getBoolean("playing")), Boolean.TRUE.equals(call.getBoolean("explicitPlay")),
+                    Boolean.TRUE.equals(call.getBoolean("buffering")), Boolean.TRUE.equals(call.getBoolean("ended")),
+                    call.getDouble("rate", 1.0));
+                call.resolve(new JSObject().put("accepted", accepted));
+            } catch (Exception failure) {
+                call.reject("系统播放状态同步失败", "E_PLAYER_SESSION", failure);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void requestSystemPlaybackFocus(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) { call.resolve(new JSObject().put("accepted", false)); return; }
+        activity.runOnUiThread(() -> {
+            try {
+                boolean accepted = systemPlayback != null && systemPlayback.owns(call.getString("id", ""))
+                    && systemPlayback.acquireFocus(true);
+                call.resolve(new JSObject().put("accepted", accepted));
+            } catch (Exception failure) {
+                call.reject("播放音频焦点不可用", "E_PLAYER_FOCUS", failure);
+            }
+        });
+    }
+
+    @PluginMethod
+    public void releaseSystemPlayback(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity == null) { call.resolve(); return; }
+        activity.runOnUiThread(() -> {
+            if (systemPlayback != null && systemPlayback.owns(call.getString("id", ""))) {
+                systemPlayback.close();
+                systemPlayback = null;
+            }
+            call.resolve();
+        });
+    }
+
+    @Override
+    protected void handleOnPause() {
+        foreground = false;
+        if (systemPlayback != null) systemPlayback.setForeground(false);
+        super.handleOnPause();
+    }
+
+    @Override
+    protected void handleOnResume() {
+        foreground = true;
+        if (systemPlayback != null) systemPlayback.setForeground(true);
+        super.handleOnResume();
+    }
 
     @PluginMethod
     public void setLandscape(PluginCall call) {
@@ -121,6 +201,10 @@ public class SanyePlayerPlugin extends Plugin {
      */
     @Override
     protected void handleOnDestroy() {
+        if (systemPlayback != null) {
+            systemPlayback.close();
+            systemPlayback = null;
+        }
         final boolean restoreOrientation = landscapeRequested;
         final int orientation = previousOrientation;
         Activity activity = getActivity();

@@ -164,9 +164,10 @@ const collect = async (page) => {
   await page.getByRole('button', { name: '立即观看' }).first().click()
   await page.locator('.android-detail-actions button').first().waitFor()
   await page.locator('.android-episode-grid button').first().waitFor()
-  state.cover = await page.locator('.android-cover-empty').first().evaluate((node) => ({ image: getComputedStyle(node).backgroundImage, color: getComputedStyle(node).color }))
+  await page.waitForFunction(() => { const image = document.querySelector('.android-detail-cover'); return image?.complete && image.naturalWidth > 0 })
+  state.cover = await page.locator('.android-detail-cover').first().evaluate((node) => ({ image: getComputedStyle(node).backgroundImage, color: getComputedStyle(node).color, alt: node.alt, loaded: node.complete && node.naturalWidth > 0, ratio: node.getBoundingClientRect().width / node.getBoundingClientRect().height }))
   state.episode = await page.locator('.android-episode-grid button').first().evaluate((node) => ({ background: getComputedStyle(node).backgroundColor, color: getComputedStyle(node).color }))
-  const action = page.locator('.android-detail-actions button').last()
+  const action = page.locator('.android-detail-actions > button').last()
   state.action = await dominantBackground(page, action)
   state.appBackground = await page.locator('.android-app').evaluate((node) => getComputedStyle(node).backgroundImage)
   return state
@@ -180,7 +181,8 @@ const launch = async (theme, scheme = 'light') => {
     const file = target === root ? path.join(root, 'index.html') : target
     try {
       const data = await readFile(file)
-      response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html')
+      const contentTypes = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+      response.setHeader('Content-Type', contentTypes[path.extname(file)] || 'text/html')
       response.end(data)
     } catch { response.writeHead(404).end() }
   })
@@ -220,12 +222,15 @@ test('系统浅色与显式浅色渲染一致，且不沿用深色底', { timeou
   await fs.writeFile(path.join(output, 'report.json'), JSON.stringify({ system: systemState, forced: forcedState }, null, 1), 'utf8')
 
   // 系统浅色下页面底色不能再压深色主题的蓝色径向遮罩（rgba(42, 74, 118)）。
-  assert.ok(systemState.appBackground.includes('rgba(250, 216, 181'), `系统浅色页面底色仍是深色遮罩：${systemState.appBackground}`)
+  assert.equal(systemState.appBackground, 'none', `页面应使用安静的主题纯色底：${systemState.appBackground}`)
   assert.ok(!systemState.appBackground.includes('rgba(42, 74, 118'), `系统浅色页面底色仍带蓝色遮罩：${systemState.appBackground}`)
   // 深色主题的实心块不能再出现在系统浅色里。
   assert.notEqual(systemState.episode.background, 'rgb(40, 58, 85)', '系统浅色下选集按钮仍是深色实心块')
   assert.notEqual(systemState.historyCard, 'rgba(7, 18, 34, 0.28)', '系统浅色下历史条目仍是深色半透明底')
-  assert.ok(systemState.cover.image.includes('linear-gradient(145deg, rgb(239, 232, 218)'), `系统浅色下缺封面占位块不是米色系：${systemState.cover.image}`)
+  assert.equal(systemState.cover.alt, '暂无封面', '缺封面应使用实际占位图片')
+  assert.equal(systemState.cover.loaded, true, '占位封面应真实加载成功')
+  assert.ok(Math.abs(systemState.cover.ratio - 2 / 3) < 0.02, '占位封面应保持海报比例')
+  assert.equal(systemState.cover.image, 'none', '占位封面不叠加深色主题背景')
   // 文字对比度：筛选芯片与末位动作都要达到 4.5（此前分别是 3.18 与 3.6–4.4）。
   assert.ok(systemState.filter.contrast >= 4.5, `系统浅色下「收藏」筛选对比度不足：${JSON.stringify(systemState.filter)}`)
   assert.ok(systemState.action.contrast >= 4.5, `系统浅色下末位动作对比度不足：${JSON.stringify(systemState.action)}`)
@@ -285,7 +290,7 @@ test('首页导语统计整包收录量', { timeout: 120000 }, async () => {
   const { page, browser, server } = await launch('system')
   try {
     const copy = await page.locator('.android-hero').textContent()
-    const match = copy.match(/随包收录\s*(\d+)\s*部作品\s*·\s*(\d+)\s*条已核验线路/)
+    const match = copy.match(/精选\s*(\d+)\s*部作品\s*·\s*(\d+)\s*条播放线路/)
     assert.ok(match, `首页导语没有收录统计：${copy}`)
     const [, works, lines] = match.map(Number)
     console.log(`[theme-parity] 首页导语随包收录：${works} 部作品 / ${lines} 条线路`)

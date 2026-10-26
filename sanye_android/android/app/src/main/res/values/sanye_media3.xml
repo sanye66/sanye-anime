@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sanye_media3_heading">%1$s　%2$s</string>
+    <string name="sanye_media3_auto_next">播放结束，%1$d 秒后播放下一集</string>
+</resources>

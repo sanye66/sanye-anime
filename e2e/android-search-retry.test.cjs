@@ -46,7 +46,7 @@ test('连点两次搜索不重复打来源、不出现搜不到', async () => {
             }
             return { hits: [] }
           }
-          if (method === 'preview') return { title: '无职转生', sourceUrl: options.sourceUrl, coverUrl: '', summary: '', episodes: [] }
+          if (method === 'preview') return { title: '无职转生', sourceUrl: options.sourceUrl, coverUrl: '', summary: '', episodes: [{ id: 'first', title: '第1集', sourceUrl: options.sourceUrl, playbackUrl: 'https://media.example.org/first.mp4', mimeType: 'video/mp4' }] }
           if (method === 'list' || method === 'listHistory') return { items: [] }
           if (method === 'getSettings') return { settings: { ...settings } }
           if (method === 'recordProgress' || method === 'save') return { item: options }
@@ -59,6 +59,11 @@ test('连点两次搜索不重复打来源、不出现搜不到', async () => {
     await page.getByLabel('作品关键词').fill('无职转生')
     await page.getByRole('button', { name: '搜索来源' }).click()
     await page.getByText('无职转生', { exact: true }).waitFor()
+    await page.locator('.android-top-search').click()
+    assert.equal(await page.getByLabel('作品关键词').inputValue(), '', '再次进入搜索应直接删除旧关键词')
+    assert.equal(await page.getByLabel('作品关键词').evaluate(input => input === document.activeElement), true, '清空后应聚焦输入框')
+    assert.equal(await page.getByRole('button', { name: '清空搜索输入' }).count(), 0, '搜索框不新增清空按钮')
+    await page.getByLabel('作品关键词').fill('无职转生')
 
     // 连点第二次：命中客户端缓存，不再请求来源，结果保持可见。
     await page.getByRole('button', { name: '搜索来源' }).click()
@@ -126,7 +131,7 @@ test('来源不可用时静默重试一次并提示暂不可用，而不是显�
     await page.locator('.android-top-search').click()
     await page.getByLabel('作品关键词').fill('无职转生')
     await page.getByRole('button', { name: '搜索来源' }).click()
-    await page.getByText('公开来源暂不可用').waitFor({ timeout: 5_000 })
+    await page.getByText('搜索失败，请检查网络后重试。', { exact: true }).waitFor({ timeout: 5_000 })
     // 原生报错才会触发这一次静默重试：失败即报错，重试才真正生效。
     assert.equal(await page.evaluate(() => window.__searchCalls), 2, '来源不可用时应静默重试一次')
     assert.equal(await page.getByText('没有找到匹配作品').count(), 0, '来源不可用不得显示成“没有找到匹配作品”')

@@ -75,6 +75,71 @@ async function watchFirstHit(page, origin, hitTitle = '你的名字。') {
   return page.getByRole('button', { name: '立即观看' }).first()
 }
 
+test('当前订阅搜索失败时推荐作品使用同一作品的随包线路', async () => {
+  const app = await serveApp()
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.addInitScript(() => {
+      const url = 'https://example.org/sub.json'
+      const content = JSON.stringify({ exportedMediaSourceDataList: { mediaSources: [{ factoryId: 'web-selector', version: 2, arguments: { name: '测试' } }] } })
+      localStorage.setItem('sanye:subscriptions:v1', JSON.stringify({ active: url, items: [{ url, content, updatedAt: Date.now() }] }))
+      window.Capacitor = {
+        getPlatform: () => 'android',
+        PluginHeaders: ['SanyeCatalog', 'SanyeSource'].map(name => ({ name, methods: (name === 'SanyeSource' ? ['subscriptionSearch'] : ['list', 'listHistory', 'getSettings', 'recordProgress']).map(method => ({ name: method, rtype: 'promise' })) })),
+        nativePromise: async (_, method) => {
+          if (method === 'list' || method === 'listHistory') return { items: [] }
+          if (method === 'getSettings') return { settings: { theme: 'dark', autoPlay: false, playbackRate: 1, qualityProfile: 'off', frameTarget: 'off' } }
+          if (method === 'subscriptionSearch') throw new Error('当前来源不可用')
+          return {}
+        },
+      }
+    })
+    await page.route(BUNDLED_MEDIA, route => route.abort())
+    await page.goto(`${app.origin}/`)
+    const request = page.waitForRequest(item => BUNDLED_MEDIA.test(item.url()), { timeout: 15_000 })
+    await page.locator('.android-hero button').click()
+    await request
+    assert.equal(await page.locator('.android-player--inline video').count(), 1)
+    assert.equal(await page.getByRole('region', { name: '作品详情' }).count(), 1)
+  } finally { await browser.close(); await app.close() }
+})
+
+test('当前订阅搜到同名作品但详情不可用时回退已有线路', async () => {
+  const app = await serveApp()
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.addInitScript(() => {
+      const url = 'https://example.org/sub.json'
+      const content = JSON.stringify({ exportedMediaSourceDataList: { mediaSources: [{ factoryId: 'web-selector', version: 2, arguments: { name: '测试' } }] } })
+      localStorage.setItem('sanye:subscriptions:v1', JSON.stringify({ active: url, items: [{ url, content, updatedAt: Date.now() }] }))
+      window.Capacitor = {
+        getPlatform: () => 'android',
+        PluginHeaders: ['SanyeCatalog', 'SanyeSource'].map(name => ({ name, methods: (name === 'SanyeSource' ? ['subscriptionSearch', 'subscriptionPreview'] : ['list', 'listHistory', 'getSettings', 'recordProgress']).map(method => ({ name: method, rtype: 'promise' })) })),
+        nativePromise: async (_, method) => {
+          if (method === 'list' || method === 'listHistory') return { items: [] }
+          if (method === 'getSettings') return { settings: { theme: 'dark', autoPlay: false, playbackRate: 1, qualityProfile: 'off', frameTarget: 'off' } }
+          if (method === 'subscriptionSearch') return { hits: [{ title: '你的名字', sourceUrl: 'https://example.org/detail', sourceIndex: 0, coverUrl: '', summary: '', kind: 'web' }] }
+          if (method === 'subscriptionPreview') throw new Error('详情暂不可用')
+          return {}
+        },
+      }
+    })
+    await page.route(BUNDLED_MEDIA, route => route.abort())
+    await page.goto(`${app.origin}/`)
+    await page.locator('.android-top-search').click()
+    await page.getByLabel('作品关键词').fill('你的名字')
+    await page.getByRole('button', { name: '搜索来源' }).click()
+    await page.getByRole('button', { name: '立即观看' }).first().waitFor()
+    const request = page.waitForRequest(item => BUNDLED_MEDIA.test(item.url()), { timeout: 15_000 })
+    await page.getByRole('button', { name: '立即观看' }).first().click()
+    await request
+    assert.equal(await page.locator('.android-player--inline video').count(), 1)
+    assert.equal(await page.locator('.android-detail-copy h2').textContent(), '你的名字')
+  } finally { await browser.close(); await app.close() }
+})
+
 /**
  * 速度优先：搜索命中随包同名作品时，外站线路不可用必须静默回退已有线路。
  * 第一种最坏情况：来源预览一直不返回（超预算直接接管）。
@@ -132,8 +197,9 @@ test('外站线路加载失败时静默回退随包已有线路', async () => {
     const deadLineRequests = []
     await page.route('https://v8.qrssv.com/**', (route) => { deadLineRequests.push(route.request().url()); return route.abort() })
     await page.route(BUNDLED_MEDIA, () => {})
-    await installBridge(page, 'dead-line', '你的名字。剧场版', PRIMARY_FORM_PAGE)
-    const watch = await watchFirstHit(page, app.origin, '你的名字。剧场版')
+    // 当前作品身份契约只归一化标点/空白，不用新增“剧场版”后缀绕过跨作品守卫。
+    await installBridge(page, 'dead-line', '你的名字。', PRIMARY_FORM_PAGE)
+    const watch = await watchFirstHit(page, app.origin, '你的名字。')
     const takeoverRequest = page.waitForRequest((request) => BUNDLED_MEDIA.test(request.url()), { timeout: 15_000 })
     const startedAt = Date.now()
     await watch.click()

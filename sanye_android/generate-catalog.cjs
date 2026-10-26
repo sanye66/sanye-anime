@@ -6,12 +6,14 @@
 //      外站线路不可用或过慢时安卓直接回退这些已有线路，不必再等来源站往返。
 const fs = require('node:fs')
 const path = require('node:path')
-const { fetchCandidates, resolveSource } = require('./sourceCandidates.cjs')
+const { resolveSource, safeUrl, snapshotSources } = require('./sourceCandidates.cjs')
 
 const project = path.resolve(__dirname, '..')
 const desktop = path.join(project, 'sanye_desktop', 'runtime')
 const client = path.join(desktop, 'client')
 const destination = path.join(project, 'sanye_client', 'src', 'platform', 'android')
+const snapshotPath = path.join(destination, 'catalogSnapshot.ts')
+const existingSources = fs.existsSync(snapshotPath) ? snapshotSources(fs.readFileSync(snapshotPath, 'utf8')) : new Map()
 const sql = fs.readFileSync(path.join(desktop, 'seed.sql'), 'utf8')
 const match = sql.match(/json_populate_recordset\(null::sanye_anime\.sanye_anime, '(\[[^\r\n]*\])'\)/)
 if (!match) throw new Error('PC 随包作品目录格式已变化，不能生成安卓快照')
@@ -36,10 +38,10 @@ for (const episode of JSON.parse(episodeMatch[1])) {
 }
 for (const list of episodesByAnime.values()) list.sort((left, right) => left.episodeNumber - right.episodeNumber || left.id.localeCompare(right.id))
 const snapshotAt = rows.map(row => row.updated_at || row.published_at).sort().at(-1) || ''
-const allowed = new Set(['yinghuadongman.org.cn', 'www.yinghuadongman.org.cn', 'yhdmtv.cc', 'www.yhdmtv.cc'])
 const base = rows.map(row => {
-  const source = new URL(row.source)
-  if (source.protocol !== 'https:' || !allowed.has(source.hostname)) throw new Error(`作品 ${row.id} 的来源未适配`)
+  if (!safeUrl(row.source, undefined, true)) throw new Error(`作品 ${row.id} 的来源未适配`)
+  const previous = existingSources.get(row.id)
+  const retained = previous?.title === row.title ? previous : {}
   const coverPath = row.id === 127
     ? path.join(client, 'client-covers', 'your-name.jpg')
     : row.cover_url && path.resolve(client, '.' + row.cover_url.replaceAll('/', path.sep))
@@ -49,13 +51,18 @@ const base = rows.map(row => {
   const ext = coverPath ? path.extname(coverPath).toLowerCase() : ''
   if (ext && !['.jpg', '.jpeg', '.png', '.webp', '.svg'].includes(ext)) throw new Error(`作品 ${row.id} 的封面格式不支持`)
   const lines = (episodesByAnime.get(row.id) ?? []).map(({ episodeNumber, ...line }) => line)
-  return { id: row.id, title: row.title, source: row.source, summary: row.summary || '',
+  return { ...retained, id: row.id, title: row.title, source: row.source, summary: row.summary || '',
     updateText: row.update_text || '', coverPath, coverName: coverPath ? `${row.id}${ext}` : null, lines }
 })
 
 async function main() {
   const prepared = []
   for (const row of base) prepared.push({ ...row, ...(await resolveSource(row)) })
+
+  if (process.argv.includes('--check')) {
+    process.stdout.write(JSON.stringify(prepared.map(({ id, title, sourceUrl, sourceUrls, switched }) => ({ id, title, sourceUrl, sourceUrls, switched })), null, 2) + '\n')
+    return
+  }
 
   const assets = path.join(destination, 'assets')
   fs.mkdirSync(assets, { recursive: true })

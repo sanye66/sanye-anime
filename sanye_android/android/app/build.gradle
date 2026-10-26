@@ -17,6 +17,21 @@ def releaseKeyAlias = project.findProperty('SANYE_RELEASE_KEY_ALIAS') ?: System.
 def releaseKeyPassword = project.findProperty('SANYE_RELEASE_KEY_PASSWORD') ?: System.getenv('SANYE_RELEASE_KEY_PASSWORD')
 def hasReleaseSigning = releaseStoreFile && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
+// 正式发行的显式入口；本地无签名候选构建仍保留，不能冒充可安装发布包。
+tasks.register('verifyReleaseSigning') {
+    doLast {
+        if (!hasReleaseSigning || !file(releaseStoreFile).isFile()) {
+            throw new GradleException('正式发行需要完整的 SANYE_RELEASE 签名材料，未签名候选不可发布')
+        }
+    }
+}
+tasks.register('assembleSignedRelease') {
+    dependsOn 'verifyReleaseSigning', 'assembleRelease'
+}
+tasks.configureEach { task ->
+    if (task.name == 'assembleRelease') task.mustRunAfter 'verifyReleaseSigning'
+}
+
 android {
     namespace = "com.sanye.sanye_anime"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -24,11 +39,9 @@ android {
         applicationId "com.sanye.sanye_anime"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // v44（versionCode 44／versionName 5.3）之上的依赖安全升级：`org.jsoup:jsoup`
-        // 1.18.3→1.23.2（CVE-2026-75140，高），包内容变了必须换版本号，避免与已交付包
-        // 同号不同内容；本轮只升依赖、未改功能，未重新交付到桌面。
-        versionCode 45
-        versionName "5.4"
+        // 新增风车动漫和动漫共和国订阅，递增版本以区分桌面旧安装包。
+        versionCode 55
+        versionName "6.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     // AGP 8 起 aaptOptions 已废弃，等价配置移到这里。
@@ -80,6 +93,11 @@ dependencies {
     implementation project(':capacitor-android')
     implementation 'org.jsoup:jsoup:1.23.2'
     implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'androidx.media3:media3-exoplayer:1.8.0'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.8.0'
+    implementation 'androidx.media3:media3-ui:1.8.0'
+    implementation 'androidx.media3:media3-session:1.8.0'
+    implementation 'androidx.media3:media3-datasource-okhttp:1.8.0'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

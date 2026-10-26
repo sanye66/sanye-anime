@@ -1,9 +1,16 @@
-:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+:root { font-family: 'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif; }
 /* 底色与 color-scheme 只在第 61 行那一组里定义一次：这里曾经又写了一套（`:root` 的 #0d141e），
    被后面的同名规则覆盖，改它不会有任何效果，是很容易踩的坑。 */
 * { box-sizing: border-box; }
 .android-app img[hidden] { display: none !important; }
 body { margin: 0; }
+.android-utility-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.android-diagnostics summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+.android-diagnostic-events { list-style: none; padding: 0; margin: 12px 0; }
+.android-diagnostic-events li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--app-border); font-size: var(--font-body); }
+.android-diagnostic-events small { grid-column: 1 / -1; color: var(--app-muted); overflow-wrap: anywhere; }
+.android-diagnostics textarea { width: 100%; max-width: 100%; border: 1px solid var(--app-border); border-radius: 8px; background: var(--app-input); color: var(--app-text); padding: 12px; font: inherit; user-select: text; }
+html { scroll-padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 button, input, select { font: inherit; }
 button { cursor: pointer; background: #c7f36b; color: #121a20; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 700; }
 button:disabled { opacity: .6; }
@@ -112,14 +119,13 @@ button { border-radius: 5px 11px 5px 11px; background: var(--brand-lime); color:
 .android-kicker { color: #f3c86b; font-size: var(--font-micro); font-weight: 700; letter-spacing: .1em; }
 .android-page-heading h1 { margin: 9px 0 6px; font-family: Georgia, 'Times New Roman', serif; font-weight: 500; line-height: 1.15; }
 .android-page-heading { padding: 25px 2px 19px; }.android-page-heading h1 { font-size: 32px; }.android-back { display: block; margin: 0 0 16px; padding: 0; min-height: 44px; color: var(--app-muted); background: transparent; text-align: left; }
-.android-hero { position: relative; grid-template-columns: minmax(0, 1fr) 42%; min-height: 216px; margin: 0; padding: 0; overflow: hidden; border: 1px solid rgba(156, 201, 216, .25); border-radius: var(--radius-card); background: linear-gradient(133deg, #10294b 4%, #204371 58%, #785976); box-shadow: 0 18px 32px rgba(3, 10, 24, .2); }
-.android-hero::before { position: absolute; z-index: 1; inset: 0; background: linear-gradient(90deg, rgba(6, 16, 34, .93) 0%, rgba(6, 16, 34, .76) 52%, rgba(6, 16, 34, .24) 82%, transparent 100%); content: ''; pointer-events: none; }
-.android-hero-copy { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 20px 4px 20px 20px; }.android-hero-tag { color: #f3c86b; font-size: var(--font-micro); font-weight: 700; letter-spacing: .08em; }.android-hero h2 { display: -webkit-box; margin: 9px 0 4px; text-shadow: 0 1px 3px rgba(2, 8, 20, .85); overflow: hidden; color: #fff6df; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(22px, 6.4vw, 32px); font-weight: 500; line-height: 1.14; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }/* 首页主视觉的说明行此前 11.5px、贴亮封面就糊成一片：放大到 12.5px 并补一层文字阴影。 */
-.android-hero-copy p { max-width: none; margin: 0 0 12px; color: #eff3f7; font-size: 12.5px; line-height: var(--leading-body); text-shadow: 0 1px 2px rgba(2, 8, 20, .9); }.android-hero-copy button { white-space: nowrap; }
-.android-hero-art { position: relative; min-width: 0; background: linear-gradient(160deg, #17366f, #345a94 43%, #b27678 83%, #e89373); }.android-hero-art::after { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(18, 46, 82, .2), transparent 30%), linear-gradient(0deg, rgba(14, 29, 55, .5), transparent 50%); content: ''; }.android-hero-art img { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; object-fit: cover; }.android-hero-art span { position: absolute; z-index: 1; right: 12px; bottom: 12px; color: #fff6df; font-size: var(--font-micro); }
+.android-hero { position: relative; grid-template-columns: minmax(0, 1fr) 43%; align-items: stretch; gap: 14px; min-height: 216px; margin: 20px 0 0; padding: 18px; overflow: hidden; border: 1px solid var(--page-card-border); border-radius: var(--radius-card); background: var(--app-surface); box-shadow: none; }
+.android-hero-copy { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: center; padding: 0; }.android-hero-tag { color: var(--page-accent); font-size: var(--font-meta); font-weight: 500; letter-spacing: 0; }.android-hero h2 { margin: 10px 0 12px; overflow-wrap: anywhere; color: var(--app-text); font-family: 'Noto Serif SC', 'Songti SC', SimSun, Georgia, serif; font-size: clamp(22px, 6.4vw, 32px); font-weight: 500; line-height: 1.3; }
+.android-hero-copy p { max-width: 20em; margin: 0; color: var(--app-muted); font-size: 12.5px; line-height: 1.6; text-shadow: none; }.android-hero-copy button { display: inline-flex; align-items: center; gap: 5px; margin-top: 18px; padding: 8px 0; background: transparent; color: var(--app-text); font-size: var(--font-sm); text-align: left; }
+.android-hero-art { min-width: 0; align-self: center; background: var(--app-input); border-radius: 10px; overflow: hidden; }.android-hero-art img { display: block; width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 0; object-fit: cover; }
 .android-section-heading, .android-section-title { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin: 32px 0 15px; }.android-section-heading h2, .android-section-title h2 { margin: 5px 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 23px; font-weight: 500; }.android-section-heading button { min-height: 44px; padding: 0 4px; background: transparent; color: var(--brand-lime); font-size: var(--font-sm); }
 .android-list li { min-width: 0; padding: 14px; border-color: rgba(156, 201, 216, .22); }.android-list small { font-size: var(--font-meta); }
-.android-catalog { display: flex; gap: 11px; overflow-x: auto; padding: 1px 1px 12px; scroll-snap-type: x mandatory; scrollbar-width: thin; }.android-catalog li { position: relative; display: flex; flex: 0 0 142px; flex-direction: column; align-items: stretch; gap: 0; padding: 0; overflow: hidden; scroll-snap-align: start; background: #142a48; }.android-catalog-open { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 0 0 11px; border: 0; border-radius: 0; background: transparent; color: inherit; font-weight: 400; text-align: left; }.android-catalog img { width: 100%; height: auto; aspect-ratio: 2 / 2.65; flex: none; object-fit: cover; border-radius: 0; }.android-catalog-copy { display: grid; width: 100%; gap: 3px; padding: 9px 10px 0; }.android-catalog strong { min-height: 34px; font-size: 12.5px; line-height: 1.4; }.android-catalog small:last-child { -webkit-line-clamp: 2; }
+.android-catalog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 10px; overflow: visible; padding: 0; }.android-catalog li { display: block; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }.android-catalog-open { display: flex; width: 100%; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font-weight: 400; text-align: left; }.android-catalog img { width: 100%; height: auto; aspect-ratio: 2 / 3; flex: none; object-fit: cover; border-radius: 9px; }.android-catalog-copy { display: grid; width: 100%; gap: 3px; padding: 8px 0 0; }.android-catalog strong { min-height: 34px; font-size: 12.5px; line-height: 1.4; }.android-catalog small:last-child { -webkit-line-clamp: 2; }
 .android-panel { border-color: rgba(156, 201, 216, .23); background: var(--app-surface); }.android-panel h2 { margin: 0 0 11px; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 500; }.android-panel h3 { margin: 22px 0 11px; font-size: 16px; }.android-panel h3 small { display: inline; margin-left: 5px; font-size: var(--font-micro); font-weight: 400; }
 .android-search-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px; }.android-search-form label { grid-column: 1 / -1; }.android-search-form button { align-self: end; margin: 0; min-height: 46px; }.android-search-source-heading { padding-top: 16px; border-top: 1px solid var(--app-border); }
 .android-detail { min-height: 0; padding: 0 0 19px; overflow: hidden; }.android-detail > :not(.android-detail-hero) { margin-left: 18px; margin-right: 18px; }.android-detail-hero { display: grid; grid-template-columns: 32% minmax(0, 1fr); min-height: 210px; gap: 15px; padding: 18px; background: linear-gradient(140deg, #1c3a62, #293f5d 60%, #865d70); }.android-detail-hero:has(img[hidden]), .android-detail-hero:not(:has(img)) { grid-template-columns: 1fr; }.android-detail-cover { width: 100%; height: 100%; min-height: 185px; max-height: 240px; margin: 0; object-fit: cover; border-radius: 3px 10px 3px 10px; }.android-detail-copy { min-width: 0; align-self: center; }.android-detail-copy h2 { margin: 9px 0; color: #fff6df; font-size: clamp(22px, 6vw, 32px); line-height: 1.2; }.android-detail-copy p, .android-detail-copy small { color: #e1e3e5; font-size: var(--font-meta); }.android-detail-copy p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 5; }.android-detail-copy small { display: block; margin-top: 11px; }.android-detail-actions { margin-top: 18px; }.android-detail .android-list li { background: rgba(7, 18, 34, .28); }.android-detail .android-list li button { flex: 0 0 auto; }
@@ -286,7 +292,7 @@ body:has(.android-app[data-theme=light]) { background: #f7f3e9; color-scheme: li
 body:has(.android-player-stage:is(:fullscreen, .android-player-stage--expanded)) { background: #000; }
 html:has(.android-player-stage:is(:fullscreen, .android-player-stage--expanded)) { background: #000; }
 .android-player-stage:is(:fullscreen, .android-player-stage--expanded) video { width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; }
-.android-player-stage:is(:fullscreen, .android-player-stage--expanded) .android-player-controls { padding: 26px max(12px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+.android-player-stage:is(:fullscreen, .android-player-stage--expanded) .android-player-controls { padding: 26px max(4px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(4px, env(safe-area-inset-left)); }
 /* 窄屏也不换行：时间可压缩，放大键始终被推到最右，不会因为换行跑到左边。 */
 .android-player-controls-row { flex-wrap: nowrap; }
 .android-player-time { min-width: 0; overflow: hidden; white-space: nowrap; }
@@ -315,12 +321,12 @@ html:has(.android-player-stage:is(:fullscreen, .android-player-stage--expanded))
    命中区不能再往上加——上方就是 44px 的播放键行，负上边距会抢播放键的点击（v0.31 的教训）；
    往下加会顶到舞台底边被 overflow:hidden 裁掉。竖屏控制条 76px 与进度条命中区 38px
    在「不压缩播放键、不加高控制条」的前提下无法同时成立，取舍与实测见安卓需求文档。 */
-.android-player-stage .android-player-seek { position: relative; display: block; flex: none; width: 100%; height: 28px; margin: 0 0 -4px; padding: 0; border: 0; border-radius: 0; background: transparent; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.android-player-stage .android-player-seek { position: relative; display: block; flex: none; width: calc(100% - 12px); height: 28px; margin: 0 6px -4px; padding: 0; border: 0; border-radius: 0; background: transparent; touch-action: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 /* 轨道贴着按钮行下方（放大态间距 4px），竖屏轨道中心只剩 5.5px；
    用户反馈「分隔还是太大」后就压到这个距离。 */
 .android-player-seek-track { position: absolute; top: 4px; left: 0; display: block; width: 100%; height: 3px; border-radius: 3px; background: rgba(232, 238, 245, .3); }
 .android-player-seek-fill { position: absolute; top: 0; bottom: 0; left: 0; display: block; border-radius: 3px; background: var(--brand-lime); }
-.android-player-seek-thumb { position: absolute; top: 5.5px; display: block; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--brand-lime); transform: translateY(-50%); }
+.android-player-seek-thumb { position: absolute; top: 50%; display: block; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--brand-lime); transform: translateY(-50%); }
 .android-player-seek.is-dragging .android-player-seek-thumb, .android-player-seek:focus-visible .android-player-seek-thumb { transform: translateY(-50%) scale(1.3); }
 .android-player-seek.is-disabled { cursor: default; opacity: .55; }
 .android-player-seek.is-disabled .android-player-seek-thumb { display: none; }
@@ -344,11 +350,8 @@ html:has(.android-player-stage:is(:fullscreen, .android-player-stage--expanded))
 /* 选择器要多一层 `.android-player-stage`：下面第 375 行那条 `.android-player-stage .android-player-tool`
    与它同权重且位置更靠后，只写 `--compact` 会被那条固定宽 44px 覆盖（本轮实测就是这么漏掉的）。 */
 .android-player-stage.android-player-stage--compact .android-player-tool--text { flex: 0 0 auto; width: auto; min-width: var(--player-tool-width); overflow: visible; padding-inline: 8px; }
-.android-player-stage--compact .android-player-controls { gap: 0; padding: 6px 6px calc(4px + env(safe-area-inset-bottom)); }
-.android-player-stage--compact .android-player-seek { margin-bottom: -6px; }
 /* 竖屏这一行在系统字体 ×2 时会超出 390px 视口（实测最右「放大」353..395）：文字工具变宽后
    固定不换行就会把最后一个按钮挤出屏幕。允许换行（两行工具条）比裁字或横向溢出都好（VQ-61）。 */
-.android-player-stage--compact .android-player-controls-row { gap: 2px; flex-wrap: wrap; row-gap: 2px; }
 .android-player-stage--compact .android-player-big-play { width: 52px; height: 52px; font-size: var(--font-heading); }
 
 /* 竖排列表改为最简一行一项：左标题、右勾选，用细分隔线代替卡片底板。
@@ -580,6 +583,102 @@ button { font-weight: 600; }
 .android-app[data-theme=light] .android-player--overlay { background: radial-gradient(ellipse at 75% 3%, rgba(250, 216, 181, .45), transparent 36%), #f7f3e9; }
 @media (prefers-color-scheme: light) { .android-app[data-theme=system] .android-player--overlay { background: radial-gradient(ellipse at 75% 3%, rgba(250, 216, 181, .45), transparent 36%), #f7f3e9; } }
 
+/* 海报优先：载体安静，标题与内容负责层级。播放器独立保留触摸与全屏规则。 */
+.android-app {
+  --radius-card: 14px;
+  --premium-radius: 14px;
+  --premium-radius-sm: 10px;
+  --premium-shadow: none;
+  --page-shadow: none;
+  --page-card: var(--app-surface);
+  --premium-line: color-mix(in srgb, var(--app-border) 72%, transparent);
+  background: var(--app-bg);
+}
+.android-app[data-theme=light] { --page-shadow: none; --page-card: var(--app-surface); background: var(--app-bg); }
+@media (prefers-color-scheme: light) { .android-app[data-theme=system] { --page-shadow: none; --page-card: var(--app-surface); background: var(--app-bg); } }
+.android-page-heading { padding: 22px 0 18px; }
+.android-page-heading h1 { margin: 7px 0 0; letter-spacing: -.025em; }
+.android-page-heading h1, .android-section-heading h2, .android-page-section .android-section-title h2,
+.android-detail-copy h2, .android-search-source-heading { font-family: 'Noto Serif SC', 'Songti SC', SimSun, Georgia, serif; }
+.android-page-section .android-list li,
+.android-page-section .android-search-form,
+.android-setting-list,
+.android-setting-status,
+.android-detail,
+.android-player.android-player--inline {
+  border: 1px solid var(--premium-line);
+  border-radius: var(--premium-radius);
+  box-shadow: var(--premium-shadow);
+}
+.android-page-section .android-list li { border-radius: var(--premium-radius); }
+.android-page-section .android-list li { padding: 14px; }
+.android-page-section .android-list li + li { margin-top: 2px; }
+.android-page-section .android-list li button,
+.android-page-section .android-actions button,
+.android-detail-actions button,
+.android-episode-grid button,
+.android-secondary-button,
+.android-pagination button,
+.android-setting-row button {
+  min-height: 44px;
+  border-radius: var(--premium-radius-sm);
+  transition: transform .08s ease-out, opacity .08s ease-out;
+}
+.android-page-section .android-list li button:not(:disabled):active,
+.android-page-section .android-actions button:not(:disabled):active,
+.android-detail-actions button:not(:disabled):active,
+.android-episode-grid button:not(:disabled):active,
+.android-secondary-button:not(:disabled):active,
+.android-setting-row button:not(:disabled):active { transform: translateY(1px) scale(.98); }
+.android-detail .android-episode-grid button[aria-pressed=true] { border-color: var(--page-accent); background: var(--brand-lime); color: var(--brand-ink); }
+.android-setting-list { overflow: hidden; }
+.android-setting-row { grid-template-columns: minmax(5em, 1fr) minmax(0, auto); min-height: 60px; padding-inline: 17px; }
+.android-setting-row--storage { grid-template-columns: repeat(auto-fit, minmax(min(100%, 8em), 1fr)); }
+.android-setting-value { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.android-history-list li { flex-wrap: wrap; }
+.android-history-list .android-history-copy { flex: 1 1 min(8em, calc(100% - 68px)); min-width: min(8em, calc(100% - 68px)); }
+.android-history-list li > button { margin-left: auto; }
+.android-setting-row small { opacity: .78; }
+.android-nav {
+  position: fixed; right: 0; bottom: 0; left: 0; z-index: 20;
+  width: min(720px, 100%); margin: 0 auto; padding: 8px 12px max(8px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--premium-line); background: color-mix(in srgb, var(--app-bg) 88%, transparent);
+  box-shadow: none; backdrop-filter: blur(18px);
+}
+.android-nav button { min-height: 48px; border-radius: 14px; background: transparent; color: var(--app-muted); }
+.android-nav button[aria-current=page] { box-shadow: none; }
+.android-player.android-player--inline { margin-bottom: 18px; padding: 8px; background: var(--page-card); }
+.android-player--inline .android-player-stage:not(:fullscreen):not(.android-player-stage--expanded) { border-radius: calc(var(--premium-radius) - 4px); }
+.android-player-stage { box-shadow: none; }
+.android-player-stage .android-player-controls { padding: 14px 12px calc(10px + env(safe-area-inset-bottom)); }
+.android-player-stage .android-player-tool { border-radius: var(--premium-radius-sm); }
+@media (max-width: 400px) {
+  .android-app { --page-gutter: max(16px, env(safe-area-inset-left), env(safe-area-inset-right)); padding-inline: var(--page-gutter); }
+  .android-page-heading { padding-top: 22px; }
+  .android-player.android-player--inline { margin-inline: calc(-1 * var(--page-gutter)); border-radius: var(--premium-radius); }
+}
+.android-app .android-home .android-catalog li { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.android-hero-copy { padding: 0; }
+.android-library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; margin-top: 18px; }
+.android-page-section .android-library-grid li { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.android-page-section .android-library-grid li + li { margin-top: 0; }
+.android-page-section .android-library-grid .android-library-open { display: grid; width: 100%; gap: 9px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--app-text); text-align: left; }
+.android-library-open .android-cover { width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 10px; }
+.android-library-open strong { display: -webkit-box; min-height: 36px; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: var(--font-body); line-height: 1.4; }
+.android-library-grid .android-library-meta { margin-top: 0; font-size: var(--font-meta); }
+.android-library-grid .android-actions { display: grid; flex: none; grid-template-columns: 1fr 1fr; gap: 6px; }
+.android-page-section .android-library-grid .android-actions button { padding-inline: 4px; font-size: var(--font-meta); }
+.android-library .android-section-title h2 small { margin-left: 5px; font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif; font-size: var(--font-sm); }
+.android-app .android-detail .android-detail-hero { grid-template-columns: 34% minmax(0, 1fr); gap: 16px; padding: 18px; background: transparent; }
+.android-app .android-detail .android-detail-hero:not(:has(img)) { grid-template-columns: 1fr; }
+.android-detail .android-detail-cover { min-height: 0; max-height: none; height: auto; aspect-ratio: 2 / 3; border-radius: 10px; align-self: start; }
+.android-app .android-detail-copy h2 { margin: 0 0 10px; color: var(--app-text); font-size: clamp(21px, 6vw, 28px); line-height: 1.3; }
+.android-app .android-detail-copy p, .android-app .android-detail-copy small { color: var(--app-muted); font-size: var(--font-sm); line-height: 1.65; }
+.android-detail-copy small { margin-top: 0; }
+.android-detail-copy p { margin: 10px 0 0; }
+.android-detail .android-episode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.android-detail .android-episode-grid button { border-radius: 8px; text-align: center; }
+@media (min-width: 540px) { .android-catalog { grid-template-columns: repeat(4, minmax(0, 1fr)); }.android-library-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.android-detail .android-episode-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* 进度条压到按钮行下面：此前它排在按钮上面，被控件条顶到画面中部，竖屏单手够不着。 */
 .android-player-stage .android-player-controls > .android-player-controls-row { order: 1; }
@@ -587,7 +686,7 @@ button { font-weight: 600; }
 
 /* 观看历史改成竖列表：与片库/搜索共用行式列表，封面 58x82 与其它列表一致。 */
 .android-history-list li { align-items: flex-start; }
-.android-history-list .android-history-copy { flex: 1; }
+.android-history-list .android-history-copy { flex: 1 1 min(8em, calc(100% - 68px)); }
 .android-history-list li > button { flex: 0 0 auto; align-self: center; }
 
 /* 搜索：输入即搜的提示，避免用户以为必须点按钮。 */
@@ -621,6 +720,25 @@ button { font-weight: 600; }
   color: var(--page-chip-text);
 }
 
+/* 最终安卓播放器层级（必须位于历史兼容规则之后，保证竖屏规则不被旧层叠覆盖）。 */
+.android-player-stage { background: linear-gradient(145deg, #0b1b31, #102743 58%, #1b2940); }
+.android-player-stage video, .android-player-poster { background: #0b1b31; }
+.android-player-stage .android-player-controls { padding: 12px 12px calc(8px + env(safe-area-inset-bottom)); gap: 5px; background: linear-gradient(180deg, transparent 0%, rgba(5, 15, 30, .78) 28%, rgba(5, 15, 30, .96)); }
+.android-player-controls-row { gap: 5px; }
+.android-player-stage .android-player-play { width: 42px; min-height: 42px; border: 1px solid rgba(234, 242, 196, .4); background: rgba(234, 242, 196, .14); color: #f2f6fa; }
+.android-player-stage .android-player-tool { min-height: 38px; border: 1px solid rgba(223, 231, 239, .18); border-radius: 10px; background: rgba(12, 29, 51, .72); }
+.android-player-stage .android-player-tool[aria-expanded=true], .android-player-stage .android-player-tool[aria-pressed=true] { border-color: rgba(234, 242, 196, .5); background: rgba(234, 242, 196, .2); }
+.android-player-stage .android-player-seek { height: 36px; margin-bottom: -3px; }
+.android-player-stage .android-player-seek-track { top: 4px; height: 4px; }
+.android-player-stage .android-player-seek-thumb { width: 14px; height: 14px; margin-left: -7px; }
+@media (max-width: 400px) {
+  .android-player-stage .android-player-controls { padding-inline: 8px; }
+  .android-player-stage .android-player-controls-row { display: grid; grid-template-columns: 42px minmax(58px, 1fr) auto auto 38px; gap: 3px; }
+  .android-player-stage .android-player-controls-row > .android-player-spacer { display: none; }
+  .android-player-stage .android-player-controls-row > .android-player-tool--text { width: auto; min-width: 42px; padding-inline: 5px; }
+  .android-player-stage .android-player-controls-row > .android-player-icon { width: 38px; min-width: 38px; }
+}
+
 /*
  * 排期：本周没有排期的日期此前与有排期的那天占一样的高度，
  * 七天里六天只有「暂无」时整页被拉得很长，真正有内容的周日反而被推到屏幕外。
@@ -640,5 +758,211 @@ button { font-weight: 600; }
 .android-mount-failure strong { font-size: var(--font-title); }
 .android-mount-failure p { margin: 0; color: var(--app-muted, #9cb2c2); font-size: var(--font-body); line-height: var(--leading-body); }
 .android-mount-failure button { align-self: flex-start; min-height: 44px; padding: 8px 16px; border: 0; border-radius: 999px; background: var(--brand-lime); color: var(--brand-ink); font-size: var(--font-body); font-weight: 600; }
+
+/* 360px 竖屏的主播放按钮保留完整触控命中区。 */
+.android-player-stage .android-player-play { width: 44px !important; min-width: 44px; min-height: 44px; flex-basis: 44px; }
+.android-player-stage .android-player-seek { height: 28px; }
+@media (max-width: 400px) { .android-player-stage .android-player-controls-row { grid-template-columns: 44px minmax(58px, 1fr) auto auto 38px; } }
+
+/* 极简按钮收口：保留 44px 触摸命中区，视觉只呈现图标或文字本身。 */
+.android-theme-toggle { display: grid; place-items: center; align-content: center; line-height: 0; }
+.android-theme-toggle .android-icon { margin: 0; transform: translateZ(0); }
+.android-player-stage .android-player-play,
+.android-player-stage .android-player-tool { border: 0; box-shadow: none; background: transparent; color: rgba(248, 243, 231, .88); }
+.android-player-stage .android-player-play { display: grid; place-items: center; padding: 0; border-radius: 50%; color: #f8f3e7; }
+.android-player-stage .android-player-play[aria-label="暂停播放"] { color: var(--brand-lime); }
+.android-player-stage .android-player-tool { display: inline-flex; align-items: center; justify-content: center; padding-inline: 8px; border-radius: 10px; font-weight: 500; letter-spacing: .01em; }
+.android-player-stage .android-player-tool[aria-expanded=true], .android-player-stage .android-player-tool[aria-pressed=true] { background: rgba(234, 242, 196, .14); color: var(--brand-lime); }
+.android-player-stage .android-player-play:not(:disabled):active, .android-player-stage .android-player-tool:not(:disabled):active { background: rgba(255, 255, 255, .1); }
+.android-player-stage .android-player-controls-row { align-items: center; }
+.android-player-stage .android-player-time { color: rgba(248, 243, 231, .82); font-variant-numeric: tabular-nums; }
+.android-player-stage.android-player-stage--compact .android-player-tool--advanced { display: none; }
+
+/* 视频视口独立于控制区：海报、中央按钮、HUD 和手势层只覆盖有效画幅。 */
+.android-player-viewport { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; }
+.android-player-stage.android-player-stage--compact { display: block; }
+.android-player-stage.android-player-stage--compact .android-player-viewport video { height: 100%; min-height: 0; max-height: none; }
+/* 补帧模块把 canvas 插入 stage；限定为与第一行视口相同的 16:9，而非包含控件的舞台高度。 */
+.android-player-stage.android-player-stage--compact > .realtime-interpolation-canvas { inset: 0 auto auto 0; height: auto; aspect-ratio: 16 / 9; }
+.android-player-stage:is(:fullscreen, .android-player-stage--expanded) .android-player-viewport { height: 100%; aspect-ratio: auto; }
+/* 竖屏只覆盖画面底缘的基础操作，全屏后再展开完整控件。 */
+.android-player-stage.android-player-stage--compact .android-player-controls {
+  position: absolute; inset: auto 0 0; padding: 12px 4px 0; gap: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.75));
+}
+.android-player-stage.android-player-stage--compact .android-player-controls-row .android-player-tool:not(:last-child) { display: none; }
+.android-player-stage.android-player-stage--compact .android-player-controls-row {
+  display: flex; flex-wrap: nowrap; gap: 2px;
+}
+.android-player-stage.android-player-stage--compact .android-player-time { flex: 1 1 auto; font-size: 11px; }
+.android-player-stage.android-player-stage--compact .android-player-spacer { display: none; }
+.android-player-stage.android-player-stage--compact .android-player-icon { width: 44px; min-width: 44px; min-height: 44px; padding: 0; }
+.android-player-stage.android-player-stage--compact .android-player-tool--text { min-width: 44px; padding-inline: 4px; }
+.android-player-stage.android-player-stage--compact .android-player-icon:last-child { width: 44px; min-width: 44px; min-height: 44px; margin-left: 0; }
+.android-player-stage.android-player-stage--compact .android-player-controls-row > :last-child { position: absolute; right: 0; bottom: 0; z-index: 2; }
+.android-player-stage.android-player-stage--compact .android-player-seek { height: 28px; margin: 0 6px; }
+.android-player-stage.android-player-stage--compact .android-player-seek-track { top: 13px; height: 3px; }
+/* 菜单脱离控制条布局，展开不会把整行按钮和渐变背景推到画面中央。 */
+.android-repository-note { color: var(--app-muted); font-size: 13px; line-height: 1.6; margin: 0 0 16px; }
+.android-subscription-catalog .android-catalog-copy small { white-space: normal; overflow-wrap: anywhere; }
+
+/* 来源是页面数据的作用域，不与作品操作混在一起；长名称可换行，切换入口保持可触控。 */
+.android-source-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--app-border); }
+.android-source-context > div { display: grid; gap: 4px; min-width: 0; }
+.android-source-context small, .android-source-context span { color: var(--app-muted); font-size: var(--font-meta); line-height: 1.5; overflow-wrap: anywhere; }
+.android-source-context strong { color: var(--app-text); font-size: var(--font-body); line-height: 1.4; overflow-wrap: anywhere; }
+.android-source-context button { flex: 0 0 auto; min-height: 44px; padding: 8px 14px; border: 1px solid var(--app-border); background: transparent; color: var(--page-accent); border-radius: 10px; }
+.android-section-heading h2 small { color: var(--app-muted); font-family: inherit; font-size: var(--font-meta); font-weight: 400; }
+.android-repository-explanation { margin: -6px 0 14px; color: var(--app-muted); font-size: var(--font-meta); }
+.android-repository-explanation summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
+.android-repository-explanation p { margin: 0 0 12px; }
+.android-search-results-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 12px; }
+.android-page-section .android-search-results-heading h2 { margin: 0; }
+.android-search-results-heading > span { flex: 0 0 auto; color: var(--app-muted); font-size: var(--font-meta); }
+.android-source-filters { display: flex; gap: 8px; max-width: 100%; overflow-x: auto; padding-bottom: 8px; margin-bottom: 8px; overscroll-behavior-inline: contain; }
+.android-source-filters button { flex: 0 0 auto; max-width: 75%; min-height: 44px; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--app-border); border-radius: 10px; background: transparent; color: var(--app-muted); font-size: var(--font-meta); }
+.android-source-filters button[aria-pressed=true] { background: var(--brand-lime); border-color: var(--brand-lime); color: var(--brand-ink); }
+.android-source-result-copy { display: grid; flex: 1 1 0; min-width: 0; gap: 4px; }
+.android-source-result-copy strong { overflow-wrap: anywhere; line-height: 1.45; }
+.android-source-result-copy small { overflow-wrap: anywhere; line-height: 1.5; }
+.android-source-results li > button, .android-source-results li > a { flex: 0 0 auto; min-height: 44px; align-self: center; }
+@media (max-width: 380px) {
+  .android-page-section .android-source-results li { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: start; gap: 10px; }
+  .android-source-results .android-cover { width: 52px; height: 74px; grid-row: 1 / 3; }
+  .android-source-results li > button, .android-source-results li > a { grid-column: 2; justify-self: start; }
+}
+.android-subscription-catalog .android-catalog-open { min-height: 44px; }
+
+.android-playback-tools { margin-top: 12px; color: var(--app-text); }
+.android-playback-tools summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.android-playback-tools-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+.android-playback-tools label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.android-playback-tools select, .android-playback-tools input { max-width: 100%; min-height: 44px; border: 1px solid var(--app-border); border-radius: 8px; padding: 8px; background: var(--app-input); color: var(--app-text); font: inherit; }
+.android-playback-tools input[type=number] { width: 84px; }
+.android-subtitle-picker { margin-bottom: 12px; }
+.android-subtitle-picker input { width: 100%; min-width: 0; }
+.android-subtitle-name { max-width: 100%; overflow-wrap: anywhere; }
+.android-downloads summary { min-height: 44px; padding-block: 12px; cursor: pointer; }
+.android-download-form { display: grid; gap: 12px; margin-block: 12px; }
+.android-download-form label { display: grid; gap: 8px; min-width: 0; }
+.android-download-list { list-style: none; padding: 0; display: grid; gap: 16px; }
+.android-download-item { min-width: 0; display: grid; gap: 8px; padding-block: 12px; border-bottom: 1px solid var(--app-border); }
+.android-download-item strong, .android-download-item p { overflow-wrap: anywhere; }
+.android-download-item progress { width: 100%; accent-color: var(--brand-accent); }
+.android-download-confirm { border: 1px solid var(--app-border); border-radius: 10px; padding: 12px; }
+
+.android-player-stage.android-player-stage--compact .android-player-menu {
+  position: absolute; right: 8px; bottom: 100%; margin-bottom: 0;
+  max-height: max(44px, min(180px, calc((100vw - 32px) * .5625 - 8px)));
+}
+
+/* 主任务留在当前页，低频管理进入设置；面板与页面共用现有主题。 */
+.android-source-sheet { box-sizing: border-box; width: min(100%, 480px); max-height: min(70dvh, 600px); margin: auto auto 0; border: 0; border-radius: 24px 24px 0 0; padding: 10px 20px max(16px, env(safe-area-inset-bottom)); background: var(--app-surface); color: var(--app-text); overflow-y: auto; box-shadow: 0 -12px 48px rgba(0, 0, 0, .2); }
+.android-source-sheet::before { content: ''; display: block; width: 36px; height: 4px; margin: 2px auto 18px; border-radius: 4px; background: var(--app-border); }
+.android-source-sheet::backdrop { background: rgba(0, 8, 20, .6); }
+.android-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block: 12px; }
+.android-sheet-heading h2, .android-sheet-heading h3 { margin: 0; }
+.android-sheet-heading button { min-height: 44px; }
+.android-source-choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 56px; margin-block: 2px; padding: 12px 14px; border: 1px solid transparent; border-radius: 12px; background: transparent; color: var(--app-text); text-align: left; }
+.android-source-choice strong { overflow-wrap: anywhere; }
+.android-source-choice span { color: var(--app-muted); font-size: var(--font-meta); flex-shrink: 0; }
+.android-source-recommended { display: inline-block; margin-left: 5px; padding: 2px 7px; border: 1px solid var(--page-accent); border-radius: 999px; color: var(--page-accent); font-size: var(--font-micro); font-style: normal; font-weight: 600; vertical-align: middle; }
+.android-source-choice[aria-pressed=true] { background: var(--app-input); box-shadow: inset 3px 0 var(--brand-lime); }
+.android-source-sheet .android-sheet-heading { margin-bottom: 18px; }
+.android-source-sheet .android-sheet-heading h2 { font-size: 20px; font-weight: 650; }
+.android-source-sheet .android-secondary-button { width: 100%; margin-top: 12px; background: transparent; border: 0; color: var(--app-muted); }
+.android-personal-nav { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; padding: 4px; margin-bottom: 20px; border-radius: 14px; background: var(--app-input); }
+.android-personal-nav button { min-width: 0; min-height: 44px; padding: 8px 2px; border: 0; border-radius: 10px; background: transparent; color: var(--app-muted); font-size: 14px; }
+.android-personal-nav button[aria-pressed=true] { background: var(--app-surface); color: var(--app-text); box-shadow: 0 2px 6px rgba(0,0,0,.12); font-weight: 650; }
+.android-source-choice[aria-pressed=true] span { color: var(--app-text); }
+.android-search-memory { margin-bottom: 20px; }
+.android-search-memory { padding: 14px; border: 1px solid var(--app-border); border-radius: 16px; background: color-mix(in srgb, var(--app-surface) 86%, var(--brand-lime)); }
+.android-search-memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.android-search-memory-heading h2 { margin: 0; font-size: var(--font-body); }
+.android-search-memory-heading p { margin: 3px 0 0; color: var(--app-muted); font-size: var(--font-micro); }
+.android-search-memory-heading .android-secondary-button { width: auto; min-height: 36px; margin: 0; padding-inline: 10px; }
+.android-search-memory-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.android-search-memory-item { display: flex; min-width: 0; align-items: stretch; border: 1px solid var(--app-border); border-radius: 11px; background: var(--app-input); overflow: hidden; }
+.android-search-memory-word { flex: 1 1 auto; min-width: 0; padding: 10px 12px; border: 0; background: transparent; color: var(--app-text); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.android-search-memory-remove { flex: 0 0 34px; border: 0; border-left: 1px solid var(--app-border); background: transparent; color: var(--app-muted); font-size: 20px; line-height: 1; }
+.android-search-memory-remove:active, .android-search-memory-remove:focus-visible { color: var(--app-text); background: var(--app-surface); }
+.android-search-form { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.android-search-form button { margin: 0; min-height: 44px; }
+.android-detail-more { display: block; grid-column: 1 / -1; width: 100%; }
+.android-detail-more summary, .android-summary summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--app-muted); }
+.android-detail-more summary { justify-content: space-between; width: 100%; }
+.android-detail-more summary::after { content: '⌄'; font-size: 18px; }
+.android-detail-more[open] summary::after { transform: rotate(180deg); }
+.android-detail-more-content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 0; border-top: 1px solid var(--app-border); }
+.android-detail-more-content .android-setting-row { grid-column: 1 / -1; min-width: 0; margin: 0; }
+.android-detail-hero .android-detail-more-content button { font-size: var(--font-body); }
+.android-detail-description p { margin: 0 0 16px; color: var(--app-muted); line-height: 1.7; overflow-wrap: anywhere; }
+.android-page-heading { border-bottom: 1px solid var(--app-border); margin-bottom: 18px; }
+.android-page-heading h1 { padding-left: 12px; border-left: 3px solid var(--brand-lime); }
+.android-app .android-detail .android-detail-hero { padding: 20px 16px; border-bottom: 1px solid var(--app-border); }
+.android-detail .android-section-title { padding-block: 12px 8px; }
+.android-detail .android-episode-grid button { min-height: 48px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-input); color: var(--app-text); }
+.android-detail .android-episode-grid button[aria-pressed=true] { background: var(--brand-lime); border-color: var(--brand-lime); color: var(--brand-ink); }
+.android-page-section .android-search-results-heading { padding-block: 16px 12px; border-bottom: 1px solid var(--app-border); }
+.android-page-section .android-source-results li { box-shadow: none; border-bottom: 1px solid var(--app-border); }
+.android-detail-actions .android-primary-button { min-height: 44px; flex: 1 1 120px; }
+.android-detail-hero .android-detail-actions > .android-primary-button { background: var(--brand-lime); color: var(--brand-ink); border-color: transparent; font-size: var(--font-body); }
+.android-episode-ranges { display: flex; gap: 8px; overflow-x: auto; padding-block: 8px; }
+.android-episode-ranges button { min-height: 44px; flex-shrink: 0; background: var(--app-input); color: var(--app-text); }
+.android-episode-ranges button[aria-pressed=true] { box-shadow: inset 0 -2px var(--brand-lime); }
+.android-continue-shelf { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 12px; scroll-snap-type: x proximity; }
+.android-continue-shelf button { flex: 0 0 140px; min-width: 0; padding: 0; background: transparent; color: var(--app-text); text-align: left; scroll-snap-align: start; }
+.android-continue-shelf img { display: block; width: 140px; height: 100px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; }
+.android-continue-shelf strong, .android-continue-shelf small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.android-cover-loading { opacity: .65; background: var(--app-input); }
+.android-cover-ready { opacity: 1; }
+.android-repository-count { margin: 0 0 16px; color: var(--app-muted); font-size: var(--font-meta); line-height: 1.5; }
+.android-repository-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-block: 12px; }
+.android-repository-toolbar input { min-width: 0; min-height: 48px; }
+.android-app .android-repository-sort-toggle { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 8px 12px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-input); color: var(--app-text); white-space: nowrap; }
+.android-repository-sort-toggle span { color: var(--page-accent); font-size: 18px; }
+.android-repository-sort-options { display: grid; gap: 2px; margin: -4px 0 16px; padding: 6px; border: 1px solid var(--app-border); border-radius: 12px; background: var(--app-surface); }
+.android-app .android-repository-sort-options button { display: grid; gap: 2px; width: 100%; min-height: 56px; padding: 8px 12px; border-radius: 8px; background: transparent; color: var(--app-text); text-align: left; }
+.android-repository-sort-options button[aria-pressed=true] { box-shadow: inset 3px 0 var(--page-accent); background: var(--app-input); }
+.android-repository-sort-options small { color: var(--app-muted); font-size: var(--font-micro); font-weight: 400; }
+.android-repository-sort-options :focus-visible, .android-repository-sort-toggle:focus-visible { outline: 2px solid var(--page-accent); outline-offset: 2px; }
+.android-subscription-catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
+@media (min-width: 540px) { .android-subscription-catalog { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.android-subscription-catalog .android-catalog-open img { border: 1px solid var(--app-border); border-radius: 10px; }
+.android-subscription-catalog .android-catalog-copy { gap: 4px; }
+.android-subscription-catalog .android-catalog-copy strong { min-height: 38px; font-size: 13px; line-height: 1.45; }
+.android-app .android-repository-more { display: block; width: 100%; min-height: 48px; margin: 24px 0 8px; border: 1px solid var(--app-border); border-radius: 10px; background: var(--app-surface); color: var(--page-accent); }
+.android-setting-row input[type=checkbox] { width: 24px; height: 24px; padding: 0; flex-shrink: 0; accent-color: var(--brand-lime); }
+.android-app img { transition: opacity .15s ease-out; }
+.android-player-stage.android-player-stage--compact .android-player-play { flex: 0 0 44px; width: 44px; height: 44px; align-self: center; }
+.android-player-stage.android-player-stage--compact .android-player-play .android-icon { width: 18px; height: 18px; transform: translateY(10px); }
+
+/* 竖屏把放大按钮留在按键行，时间紧挨进度轨道，避免按钮压在可拖动区域上。 */
+.android-player-stage.android-player-stage--compact .android-player-controls-row > :last-child { position: static; margin-left: auto; }
+.android-player-stage.android-player-stage--compact .android-player-controls { gap: 0; }
+.android-player-stage.android-player-stage--compact .android-player-time { align-self: flex-end; padding-bottom: 3px; }
+.android-player-stage.android-player-stage--compact .android-player-seek-track { top: 3px; }
+
+/* 详情页先选集，再看封面和简介；弱化容器边框，让作品信息有清晰的阅读顺序。 */
+.android-detail > .android-detail-episodes { margin: 0; padding: 16px; border-bottom: 1px solid var(--app-border); }
+.android-detail-episodes > .android-sheet-heading { margin: 0 0 12px; }
+.android-detail-episodes > .android-sheet-heading h3 { font-size: var(--font-title); }
+.android-detail-episodes > .android-episode-group { margin: 0; }
+.android-detail-episodes > .android-episode-group h4 { margin-bottom: 10px; }
+.android-app .android-detail .android-detail-hero { gap: 14px; padding: 20px 16px 16px; border-bottom: 0; }
+.android-detail .android-detail-cover { box-shadow: 0 8px 22px rgba(0, 0, 0, .18); }
+.android-detail-copy { align-self: start; }
+.android-detail-description { padding-top: 0; }
+
+/* 最近搜索使用轻量关键词列表，删除入口与关键词保持一组。 */
+.android-search-memory { margin: 4px 0 18px; padding: 0 0 16px; border: 0; border-bottom: 1px solid var(--app-border); border-radius: 0; background: transparent; }
+.android-search-memory-heading { margin-bottom: 10px; }
+.android-search-memory-heading h2 { font-size: var(--font-sm); font-weight: 650; color: var(--app-muted); }
+.android-search-memory-heading .android-secondary-button { min-height: 36px; padding: 4px 8px; border: 0; background: transparent; color: var(--app-muted); }
+.android-search-memory-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.android-search-memory-item { max-width: 100%; min-height: 40px; border-color: var(--app-border); border-radius: 999px; background: var(--app-surface); }
+.android-search-memory-word { max-width: min(60vw, 220px); padding: 8px 4px 8px 14px; font-size: var(--font-sm); }
+.android-search-memory-remove { flex-basis: 34px; border-left: 0; font-size: 18px; }
+.android-search-memory-word:focus-visible, .android-search-memory-remove:focus-visible { outline: 2px solid var(--brand-lime); outline-offset: -2px; }
 
 

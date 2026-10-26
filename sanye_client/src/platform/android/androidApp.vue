@@ -5,21 +5,39 @@ import { App } from '@capacitor/app'
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core'
 import { androidCatalog, type AndroidSettings, type FrameTargetSetting, type SavedMedia, type WatchHistory } from './catalog'
 import { mediaType, playbackType, type MediaType } from './mediaSource'
-import { androidSource, type SourceEpisode, type SourceHit, type SourcePreview } from './source'
+import { androidSource, sourceContent, sourceCacheKey, sourceHitKey, savedSourceContext, persistSourceContext, clearHistorySourceContexts, historySourceBindingKey, migrateLegacySourceBindings, type SourceContext, type SourceEpisode, type SourceHit, type SourcePreview, type SourceSearchResult } from './source'
+import { androidRepository } from './repository'
+import { groupSearchVersions, createSearchVersionChecks, searchVersionKey, type SearchVersionGroup } from './searchVersions'
+import { activeSubscription, activeSubscriptionContent, activeSubscriptionScope, activeSubscriptionSourceIndex, subscriptionChoices, subscriptionState, subscriptionRequests, subscriptionNeedsRefresh, refreshSubscription, selectSubscription } from '../../subscriptions'
+import { recentSearches, rememberSearch, clearRecentSearches, removeRecentSearch } from './searchMemory'
 import { catalogSnapshot, catalogSnapshotAsOf, type CatalogSnapshotItem } from './catalogSnapshot'
 import { scheduleFromSnapshot } from './schedule'
 import { titleKey } from '../../data/titleKey'
 // 占位封面随包发布：Android 构建用相对资源路径，和随包目录封面走同一条导入方式。
 import placeholderCover from './assets/anime-placeholder.svg'
+import SubscriptionManager from '../../components/subscriptionManager.vue'
+import AndroidCover from './androidCover.vue'
+import AndroidDiagnostics from './androidDiagnostics.vue'
+import AndroidBackup from './androidBackup.vue'
+import { attachSystemPlayback } from './systemPlayback'
+import { nativePlaybackAvailable, nextNativeSessionId, openNativePlayback, closeRetainedNativePlayback, failRetainedNativePlayback, type NativePlaybackProgress, type NativePlaybackSession } from './nativePlayback'
+import { inlineMediaAvailable, inlineMediaLoader, prewarmInlineManifest } from './inlineMediaLoader'
+import AndroidDownloads from './androidDownloads.vue'
+import { androidDownloads, downloadsAvailable, validateDownloadUrl } from './downloads'
+import { clearCoverCache, getCoverCacheStats, registerBundledCovers, startCoverCache } from './coverCache'
+import { createPlaybackObservation, healthKey, recordPlaybackSample } from './experience'
 import { parsePlaybackLine } from '../../video/playbackLines'
 import { FRAME_RATE_OPTIONS, type FrameRateTarget } from '../../video/frameCadence'
 import { ANIME4K_PROFILE_LABELS, type Anime4KProfile } from '../../video/anime4k'
 import { ANDROID_ENHANCEMENT_LIMITS, MOBILE_ANIME4K_PROFILES } from '../../video/enhancementLimits'
 import { createFragmentCache } from '../../video/hlsFragmentCache'
+import { hlsPlaybackConfig, HlsMediaRecovery } from '../../video/hlsPlaybackPolicy'
 import { MotionStabilityPolicy } from '../../video/motionStabilityPolicy'
 import { accumulatePlaybackStabilityTally, createPlaybackStabilityTally } from '../../video/playbackStabilityTally'
 import type { InterpolationStats, RealtimeInterpolationSession } from '../../video/realtimeInterpolation'
 import { AdaptationNotice } from '../../video/adaptationNotice'
+
+registerBundledCovers([placeholderCover, ...catalogSnapshot.map(item => item.coverUrl)])
 
 const items = ref<SavedMedia[]>([])
 const error = ref('')
@@ -41,12 +59,27 @@ const watchPage = ref(false)
 const keyword = ref('')
 const page = ref(1)
 const history = ref<WatchHistory[]>([])
+let historyReadRequest = 0
 const settings = ref<AndroidSettings>({ theme: 'system', autoPlay: false, playbackRate: 1, qualityProfile: 'off', frameTarget: 'off', volume: 1 })
-/** 「我的」里可选的本机播放速度；与播放器实际落盘的 playbackRate 同一组取值。 */
+/** 播放器内可选的本机播放速度，与落盘设置使用相同取值。 */
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const
 /** 「我的」页关于分区显示的版本号；读取失败时保持占位文案。 */
 const appVersion = ref('')
 const selected = ref<SavedMedia | null>(null)
+let downloadedPlaybackUrl = ''
+let downloadedNativeUrl = ''
+let downloadedPlaybackId = ''
+let offlineResumePosition = 0
+const nativePlaybackActive = ref(false)
+let media3Session: NativePlaybackSession | undefined
+let retainedNativeId = ''
+let nativePlaybackPosition: NativePlaybackProgress | undefined
+let nativeOpening: AbortController | undefined
+const downloadBusy = ref(false)
+const canDownloadCurrent = computed(() => {
+  if (!downloadsAvailable() || !selected.value || selected.value.url === downloadedPlaybackUrl) return false
+  try { validateDownloadUrl(activePlaybackUrl.value); return true } catch { return false }
+})
 const video = ref<HTMLVideoElement | null>(null)
 const playerStage = ref<HTMLDivElement | null>(null)
 const stageFullscreen = ref(false)
@@ -82,15 +115,216 @@ const menuAnchorStyle = computed(() => (menuAnchorRight.value === null
   : { marginRight: `${menuAnchorRight.value}px` }))
 const playerError = ref('')
 const sourceKeyword = ref('')
+const sourceKeywordInput = ref<HTMLInputElement | null>(null)
+function openSearchInput() {
+  sourceKeyword.value = ''
+  section.value = 'search'
+  void nextTick(() => sourceKeywordInput.value?.focus())
+}
 const sourceHits = ref<SourceHit[]>([])
 const failedCovers = ref(new Set<string>())
+const repositoryHits = ref<SourceHit[]>([])
+const repositoryLoading = ref(false)
+const repositoryNextPages = ref<Record<number, number>>({})
+const repositoryIsDirectory = ref(false)
+const repositoryTruncated = ref(false)
+const repositoryDisplayLimit = ref(40)
+const repositoryQuery = ref('')
+const repositoryOrder = ref<'source' | 'title'>('source')
+const repositorySortOpen = ref(false)
+const repositoryError = ref('')
+const repositoryCache = new Map<string, { hits: SourceHit[]; nextPages: Record<number, number>; directory: boolean; truncated: boolean; limit: number; expires: number }>()
+let repositoryRequest = 0
+const currentSubscription = computed(() => subscriptionState.value.items.find(item => item.url === subscriptionState.value.active))
+const usingSubscription = computed(() => !!currentSubscription.value)
+const sourcePicker = ref<HTMLDialogElement>()
+const pickingSource = ref('')
+const pickerError = ref('')
+let pickerIntent = 0
+function dismissSourcePicker() { pickerIntent++; pickingSource.value = ''; sourcePicker.value?.close() }
+const availableSourceChoices = computed(subscriptionChoices)
+async function chooseSubscription(url: string, sourceIndex?: number) {
+  pickingSource.value = url || 'builtin'; pickerError.value = ''
+  const intent = ++pickerIntent
+  try {
+    if (intent !== pickerIntent) return
+    selectSubscription(url, sourceIndex)
+    sourcePicker.value?.close()
+    const chosen = subscriptionState.value.items.find(item => item.url === url)
+    if (chosen && subscriptionNeedsRefresh(chosen)) void refreshSubscription(url).catch(() => {})
+  } catch { if (intent === pickerIntent) pickerError.value = '读取失败，请重试。当前来源未改变。' }
+  finally { if (intent === pickerIntent) pickingSource.value = '' }
+}
+function showSourcePicker() {
+  pickerError.value = ''; sourcePicker.value?.showModal()
+  for (const item of subscriptionState.value.items) if (subscriptionNeedsRefresh(item)) void refreshSubscription(item.url).catch(() => {})
+}
+const recentKeywords = ref(recentSearches(activeSubscriptionScope()))
+function clearSearchMemory() { clearRecentSearches(activeSubscriptionScope()); recentKeywords.value = [] }
+function removeSearchMemory(word: string) { recentKeywords.value = removeRecentSearch(activeSubscriptionScope(), word) }
+const sourceLabel = computed(() => availableSourceChoices.value.find(choice => choice.url === subscriptionState.value.active && choice.sourceIndex === activeSubscriptionSourceIndex())?.name || currentSubscription.value?.name || '樱花动漫')
+const personalPanel = ref<'subscriptions' | 'downloads' | 'storage' | 'backup' | 'diagnostics'>('subscriptions')
+const currentSourceStatus = computed(() => {
+  const item = currentSubscription.value
+  if (!item) return ''
+  const state = subscriptionRequests.value[item.url]
+  if (state?.loading) return item.content ? '更新中' : '读取中'
+  if (state?.error) return item.content ? '更新失败，使用缓存' : '读取失败，请重试'
+  if (!item.content) return '未读取，请重试'
+  return ''
+})
+function hitSourceLabel(hit: SourceHit) {
+  if (hit.sourceName) return hit.sourceName
+  try { return new URL(hit.sourceUrl).hostname } catch { return '来源未知' }
+}
+const searchSourceFilter = ref('')
+function searchSourceKey(hit: SourceHit) { return `${hit.sourceIndex ?? ''}\u0000${hitSourceLabel(hit)}` }
+const searchSourceGroups = computed(() => {
+  const groups = new Map<string, { key: string; name: string; count: number }>()
+  for (const hit of groupSearchVersions(sourceHits.value)) { const key = searchSourceKey(hit), group = groups.get(key); if (group) group.count++; else groups.set(key, { key, name: hitSourceLabel(hit), count: 1 }) }
+  return [...groups.values()]
+})
+const rejectedSearchVersions = ref(new Set<string>())
+const searchVersionChecks = createSearchVersionChecks({
+  preview: options => fetchPreview(options.sourceUrl, false, options.sourceContext),
+  resolve: (url, context) => androidSource.resolve(url, context),
+  onResult(result) {
+    if (result.status !== 'unsupported') return
+    rejectedSearchVersions.value = new Set(searchVersionChecks.rejectedKeys)
+  },
+})
+const groupedSearchHits = computed(() => groupSearchVersions(sourceHits.value))
+const visibleSourceHits = computed(() => searchSourceFilter.value ? groupedSearchHits.value.filter(hit => searchSourceKey(hit) === searchSourceFilter.value) : groupedSearchHits.value)
+function searchVersionNotice(group: SearchVersionGroup): string {
+  const unavailable = group.versions.filter(hit => rejectedSearchVersions.value.has(searchVersionKey(hit))).length
+  return unavailable === group.versions.length ? '播放地址待重试' : unavailable ? `${unavailable} 个版本待重试` : ''
+}
+async function watchSearchVersions(group: SearchVersionGroup) {
+  searchVersionChecks.cancel()
+  const versions = group.versions
+  const first = versions[0]
+  if (!first) return
+  await watchSearchResult(first.sourceUrl, undefined, versions.slice(1).map(hit => hit.sourceUrl), first)
+}
+const repositoryEntries = computed(() => {
+  const ranked = [...repositoryHits.value].filter(hit => hit.kind !== 'resource')
+    .filter(hit => hit.title.toLocaleLowerCase().includes(repositoryQuery.value.trim().toLocaleLowerCase()))
+    .sort((a, b) => repositoryOrder.value === 'title' ? a.title.localeCompare(b.title, 'zh-CN', { numeric: true }) : 0)
+  const seen = new Set<string>()
+  return ranked.filter(hit => { const key = titleKey(hit.title) || hit.sourceUrl; if (seen.has(key)) return false; seen.add(key); return true })
+})
+const displayedRepositoryEntries = computed(() => repositoryEntries.value.slice(0, repositoryDisplayLimit.value))
+const repositoryHasNextPage = computed(() => Object.keys(repositoryNextPages.value).length > 0)
+function showMoreRepository() {
+  if (repositoryDisplayLimit.value < repositoryEntries.value.length) {
+    repositoryDisplayLimit.value += 40
+    const cached = repositoryCache.get(activeSubscriptionScope())
+    if (cached) cached.limit = repositoryDisplayLimit.value
+    return
+  }
+  if (repositoryHasNextPage.value) void loadRepository(false, true)
+}
+watchValue(() => [...repositoryEntries.value, ...sourceHits.value].slice(0, 8).map(hit => displayCover(hit.title, hit.sourceUrl, hit.coverUrl)), covers => {
+  // 只为首屏最多四个封面主机建连；不预下载整页图片。
+  const origins = new Set<string>()
+  for (const cover of covers) {
+    try { const url = new URL(cover); if (url.protocol === 'https:' && origins.size < 4) origins.add(url.origin) } catch { /* 随包资源不需要建连 */ }
+  }
+  for (const origin of origins) warmMediaHost(origin)
+})
+async function loadRepository(refresh = false, more = false) {
+  const content = activeSubscriptionContent()
+  const scope = activeSubscriptionScope()
+  const request = ++repositoryRequest
+  if (!content) {
+    repositoryLoading.value = false
+    repositoryError.value = usingSubscription.value ? '来源未就绪，请重试。' : ''
+    return
+  }
+  repositoryLoading.value = true; repositoryError.value = ''
+  const cached = repositoryCache.get(scope)
+  if (!refresh && !more && cached && cached.expires > Date.now()) {
+    repositoryHits.value = [...cached.hits]
+    repositoryNextPages.value = { ...cached.nextPages }
+    repositoryIsDirectory.value = cached.directory
+    repositoryTruncated.value = cached.truncated
+    repositoryDisplayLimit.value = cached.limit
+    repositoryLoading.value = false
+    return
+  }
+  if (refresh || !more) { repositoryNextPages.value = {}; repositoryTruncated.value = false; repositoryDisplayLimit.value = 40 }
+  else repositoryDisplayLimit.value += 40
+  const publish = (result: SourceSearchResult) => {
+    if (request !== repositoryRequest || activeSubscriptionScope() !== scope) return
+    const merged = new Map(repositoryHits.value.map(hit => [sourceHitKey(hit), hit]))
+    for (const hit of result.hits) merged.set(sourceHitKey(hit), hit)
+    repositoryHits.value = [...merged.values()]
+  }
+  let repositoryComplete = false
+  try {
+    const capabilities = await androidRepository.capabilities(content, activeSubscriptionSourceIndex())
+    if (request !== repositoryRequest || activeSubscriptionScope() !== scope) return
+    const declared = capabilities.filter(capability => capability.repository && capability.search)
+    repositoryIsDirectory.value = declared.length > 0
+    if (declared.length) {
+      if (!more && request === repositoryRequest && activeSubscriptionScope() === scope) repositoryHits.value = []
+      const pending = declared.slice(0, 8).filter(capability => !more || repositoryNextPages.value[capability.sourceIndex])
+      let cursor = 0, failures = 0
+      const read = async () => {
+        while (cursor < pending.length && request === repositoryRequest && activeSubscriptionScope() === scope) {
+          const capability = pending[cursor++]!
+          try {
+            const page = await androidRepository.readPage({ content, sourceIndex: capability.sourceIndex, page: more ? repositoryNextPages.value[capability.sourceIndex] : 1 })
+            if (request !== repositoryRequest || activeSubscriptionScope() !== scope) return
+            publish({ hits: page.hits, warnings: page.warnings })
+            if (page.truncated) repositoryTruncated.value = true
+            if (page.warnings?.length) repositoryError.value = '部分来源暂不可用，可重试。'
+            if (page.hasMore && page.nextPage) repositoryNextPages.value[capability.sourceIndex] = page.nextPage
+            else delete repositoryNextPages.value[capability.sourceIndex]
+          } catch { failures++ }
+        }
+      }
+      await Promise.all([read(), read()])
+      if (failures && request === repositoryRequest) repositoryError.value = repositoryHits.value.length ? '部分来源未返回' : '目录读取失败，请重试'
+      repositoryComplete = failures === 0 && !repositoryError.value
+    } else {
+      if (more) return
+      // 未声明目录规则的来源继续使用受控搜索候选，不把搜索结果冒充完整目录。
+      const result = await androidSource.search({ keyword: '动漫', refresh, background: true }, publish)
+      publish(result)
+      if (result.warnings?.length && request === repositoryRequest) repositoryError.value = '部分来源暂不可用，可重试。'
+      repositoryComplete = !result.warnings?.length && (!result.total || result.completed === undefined || result.completed >= result.total)
+    }
+    if (request !== repositoryRequest) return
+    if (!repositoryEntries.value.length && !repositoryError.value) repositoryError.value = '暂无作品，试试搜索。'
+  } catch (cause) {
+    // 前台搜索抢占后台读取不是来源故障，保留已经得到的候选。
+    if (request === repositoryRequest && (cause as { code?: string })?.code !== 'E_SEARCH_CANCELLED') repositoryError.value = '订阅作品读取失败，请重试或搜索具体作品名。'
+  }
+  finally {
+    if (request === repositoryRequest && activeSubscriptionScope() === scope) {
+      repositoryLoading.value = false
+      if (repositoryComplete && repositoryHits.value.length && !repositoryError.value) {
+        repositoryCache.delete(scope)
+        repositoryCache.set(scope, { hits: [...repositoryHits.value], nextPages: { ...repositoryNextPages.value }, directory: repositoryIsDirectory.value, truncated: repositoryTruncated.value, limit: repositoryDisplayLimit.value, expires: Date.now() + 5 * 60_000 })
+        if (repositoryCache.size > 4) repositoryCache.delete(repositoryCache.keys().next().value!)
+      }
+    }
+  }
+}
+function openRepositoryHit(hit: SourceHit) {
+  detailReturn.value = section.value === 'library' ? 'library' : 'home'
+  void previewSource(hit.sourceUrl, false, hit)
+}
 const sourcePreview = ref<SourcePreview | null>(null)
 const sourceLoading = ref(false)
+const searchLoading = ref(false)
+const searchProgress = ref('')
 /** 是否真的搜过：没搜过就不该显示「没有找到匹配作品」。 */
 const sourceSearched = ref(false)
 const sourceError = ref('')
 const activeEpisodeId = ref('direct')
-const activeEpisodeTitle = ref('直链媒体')
+const activeEpisodeTitle = ref('视频')
 const activeLineId = ref('main')
 const qualityLevels = ref<{ index: number; label: string; fps: number | null }[]>([])
 const chosenQuality = ref(-1)
@@ -143,6 +377,8 @@ const chromeVisible = ref(true)
 const playbackEnded = ref(false)
 /** 首帧到达前保留封面，避免刚进播放器就看到纯黑画面。 */
 const hasFirstFrame = ref(false)
+let playbackObservation: ReturnType<typeof createPlaybackObservation> | undefined
+let releaseSystemPlayback: (() => void) | undefined
 const lineNotice = ref('')
 const enhancementState = ref<'idle' | 'starting' | 'active' | 'failed'>('idle')
 const enhancementStats = ref<InterpolationStats | null>(null)
@@ -223,9 +459,12 @@ let volumeChangeHandler: (() => void) | null = null
  * 命中时沿用原传输耗时上报，避免内存命中把 ABR 带宽估计抬高。
  */
 let fragmentCacheHandle: ReturnType<typeof createFragmentCache> | null = null
-function androidFragmentCache(HlsConstructor: Parameters<typeof createFragmentCache>[0]) {
+let fragmentCacheScope = ''
+function androidFragmentCache(HlsConstructor: Parameters<typeof createFragmentCache>[0], loader?: import('hls.js').HlsConfig['loader'], scope = '') {
+  if (scope !== fragmentCacheScope) { fragmentCacheHandle?.clear(); fragmentCacheHandle = null; fragmentCacheScope = scope }
   if (!fragmentCacheHandle) {
-    fragmentCacheHandle = createFragmentCache(HlsConstructor, () => !hls?.latestLevelDetails?.live, 64 * 1024 * 1024)
+    const runtime = loader ? { DefaultConfig: { ...HlsConstructor.DefaultConfig, loader } } as typeof HlsConstructor : HlsConstructor
+    fragmentCacheHandle = createFragmentCache(runtime, () => !hls?.latestLevelDetails?.live, 64 * 1024 * 1024)
   }
   return fragmentCacheHandle
 }
@@ -261,7 +500,6 @@ let chromeTimer: number | undefined
 const lineFallbackTried = new Set<string>()
 const previewCache = new Map<string, { expires: number; value: SourcePreview }>()
 const previewPending = new Map<string, Promise<SourcePreview>>()
-const searchCache = new Map<string, { expires: number; hits: SourceHit[] }>()
 /** 当前列表对应的关键词：同一关键词重复搜索时先不清空列表，避免中途看起来“搜不到”。 */
 let lastHitsKeyword = ''
 let lastSavedAt = 0
@@ -284,22 +522,34 @@ watchValue([filter, keyword], () => { page.value = 1 })
 watchValue(pageCount, (count) => { page.value = Math.min(page.value, count) })
 /** 上一次所在分区：从详情返回搜索结果要保留列表，只有重新点搜索入口才算新检索。 */
 let previousSection = section.value
+const sectionScroll = new Map<string, number>()
+let navigationRevision = 0
 watchValue(section, (next) => {
+  sectionScroll.set(previousSection, window.scrollY)
+  const revision = ++navigationRevision
+  void nextTick().then(() => { if (revision === navigationRevision) window.scrollTo({ top: next === 'detail' ? 0 : sectionScroll.get(next) || 0, behavior: 'instant' }) })
   if (next === 'history' || next === 'home') void reloadHistory()
+  if (previousSection === 'detail' && next === 'search') sourceError.value = ''
   // 重新进搜索页（而不是从详情返回）等于开一次新检索：上一次的关键词、结果与空态都不再保留。
-  if (next === 'search' && previousSection !== 'detail') resetSearch()
+  // 跨分区回来保留当前检索，订阅切换负责清掉旧作用域。
   previousSection = next
-  if (next !== 'detail' && watchPage.value) { watchPage.value = false; if (selected.value) void closePlayer() }
+  if (next !== 'detail' && (watchPage.value || selected.value)) { watchPage.value = false; if (selected.value) void closePlayer() }
 })
 
-/** 输入即搜：停止输入 420ms 后自动检索；同一关键词不重复打来源。 */
+/** 输入即搜：停止输入 280ms 后自动检索；同一关键词不重复打来源。 */
 watchValue(sourceKeyword, (value) => {
   if (searchTimer) clearTimeout(searchTimer)
   const keyword = value.trim().toLocaleLowerCase()
-  if (!keyword || keyword === lastHitsKeyword) return
-  searchTimer = setTimeout(() => { searchTimer = null; void searchSources() }, 420)
+  if (!keyword) {
+    searchRequest++; searchLoading.value = false; searchInFlightKeyword = ''
+    sourceHits.value = []; sourceSearched.value = false; sourceError.value = ''; searchProgress.value = ''
+    return
+  }
+  if (`${activeSubscriptionScope()}\u0000${keyword}` === lastHitsKeyword) return
+  searchTimer = setTimeout(() => { searchTimer = null; void searchSources() }, 280)
 })
-const previewSaved = computed(() => items.value.find((item) => item.url === sourcePreview.value?.sourceUrl))
+const previewSaved = computed(() => items.value.find(item => item.url === sourcePreview.value?.sourceUrl
+  && sourceCacheKey(item.url, item.sourceContext ?? savedSourceContext(`saved:${item.id}`) ?? { content: '' }) === sourceCacheKey(item.url, sourcePreview.value?.sourceContext)))
 const previewCover = computed(() => sourcePreview.value ? displayCover(sourcePreview.value.title, sourcePreview.value.sourceUrl, sourcePreview.value.coverUrl) : '')
 /** 播放器底图优先用已保存作品封面，其次当前来源预览封面，最后按标题回退随包封面。 */
 const playerArtwork = computed(() => {
@@ -318,7 +568,24 @@ const alternateMovieSource = computed(() => {
   return primary
 })
 const alternateSourceLabel = computed(() => sourcePreview.value?.sourceUrl === sourceTried.value[0] ? '切换备用来源' : '返回原来源')
-const playerEpisodes = computed(() => sourcePreview.value && selected.value?.url === sourcePreview.value.sourceUrl ? sourcePreview.value.episodes : [])
+function belongsToActiveSubscription(context?: SourceContext) {
+  if (!usingSubscription.value) return true
+  const content = activeSubscriptionContent()
+  return !!content && context?.content === content && context.sourceIndex === activeSubscriptionSourceIndex()
+}
+const currentPreviewEpisodes = computed(() => {
+  const preview = sourcePreview.value
+  if (!preview || !belongsToActiveSubscription(preview.sourceContext)) return []
+  const seen = new Set<string>()
+  return preview.episodes.filter((episode) => {
+    if (!belongsToActiveSubscription(episode.sourceContext ?? preview.sourceContext)) return false
+    const key = `${episode.lineId || 'main'}\u0000${episode.sourceUrl || episode.id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+})
+const playerEpisodes = computed(() => sourcePreview.value && selected.value?.url === sourcePreview.value.sourceUrl ? currentPreviewEpisodes.value : [])
 function episodeNumberKey(episode: SourceEpisode): string {
   try {
     const path = new URL(episode.sourceUrl || episode.id).pathname.replace(/\/$/, '')
@@ -332,13 +599,30 @@ function episodeRouteKey(episode: SourceEpisode): string {
     return path.match(/^\/v\/[^/]+-(\d+)-\d+$/)?.[1] || episode.lineId || 'main'
   } catch { return episode.lineId || 'main' }
 }
-/** 同一作品内可尝试的其他线路：同集不同线路优先，其次同标题，最后同作品其他条目。 */
+/** 只认同集身份；无法确定集数时不把其他条目当作可自动接管的线路。 */
+function sameEpisode(left: SourceEpisode, right: SourceEpisode): boolean {
+  if (left.id === right.id) return true
+  // 随包电影可能把不同配音线路标成「第 1 集／第 2 集」；单片身份明确时按线路处理。
+  if (movieLike.value && episodeSortNumber(left) === null) return true
+  const leftNumber = episodeSortNumber(left)
+  const rightNumber = episodeSortNumber(right)
+  if (leftNumber !== null || rightNumber !== null) return leftNumber !== null && leftNumber === rightNumber
+  return movieLike.value || Boolean(left.title.trim() && left.title.trim() === right.title.trim())
+}
+
+function activeSourceEpisode(): SourceEpisode {
+  return playerEpisodes.value.find((episode) => episode.id === activeEpisodeId.value && (episode.lineId || 'main') === activeLineId.value)
+    ?? { id: activeEpisodeId.value, title: activeEpisodeTitle.value, sourceUrl: activeEpisodeId.value, playbackUrl: '', mimeType: '', lineId: activeLineId.value }
+}
+
+/** 同一作品同一集的其他线路，不用下一集兜底播放失败。 */
 const alternatePlayableEpisodes = computed(() => {
-  const active = { id: activeEpisodeId.value, title: activeEpisodeTitle.value, sourceUrl: activeEpisodeId.value, playbackUrl: '', mimeType: '', lineId: activeLineId.value }
+  const active = activeSourceEpisode()
   const activeNumber = episodeNumberKey(active)
   const activeRoute = episodeRouteKey(active)
   return playerEpisodes.value
-    .filter((episode) => episode.id !== activeEpisodeId.value && !!episode.sourceUrl)
+    .filter((episode) => (episode.id !== activeEpisodeId.value || (episode.lineId || 'main') !== activeLineId.value)
+      && !!(episode.sourceUrl || episode.playbackUrl) && sameEpisode(active, episode))
     .map((episode) => ({
       episode,
       rank: episodeNumberKey(episode) === activeNumber && episodeRouteKey(episode) !== activeRoute ? 0 : episode.title === active.title ? 1 : 2,
@@ -367,7 +651,7 @@ function lineGroupName(entries: SourceEpisode[], index: number): string {
 
 const episodeSections = computed(() => {
   const groups = new Map<string, SourceEpisode[]>()
-  for (const episode of sourcePreview.value?.episodes ?? []) {
+  for (const episode of currentPreviewEpisodes.value) {
     const key = episodeGroupKey(episode)
     groups.set(key, [...(groups.get(key) ?? []), episode])
   }
@@ -411,6 +695,37 @@ const episodeGroups = computed(() => {
   })
 })
 
+const selectedEpisodeGroup = ref('')
+const episodePage = ref(0)
+const episodeDescending = ref(false)
+const detailGroup = computed(() => episodeGroups.value.find(group => group.key === selectedEpisodeGroup.value) || episodeGroups.value[0])
+const detailEpisodeList = computed(() => episodeDescending.value ? [...(detailGroup.value?.episodes || [])].reverse() : detailGroup.value?.episodes || [])
+const detailEpisodes = computed(() => detailEpisodeList.value.slice(episodePage.value * 30, (episodePage.value + 1) * 30))
+watchValue(episodeGroups, () => { selectedEpisodeGroup.value = ''; episodePage.value = 0 })
+watchValue([activeEpisodeId, activeLineId], () => {
+  const group = episodeGroups.value.find(group => group.episodes.some(episode => episode.id === activeEpisodeId.value && (episode.lineId || 'main') === activeLineId.value))
+  if (group) {
+    selectedEpisodeGroup.value = group.key
+    const index = detailEpisodeList.value.findIndex(episode => episode.id === activeEpisodeId.value && (episode.lineId || 'main') === activeLineId.value)
+    episodePage.value = Math.max(0, Math.floor(index / 30))
+  }
+})
+function chooseEpisodeGroup(key: string) { selectedEpisodeGroup.value = key; episodePage.value = 0 }
+const previewResume = computed(() => history.value.filter(entry => entry.mediaUrl === sourcePreview.value?.sourceUrl && sameHistorySource(entry.sourceContext, sourcePreview.value?.sourceContext) && !entry.completed && entry.positionSeconds > 0).sort((a, b) => b.updatedAt - a.updatedAt)[0])
+async function playPreviewPrimary() {
+  if (previewResume.value) { await continueWatching(previewResume.value); return }
+  const episode = detailGroup.value?.episodes[0]
+  if (episode) await playSourceEpisode(episode)
+}
+const homeContinue = computed(() => {
+  const content = activeSubscriptionContent(), seen = new Set<string>()
+  return history.value.filter(entry => {
+    if (entry.completed || entry.positionSeconds <= 0 || (entry.sourceContext?.content || '') !== content) return false
+    const key = `${entry.sourceKey || ''}\u0000${entry.mediaUrl}`
+    if (seen.has(key)) return false
+    seen.add(key); return true
+  }).slice(0, 6)
+})
 /**
  * 选集按钮文案：只写这一条线路里的集数或条目名（线路归属由分组名表示），
  * 同一条线路内部重名时才补序号。
@@ -440,9 +755,9 @@ function episodeLabel(episode: SourceEpisode): string {
 }
 /** 播放结束后的“下一集”：只在当前分组内按来源顺序推进，不跨作品或跨线路挑片。 */
 const nextEpisode = computed(() => {
-  const group = episodeGroups.value.find((entry) => entry.episodes.some((candidate) => candidate.id === activeEpisodeId.value))
+  const group = episodeGroups.value.find((entry) => entry.episodes.some((candidate) => candidate.id === activeEpisodeId.value && (candidate.lineId || 'main') === activeLineId.value))
   if (!group) return null
-  const index = group.episodes.findIndex((candidate) => candidate.id === activeEpisodeId.value)
+  const index = group.episodes.findIndex((candidate) => candidate.id === activeEpisodeId.value && (candidate.lineId || 'main') === activeLineId.value)
   return group.episodes[index + 1] ?? null
 })
 /** 剧集用“下一集”，电影的多语言/多线路条目用“继续”，避免把线路当成集数。 */
@@ -461,18 +776,13 @@ const snapshotSchedule = scheduleFromSnapshot(catalogSnapshot)
  */
 const snapshotLineCount = catalogSnapshot.reduce((total, entry) => total + entry.lines.length, 0)
 const displayText = (value: string) => value.replace(/樱花动漫/g, '公开来源')
-/** 页面小标题：每个分区自己的定位，不再让所有页面共用一句「动漫发现工作区 / 探索」。 */
-const pageKicker = computed(() => {
-  switch (section.value) {
-    case 'search': return '公开来源 · 检索'
-    case 'library': return '本机片库 · 收藏'
-    case 'schedule': return '更新日历 · 随包快照'
-    case 'history': return '观看足迹 · 继续播放'
-    case 'settings': return '我的空间 · 播放与数据'
-    case 'detail': return watchPage.value ? '正在观看 · 来源详情' : '作品档案 · 来源详情'
-    default: return '三叶动漫 · 安卓版'
-  }
-})
+/** 仅统一来源明确给出的纯集号；线路名、字幕及特殊篇名保持原文。 */
+function episodeDisplayText(value: string): string {
+  const title = displayText(value).trim()
+  if (title === '直链媒体') return '视频'
+  const number = title.match(/^(?:第\s*|EP\s*|E\s*)?([0-9]+)\s*(?:集|话)?$/i)?.[1]
+  return number ? `第${Number(number)}集` : title
+}
 const availableFps = computed(() => [...new Set(qualityLevels.value.map((level) => level.fps).filter((fps): fps is number => fps !== null))].sort((a, b) => a - b))
 /**
  * 画质档只列手机能稳定运行的档位（VQ-45）：超分 2×（4 倍像素）、锐化（CNN_M）与
@@ -503,7 +813,7 @@ const effectiveFrameOption = computed<FrameRateTarget | null>(() => {
 
 function isFrameOptionActive(value: FrameRateTarget | 'off') {
   const effective = effectiveFrameOption.value
-  return effective === null ? frameTarget.value === value : effective === value
+  return value === 'off' ? frameTarget.value === 'off' : effective !== null && effective === value
 }
 const qualityPending = computed(() => chosenQuality.value >= 0 && activeLevel.value !== chosenQuality.value)
 const fpsPending = computed(() => chosenFps.value !== 'auto' && qualityLevels.value[activeLevel.value]?.fps !== Number(chosenFps.value))
@@ -529,10 +839,11 @@ function episodeMediaType(episode: SourceEpisode): MediaType | null {
 
 function applyStreamSelection() {
   if (!hls) return
-  // A frame-rate choice must pin a real rendition. HLS ABR cannot filter by FPS alone.
   const level = chosenQuality.value
-  // currentLevel pins the rendition and flushes incompatible buffered fragments.
-  hls.currentLevel = level
+  // 所有切档均保留正在播放的分片；自动档也由下一片接管，避免清空当前缓冲。
+  if (hls.manualLevel === level) return
+  if (!hasFirstFrame.value) hls.loadLevel = level
+  else hls.nextLevel = level
 }
 
 function fallbackKey(episode: SourceEpisode): string {
@@ -586,8 +897,9 @@ function bundledWorkFor(title?: string, sourceUrl = ''): CatalogSnapshotItem | u
     ? catalogSnapshot.find((item) => item.lines.length
       && (item.sourceUrl === sourceUrl || (identity !== '' && sourceWorkIdentity(item.sourceUrl) === identity)))
     : undefined
-  if (bySource) return bySource
   const key = titleKey(title)
+  // 地址可能被来源复用；明确标题冲突时不能借旧目录把特别篇切成另一季。
+  if (bySource && (!key || titleKey(bySource.title) === key)) return bySource
   return key ? catalogSnapshot.find((item) => item.lines.length && titleKey(item.title) === key) : undefined
 }
 
@@ -630,6 +942,7 @@ async function playBundledEpisode(work: CatalogSnapshotItem, episode?: SourceEpi
 async function switchToBundledLine(): Promise<boolean> {
   const next = bundledPool.value.find((episode) => episode.playbackUrl
     && episode.playbackUrl !== activePlaybackUrl.value
+    && sameEpisode(activeSourceEpisode(), episode)
     && !lineFallbackTried.has(fallbackKey(episode)))
   if (!next) return false
   lineFallbackTried.add(fallbackKey(next))
@@ -642,6 +955,8 @@ async function switchToBundledLine(): Promise<boolean> {
 
 /** 线路失败时自动尝试同作品的其他候选线路，并给出可见提示，不静默换成其他作品。 */
 async function handlePlaybackFailure(message: string) {
+  playbackObservation?.failure()
+  lineFallbackTried.add(fallbackKey(activeSourceEpisode()))
   // 外站线路失败时先回退随包已有线路（与 PC 端口径一致）：同一个失效来源上的其他候选
   // 经常是同一批 CDN，逐条重试只会白白拖时间，用户看到的就是“点了没反应”。
   const activeIsBundled = bundledPool.value.some((episode) => episode.playbackUrl && episode.playbackUrl === activePlaybackUrl.value)
@@ -650,7 +965,7 @@ async function handlePlaybackFailure(message: string) {
   if (!candidate) {
     // 同来源的线路都试过之后，已有线路可直接接管时静默切换（与 PC 端口径一致，不显示失败）。
     if (await switchToBundledLine()) return
-    if (await tryNextSource()) return
+    if (sourceQueue.value.length && await tryNextSource()) return
     playerError.value = message
     return
   }
@@ -667,16 +982,19 @@ let stallTimer: number | undefined
  * 这里在 waiting 时起表，每次 timeupdate 清表；超时仍未前进就按线路失败处理（换线/接管）。
  */
 let playbackStallTimer: number | undefined
+let playbackStallPosition = 0
 function clearPlaybackStallWatchdog() {
   if (playbackStallTimer !== undefined) window.clearTimeout(playbackStallTimer)
   playbackStallTimer = undefined
 }
 function armPlaybackStallWatchdog() {
-  if (playbackStallTimer !== undefined) return
+  const element = video.value
+  if (playbackStallTimer !== undefined || !element || element.paused || element.seeking || seekingPlayback.value || !hasFirstFrame.value) return
+  playbackStallPosition = element.currentTime
   playbackStallTimer = window.setTimeout(() => {
     playbackStallTimer = undefined
-    if (!hasFirstFrame.value || playerError.value || playbackEnded.value || !video.value) return
-    void handlePlaybackFailure('当前线路长时间没有画面，已尝试其他线路；请检查网络或稍后重试。')
+    if (!hasFirstFrame.value || playerError.value || playbackEnded.value || video.value !== element || element.paused || element.seeking || seekingPlayback.value || element.currentTime > playbackStallPosition + 0.05) return
+    void handlePlaybackFailure('播放等待时间过长，请换条线路或重试。')
   }, 12_000)
 }
 function clearStallWatchdog() {
@@ -703,7 +1021,7 @@ function armStallWatchdog(generation: number) {
       lineNotice.value = '线路较慢，正在继续加载…'
       stallTimer = window.setTimeout(() => {
         if (generation !== playbackGeneration || hasFirstFrame.value || playerError.value) return
-        void handlePlaybackFailure('当前线路长时间没有画面，已尝试其他线路；请检查网络或稍后重试。')
+        void handlePlaybackFailure('播放等待时间过长，请换条线路或重试。')
       }, 10_000)
     }, 10_000)
     return
@@ -713,7 +1031,7 @@ function armStallWatchdog(generation: number) {
     lineNotice.value = '线路较慢，正在继续加载…'
     stallTimer = window.setTimeout(() => {
       if (generation !== playbackGeneration || hasFirstFrame.value || playerError.value) return
-      void handlePlaybackFailure('当前线路长时间没有画面，已尝试其他线路；请检查网络或稍后重试。')
+      void handlePlaybackFailure('播放等待时间过长，请换条线路或重试。')
     }, 18_000)
   }, 12_000)
 }
@@ -731,30 +1049,32 @@ async function retryCurrentLine() {
   // 这类线路的重试就是从原直链重建一次播放会话。
   if (!episode.sourceUrl) {
     if (episode.playbackUrl) { await playSourceEpisode({ ...episode }); return }
-    sourceError.value = '这条线路没有可重试的来源地址，请在选集里换一条线路。'
+    sourceError.value = '这条线路无法重试，请在选集里换条线路。'
     return
   }
   const sourceUrl = episode.sourceUrl
-  previewCache.delete(sourceUrl)
+  previewCache.delete(sourceCacheKey(sourceUrl))
   await playSourceEpisode({ ...episode, playbackUrl: '', sourceUrl }, activeLineId.value === 'main' ? undefined : activeLineId.value)
 }
 
 function changeQuality(value: string) {
-  chosenQuality.value = Number(value)
+  const level = Number(value)
+  if (!Number.isInteger(level) || (level !== -1 && !qualityLevels.value.some((entry) => entry.index === level))) return
+  chosenQuality.value = level
   if (chosenQuality.value < 0) chosenFps.value = 'auto'
   else if (chosenFps.value !== 'auto') chosenFps.value = String(qualityLevels.value[chosenQuality.value]?.fps ?? 'auto')
   applyStreamSelection()
 }
 function changeFps(value: string) {
-  chosenFps.value = value
   if (value !== 'auto') {
     const choices = qualityLevels.value.filter((level) => level.fps === Number(value))
+    if (!choices.length) return
     if (!choices.some((level) => level.index === chosenQuality.value)) {
       const best = choices.sort((left, right) => (hls?.levels[right.index]?.bitrate ?? 0) - (hls?.levels[left.index]?.bitrate ?? 0))[0]
-      if (!best) return
       chosenQuality.value = best.index
     }
   }
+  chosenFps.value = value
   applyStreamSelection()
 }
 
@@ -837,11 +1157,11 @@ async function applyEnhancement() {
         if (request !== enhancementRequest) return
         const previous = enhancementStats.value
         enhancementStats.value = stats
-        showQualityNotice(adaptationNotice.next(previous, stats, performance.now()))
+        if (adaptationNotice.next(previous, stats, performance.now())) showQualityNotice('已调整画面，让播放更流畅')
         guardMotionBackend(stats)
         publishPlaybackStability(stats)
       },
-      onError: (message) => {
+      onError: () => {
         if (request !== enhancementRequest) return
         // 先降一档重试一次，再考虑退回原画（VQ-53）。
         if (retryWithLighterProfile()) return
@@ -849,14 +1169,14 @@ async function applyEnhancement() {
         // 档位是用户的意图：失败只提示一次并停下本次会话，不再把档位悄悄改回关闭
         //（用户看到的是「优化去哪了」）。用户再点一次档位即可重试。
         enhancementState.value = 'failed'
-        notifyOnce(message || '当前设备或片源不支持实时增强，本次以原始画面播放。')
+        notifyOnce('画面优化暂不可用，已恢复原画；可重新选择档位。')
       },
     })
     if (request !== enhancementRequest || element !== video.value) { session.stop(); return }
     enhancementSession = session
     sessionInterpolating = wantInterpolation
     enhancementState.value = 'active'
-  } catch (cause) {
+  } catch {
     if (request !== enhancementRequest) return
     // 会话可能在抛错前已经把画面切到增强画布（类名由会话切换），这里显式清掉，
     // 否则失败后画面会停在增强画布上，表现为一块黑画面。
@@ -864,11 +1184,12 @@ async function applyEnhancement() {
     // 初始化失败同样先降一档重试一次（VQ-53）。
     if (retryWithLighterProfile()) return
     enhancementState.value = 'failed'
-    notifyOnce(cause instanceof Error ? cause.message : '当前设备或片源不支持实时增强，本次以原始画面播放。')
+    notifyOnce('画面优化暂不可用，已恢复原画；可重新选择档位。')
   }
 }
 
 function changeQualityProfile(value: Anime4KProfile | 'off') {
+  if (qualityProfile.value === value && enhancementState.value !== 'failed') return
   qualityProfile.value = value
   // 用户重新选档即重新给 GPU 一次机会：护栏只在判定波动后按本次运行收回，稳定模式也一并复位。
   forceCpuFlowBackend = false
@@ -887,7 +1208,9 @@ function frameTargetSetting(value: FrameRateTarget | 'off'): FrameTargetSetting 
 }
 
 function changeFrameTarget(value: FrameRateTarget | 'off') {
+  if (frameTarget.value === value && enhancementState.value !== 'failed') return
   frameTarget.value = value
+  enhancementStats.value = null
   forceCpuFlowBackend = false
   flowConservative = false
   void updateSettings({ frameTarget: frameTargetSetting(value) })
@@ -943,10 +1266,10 @@ function guardMotionBackend(stats: InterpolationStats) {
   if (!verdict) return
   if (verdict === 'retry') {
     flowConservative = true
-    showQualityNotice('运动估计已切到稳定模式')
+    showQualityNotice('已调整画面，让播放更稳定')
   } else {
     forceCpuFlowBackend = true
-    showQualityNotice('检测到画面波动，运动估计已回到 CPU 光流')
+    showQualityNotice('画面不稳，已调整播放方式')
   }
   // 统计回调来自渲染 Worker：直接重启会终止正在处理消息的会话，放到下一个任务再执行。
   window.setTimeout(() => {
@@ -956,18 +1279,29 @@ function guardMotionBackend(stats: InterpolationStats) {
 }
 
 async function switchToFallbackLine() {
-  const candidate = alternatePlayableEpisodes.value[0]
+  const candidate = alternatePlayableEpisodes.value.find(episode => !lineFallbackTried.has(fallbackKey(episode)))
   if (!candidate) {
     playerError.value = '当前选集没有其他可用线路。'
     return
   }
   playerError.value = ''
+  lineFallbackTried.add(fallbackKey(candidate))
   await playSourceEpisode(candidate)
 }
 
 function onPlayerPlay() {
+  const element = video.value
+  const observation = playbackObservation
+  if (element?.requestVideoFrameCallback) element.requestVideoFrameCallback(() => {
+    if (video.value === element && playbackObservation === observation && !element.paused && !element.seeking) {
+      observation?.firstFrame()
+      onFirstFrame()
+    }
+  })
   playing.value = true
-  hasFirstFrame.value = true
+  playerError.value = ''
+  sourceError.value = ''
+  if (lineNotice.value === '线路较慢，正在继续加载…') lineNotice.value = ''
   // 起播即撤掉「已从后台返回」的提示（VQ-62）：这条提示的前提是画面停着，
   // 真正播起来之后还留着它会让用户以为还需要再点一次。
   backgroundPaused.value = false
@@ -979,6 +1313,12 @@ function onPlayerPlay() {
 
 /** 首帧数据就绪：撤掉封面并结束起播等待。 */
 function onFirstFrame() {
+  // loadeddata 可能是定位前的旧帧；续播/拖动还在 seeking 时保留等待保护。
+  if (video.value?.seeking) return
+  // 邻集预热要等当前集拿到画面，避免与首片争用同一来源连接。
+  const warm = pendingAdjacentWarm
+  pendingAdjacentWarm = null
+  warm?.()
   hasFirstFrame.value = true
   buffering.value = false
   switchingLine.value = false
@@ -988,18 +1328,21 @@ function onFirstFrame() {
   if (!video.value?.paused) backgroundPaused.value = false
   clearStallWatchdog()
   clearPlaybackStallWatchdog()
+  if (!video.value?.paused) armPlaybackStallWatchdog()
   syncPlaybackDuration()
 }
 
 /** 首帧之后的缓冲/卡顿（VQ-61）：给舞台内提示并起看门狗，恢复播放时由 timeupdate 清掉。 */
 function onVideoWaiting() {
-  if (!hasFirstFrame.value || playerError.value) return
+  if (!hasFirstFrame.value || playerError.value || video.value?.paused || video.value?.seeking || seekingPlayback.value) return
+  playbackObservation?.waiting()
   buffering.value = true
   armPlaybackStallWatchdog()
 }
 
 /** 播放错误：起播失败自动换线路，已经出画面的中途错误只提示，不打断当前内容。 */
 function onVideoError(message: string) {
+  playbackObservation?.failure()
   clearStallWatchdog()
   clearPlaybackStallWatchdog()
   buffering.value = false
@@ -1057,11 +1400,20 @@ function onFullscreenChange() {
   }
   if (!stageFullscreen.value) { chromeMenu.value = null; void screen.orientation?.unlock?.(); setNativeLandscape(false); setNativeImmersive(false) }
 }
+function currentStreamQualityNotice() {
+  if (!hls) return '此片源没有可切换的清晰度档位；画面增强不会改变片源码率。'
+  if (!qualityLevels.value.length || activeLevel.value < 0) return '正在确认片源的实际清晰度。'
+  const current = qualityLevels.value[activeLevel.value]?.label ?? '未知档位'
+  const highest = [...hls.levels].sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bitrate || 0) - (a.bitrate || 0))[0]
+  const maximum = highest?.height ? `${highest.height}P` : '未知'
+  return `当前片源 ${current}；最高 ${maximum}；${chosenQuality.value < 0 ? '自动选档' : '手动选档'}。`
+}
 /** 浮层右缘与触发按钮文字的右缘对齐：位置和宽度都跟着这颗按钮，不额外占位。 */
 function toggleChromeMenu(menu: 'quality' | 'fps' | 'episodes' | 'volume', event?: MouseEvent) {
   const next = chromeMenu.value === menu ? null : menu
   chromeMenu.value = next
   if (!next) { scheduleChromeHide(); return }
+  if (next === 'quality') showQualityNotice(currentStreamQualityNotice())
   chromeVisible.value = true
   clearChromeTimer()
   const button = (event?.currentTarget as HTMLElement | null) ?? null
@@ -1135,11 +1487,13 @@ function savedCover(item: SavedMedia): string {
 }
 
 function displayCover(title: string, sourceUrl: string, remote = ''): string {
+  // 当前订阅的作品不得借用随包同名作品的图片。
+  if (usingSubscription.value) return remote && !failedCovers.value.has(remote) ? remote : ''
   // 随包封面只在作品身份一致时使用：先比对来源地址，再按归一化标题比对同名作品
   //（来源标题常只差标点，例如「你的名字。」与随包目录的「你的名字」）。
   const key = titleKey(title)
   const known = catalogSnapshot.find((item) => item.sourceUrl === sourceUrl || (key && titleKey(item.title) === key))
-  return known?.coverUrl || remote
+  return [known?.coverUrl, remote].find(url => url && !failedCovers.value.has(url)) || ''
 }
 
 /**
@@ -1147,19 +1501,64 @@ function displayCover(title: string, sourceUrl: string, remote = ''): string {
  * 最后用随包占位图——历史卡片没有独立的「暂无封面」占位块，缺图时必须是可渲染的图片。
  */
 function historyCover(entry: WatchHistory): string {
-  if (entry.coverUrl) return entry.coverUrl
-  const known = displayCover(entry.title, entry.mediaUrl)
+  if (entry.coverUrl && !failedCovers.value.has(entry.coverUrl)) return entry.coverUrl
+  const recovered = recoveredHistoryCovers.value.get(historySourceBindingKey(entry))
+  if (recovered && !failedCovers.value.has(recovered)) return recovered
+  const sourceHit = [...sourceHits.value, ...repositoryHits.value].find(hit =>
+    (hit.sourceUrl === entry.mediaUrl || titleKey(hit.title) === titleKey(entry.title))
+      && sameHistorySource(hit.sourceContext, entry.sourceContext))
+  if (sourceHit?.coverUrl && !failedCovers.value.has(sourceHit.coverUrl)) return sourceHit.coverUrl
+  if (sourcePreview.value && sameHistorySource(sourcePreview.value.sourceContext, entry.sourceContext)
+      && (sourcePreview.value.sourceUrl === entry.mediaUrl || titleKey(sourcePreview.value.title) === titleKey(entry.title))) {
+    if (sourcePreview.value.coverUrl && !failedCovers.value.has(sourcePreview.value.coverUrl)) return sourcePreview.value.coverUrl
+  }
+  const known = entry.sourceContext?.content ? '' : catalogSnapshot.find(item => item.sourceUrl === entry.mediaUrl || titleKey(item.title) === titleKey(entry.title))?.coverUrl
   if (known) return known
   // 旧记录（封面字段还没落盘的时代）用同一部作品在片库里的封面补上，最后才用随包占位图。
-  const saved = items.value.find((item) => item.url === entry.mediaUrl
-    || (!!titleKey(item.title) && titleKey(item.title) === titleKey(entry.title)))
-  return saved ? savedCover(saved) : placeholderCover
+  const saved = items.value.find((item) => sameHistorySource(item.sourceContext, entry.sourceContext)
+    && (item.url === entry.mediaUrl || (!!titleKey(item.title) && titleKey(item.title) === titleKey(entry.title))))
+  return saved?.coverUrl || placeholderCover
+}
+const recoveredHistoryCovers = ref(new Map<string, string>())
+const historyCoverAttempts = new Set<string>()
+async function recoverHistoryCovers() {
+  const entries = history.value.filter(entry => (!entry.coverUrl || failedCovers.value.has(entry.coverUrl)) && entry.sourceContext?.content
+    && !historyCoverAttempts.has(historySourceBindingKey(entry))).slice(0, 12)
+  let index = 0
+  const read = async () => {
+    while (index < entries.length) {
+      const entry = entries[index++]!
+      const key = historySourceBindingKey(entry)
+      historyCoverAttempts.add(key)
+      try {
+        let cover = ''
+        if (!mediaType(entry.mediaUrl)) {
+          try {
+            const preview = await fetchPreview(entry.mediaUrl, false, entry.sourceContext)
+            if (!preview.title || titleKey(preview.title) === titleKey(entry.title)) cover = preview.coverUrl
+          } catch { /* 来源详情失效时再查当前同源作品。 */ }
+        }
+        // 历史记录保存的是媒体直链，不能把它当来源详情页重新解析；当前订阅仍可用作品标题补一次同源搜索。
+        if (!cover && (entry.sourceContext?.content || '') === (activeSubscriptionContent() || '')) {
+          const result = await withNativeTimeout(androidSource.search({ keyword: entry.title, background: true }), 8_000)
+          const hit = result.hits.find(candidate => titleKey(candidate.title) === titleKey(entry.title)
+            && sameHistorySource(candidate.sourceContext, entry.sourceContext))
+          cover = hit?.coverUrl || ''
+        }
+        if (cover && history.value.some(item => historySourceBindingKey(item) === key)) {
+          recoveredHistoryCovers.value = new Map(recoveredHistoryCovers.value).set(key, cover)
+          startCoverCache(cover)
+        }
+      } catch { /* 单张旧历史缺图不阻塞列表或其他封面。 */ }
+    }
+  }
+  await Promise.all([read(), read()])
 }
 
 /** 图片加载失败时换成随包占位图，而不是把图片隐藏掉。 */
 function usePlaceholderCover(event: Event) {
   const image = event.target as HTMLImageElement | null
-  if (!image || image.src === placeholderCover) return
+  if (!image || image.src === new URL(placeholderCover, document.baseURI).href) return
   image.src = placeholderCover
 }
 
@@ -1175,7 +1574,8 @@ function historyProgress(entry: WatchHistory) {
 /** 历史记录只在直接播放时记录封面；随包封面是相对资源，不入库，渲染时再按标题回退。 */
 const activeCoverUrl = computed(() => {
   const item = selected.value
-  if (item) return displayCover(item.title, item.url, item.coverUrl)
+  if (item) return displayCover(item.title, item.url, item.coverUrl ||
+    (sourcePreview.value?.sourceUrl === item.url && sameHistorySource(sourcePreview.value.sourceContext, item.sourceContext) ? sourcePreview.value.coverUrl : ''))
   const preview = sourcePreview.value
   if (preview) return displayCover(preview.title, preview.sourceUrl, preview.coverUrl)
   return ''
@@ -1212,7 +1612,7 @@ function decodedUrl(value?: string): string {
  * 标题看不出集数时才用线路的语言/字幕标签（标题、线路名、媒体地址依次看）。
  */
 function lineLabel(episode: SourceEpisode): string {
-  const title = displayText(episode.title)
+  const title = episodeDisplayText(episode.title)
   if (episodeSortNumber(episode) !== null && title.trim()) return title
   const meta = parsePlaybackLine(title, episode.lineId)
   if (meta.label) return meta.label
@@ -1278,7 +1678,8 @@ function nextUntriedEpisode(episode: SourceEpisode): SourceEpisode | undefined {
   const start = ordered.findIndex((candidate) => candidate.id === episode.id)
   const rotated = start >= 0 ? [...ordered.slice(start + 1), ...ordered.slice(0, start)] : ordered
   return rotated.find((candidate) => !!candidate.sourceUrl
-    && candidate.id !== episode.id
+    && (candidate.id !== episode.id || candidate.lineId !== episode.lineId)
+    && sameEpisode(episode, candidate)
     && !lineFallbackTried.has(fallbackKey(candidate))
     && !isPlaceholderEpisode(candidate)
     && !episodeMediaType(candidate))
@@ -1292,20 +1693,21 @@ function rememberPreview(sourceUrl: string, value: SourcePreview) {
   previewCache.set(sourceUrl, { expires: Date.now() + ttl, value })
 }
 
-function fetchPreview(sourceUrl: string, fresh = false): Promise<SourcePreview> {
+function fetchPreview(sourceUrl: string, fresh = false, context?: SourceContext): Promise<SourcePreview> {
+  const cacheKey = sourceCacheKey(sourceUrl, context)
   // 刷新当前来源时只失效当前条目，保留相邻作品的缓存，避免返回搜索页后再次等待网络。
-  if (fresh) previewCache.delete(sourceUrl)
-  const cached = previewCache.get(sourceUrl)
+  if (fresh) previewCache.delete(cacheKey)
+  const cached = previewCache.get(cacheKey)
   if (cached && cached.expires > Date.now()) return Promise.resolve(cached.value)
-  let pending = fresh ? undefined : previewPending.get(sourceUrl)
+  let pending = fresh ? undefined : previewPending.get(cacheKey)
   if (!pending) {
     // JS 侧也要有期限（VQ-61）：只靠原生 15s 兜底时，插件抛错或桥接丢消息会让这个 Promise
     // 永远悬空——previewPending 里那条记录也就永远留在原地，该地址本次运行内一直走悬空路径。
-    pending = withNativeTimeout(androidSource.preview({ sourceUrl }), 15_000).then((preview) => {
-      if (previewPending.get(sourceUrl) === pending) rememberPreview(sourceUrl, preview)
+    pending = withNativeTimeout(androidSource.preview({ sourceUrl, sourceContext: context }), 15_000).then((preview) => {
+      if (previewPending.get(cacheKey) === pending) rememberPreview(cacheKey, preview)
       return preview
-    }).finally(() => { if (previewPending.get(sourceUrl) === pending) previewPending.delete(sourceUrl) })
-    previewPending.set(sourceUrl, pending)
+    }).finally(() => { if (previewPending.get(cacheKey) === pending) previewPending.delete(cacheKey) })
+    previewPending.set(cacheKey, pending)
   }
   return pending
 }
@@ -1314,15 +1716,42 @@ function fetchPreview(sourceUrl: string, fresh = false): Promise<SourcePreview> 
  * 搜索结果返回后预热第一条来源详情，用户点“立即观看”时通常直接命中缓存，
  * 不必再等一次详情页往返；预热失败不影响列表展示。
  */
-function warmTopHit(hits: SourceHit[]) {
+let topHitWarm: { key: string; promise: Promise<void> } | null = null
+function warmTopHit(hits: SourceHit[]): Promise<void> {
   const first = hits[0]
-  if (!first) return
-  if (previewCache.has(first.sourceUrl) || previewPending.has(first.sourceUrl)) return
-  void fetchPreview(first.sourceUrl).catch(() => { /* 预热失败时保持原有加载路径 */ })
+  if (!first || first.kind === 'resource') return Promise.resolve()
+  const scope = activeSubscriptionScope()
+  const key = sourceCacheKey(first.sourceUrl, first.sourceContext)
+  if (topHitWarm?.key === key) return topHitWarm.promise
+  const promise = fetchPreview(first.sourceUrl, false, first.sourceContext).then(async preview => {
+    if (scope !== activeSubscriptionScope() || section.value !== 'search') return
+    if (preview.coverUrl) startCoverCache(preview.coverUrl)
+    const episode = pickPlayableEpisode(preview.episodes)
+    if (!episode) return
+    const resolved = episode.playbackUrl ? episode : episode.sourceUrl
+      ? await androidSource.resolve(episode.sourceUrl, episode.sourceContext ?? preview.sourceContext) : null
+    if (scope === activeSubscriptionScope() && section.value === 'search' && resolved?.playbackUrl
+      && playbackType(resolved.playbackUrl) === 'hls') await prewarmInlineManifest(resolved.playbackUrl, resolved.requestHeaders)
+  }).catch(() => { /* 预热失败时保持原有加载路径 */ })
+  const entry = { key, promise }
+  topHitWarm = entry
+  void promise.finally(() => { if (topHitWarm === entry) topHitWarm = null })
+  return promise
 }
 
-async function episodeOptions(sourceUrl: string): Promise<SourceEpisode[]> {
-  return (await fetchPreview(sourceUrl)).episodes
+// 当前集进入 playing 后才预热相邻集，不让下一集解析争用首帧请求。
+let pendingAdjacentWarm: (() => void) | null = null
+function scheduleAdjacentWarm(episode: SourceEpisode, preview: SourcePreview) {
+  const generation = playbackGeneration
+  const warm = () => {
+    if (generation === playbackGeneration && sourcePreview.value === preview) warmAdjacentEpisode(episode, preview)
+  }
+  if (video.value && !video.value.paused && video.value.readyState >= 3) warm()
+  else pendingAdjacentWarm = warm
+}
+
+async function episodeOptions(sourceUrl: string, context?: SourceContext): Promise<SourceEpisode[]> {
+  return (await fetchPreview(sourceUrl, false, context)).episodes
 }
 
 function warmAdjacentEpisode(episode: SourceEpisode, preview: SourcePreview) {
@@ -1331,13 +1760,30 @@ function warmAdjacentEpisode(episode: SourceEpisode, preview: SourcePreview) {
   if (!group) return
   const index = group.episodes.findIndex((candidate) => candidate.id === episode.id)
   const next = group.episodes[index + 1] ?? group.episodes[index - 1]
-  if (next?.sourceUrl && !next.playbackUrl && next.sourceUrl !== episode.sourceUrl) void episodeOptions(next.sourceUrl).catch(() => {})
+  if (next?.sourceUrl && !next.playbackUrl && next.sourceUrl !== episode.sourceUrl) {
+    if ((next.sourceContext ?? preview.sourceContext)?.content) {
+      void androidSource.resolve(next.sourceUrl, next.sourceContext ?? preview.sourceContext).catch(() => {})
+      return
+    }
+    void episodeOptions(next.sourceUrl, next.sourceContext).then((options) => {
+      if (sourcePreview.value !== preview) return
+      const resolved = resolvePlayableLine(options.filter((candidate) => episodeMediaType(candidate)), next, next.lineId === 'main' ? '' : next.lineId || '', false)
+      if (resolved?.playbackUrl) {
+        if (inlineMediaAvailable()) void prewarmInlineManifest(resolved.playbackUrl, resolved.requestHeaders)
+        else { warmMediaHost(resolved.playbackUrl); prefetchHlsManifest(resolved.playbackUrl) }
+      }
+    }).catch(() => { /* 复用解析缓存，预热失败不改变选集或触发换线。 */ })
+  }
   // 下一集已经有直链时提前建立连接并预取很轻的清单（VQ-48）：换集少一次 DNS/TLS 与清单往返。
-  if (next?.playbackUrl) { warmMediaHost(next.playbackUrl); prefetchHlsManifest(next.playbackUrl) }
+  if (next?.playbackUrl) {
+    if (inlineMediaAvailable()) void prewarmInlineManifest(next.playbackUrl, next.requestHeaders)
+    else if (!nativePlaybackAvailable()) { warmMediaHost(next.playbackUrl); prefetchHlsManifest(next.playbackUrl) }
+  }
 }
 
 const WARM_LINK_REL = 'sanye-media-source'
 const PREFETCH_MANIFEST_TIMEOUT_MS = 6_000
+const manifestPrefetches = new Map<string, { expires: number; controller: AbortController }>()
 /**
  * 预连接媒体主机：起播与换集前先完成 DNS/TLS 握手，省掉首片请求里的建连等待。
  * 只按来源地址的 origin 建链，不改变请求内容，失败也不影响原有加载路径。
@@ -1366,10 +1812,24 @@ function warmMediaHost(url?: string) {
  */
 function prefetchHlsManifest(url?: string) {
   if (!url || playbackType(url) !== 'hls') return
+  const cached = manifestPrefetches.get(url)
+  if (cached && cached.expires > Date.now()) return
+  if (cached) cached.controller.abort()
+  if (manifestPrefetches.size >= 8) {
+    const oldest = manifestPrefetches.keys().next().value!
+    manifestPrefetches.get(oldest)?.controller.abort()
+    manifestPrefetches.delete(oldest)
+  }
   const controller = new AbortController()
+  const entry = { expires: Date.now() + 15_000, controller }
+  manifestPrefetches.set(url, entry)
   const timer = window.setTimeout(() => controller.abort(), PREFETCH_MANIFEST_TIMEOUT_MS)
   void fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', cache: 'force-cache', signal: controller.signal })
-    .catch(() => undefined)
+    .then(async (response) => {
+      if (!response.ok) { if (manifestPrefetches.get(url) === entry) manifestPrefetches.delete(url); return }
+      await response.text()
+    })
+    .catch(() => { if (manifestPrefetches.get(url) === entry) manifestPrefetches.delete(url) })
     .finally(() => window.clearTimeout(timer))
 }
 
@@ -1409,6 +1869,7 @@ function prewarmPlaybackModules() {
  *   保存队列内部会调用本函数，若在队列内部再等自己就会自锁，因此队列内部传 false（VQ-55）。
  */
 async function reloadHistory(waitForWrites = true) {
+  const request = ++historyReadRequest
   historyLoading.value = true
   try {
     // 读之前先等在途写入落库（VQ-55）：退出播放器后马上点进观看历史时，
@@ -1423,17 +1884,39 @@ async function reloadHistory(waitForWrites = true) {
     }
     // 读取同样要有上限（VQ-60）：原生一旦不回消息，这里的 finally 永不执行，
     // 历史页会永久停在「正在读取」而不是给出可重试的失败。
-    history.value = (await withNativeTimeout(androidCatalog.listHistory(), 8_000)).items
+    let items = (await withNativeTimeout(androidCatalog.listHistory(), 8_000)).items
+    const migration = await withNativeTimeout(migrateLegacySourceBindings([], items), 8_000)
+    if (migration.migrated) items = (await withNativeTimeout(androidCatalog.listHistory(), 8_000)).items
+    // 页面切换、退出播放器和进度落盘可能同时触发读取；旧响应不能把新历史快照覆盖掉。
+    if (request !== historyReadRequest) return
+    history.value = items.map(entry => ({ ...entry, sourceContext: entry.sourceContext ?? savedSourceContext(historySourceBindingKey(entry)) ?? { content: '' } }))
+    if (section.value === 'history') void recoverHistoryCovers()
     historyError.value = ''
   } catch {
-    historyError.value = '观看历史暂时无法读取，原有记录不会自动清除。'
+    if (request === historyReadRequest) historyError.value = '观看历史加载失败，请重试。已有记录仍保留。'
   } finally {
-    historyLoading.value = false
+    if (request === historyReadRequest) historyLoading.value = false
   }
 }
 
-function disposePlayer() {
+function disposePlayer(preserveNative = false) {
+  pendingAdjacentWarm = null
+  if (!preserveNative && retainedNativeId) { void closeRetainedNativePlayback(retainedNativeId).catch(() => {}); retainedNativeId = '' }
+  nativeOpening?.abort()
+  nativeOpening = undefined
+  media3Session?.close()
+  media3Session = undefined
+  if (downloadedPlaybackId && nativePlaybackPosition) void androidDownloads.recordProgress(downloadedPlaybackId, nativePlaybackPosition.positionSeconds, nativePlaybackPosition.durationSeconds).catch(() => {})
+  nativePlaybackActive.value = false
+  nativePlaybackPosition = undefined
+  releaseSystemPlayback?.()
+  releaseSystemPlayback = undefined
+  playbackObservation?.finish()
+  playbackObservation = undefined
   playbackGeneration++
+  pendingSeekTarget = null
+  pendingLinePosition = null
+  if (seekFrame) { window.cancelAnimationFrame(seekFrame); seekFrame = 0 }
   // 关闭播放器前先落一次进度：pause 事件是异步派发的，等它回到页面时 src 已经被清掉、
   // currentTime 归零，persistProgress 会在开头直接返回——用户看到的就是「看完退出后没有历史」。
   void persistProgress()
@@ -1523,6 +2006,12 @@ function persistProgress(completed = false): Promise<void> {
   const element = video.value
   const item = selected.value
   if (!element || !item || (!completed && element.currentTime <= 0)) return Promise.resolve()
+  // 下载文件独立于公网作品身份，不把本地路径写入个人历史或规则备份。
+  if (item.url === downloadedPlaybackUrl) {
+    if (!downloadedPlaybackId || !Number.isFinite(element.duration) || element.duration <= 0) return Promise.resolve()
+    return androidDownloads.recordProgress(downloadedPlaybackId, Math.min(element.currentTime, element.duration), element.duration)
+      .catch(() => { notifyOnce('离线进度未能保存，请稍后重试。') })
+  }
   // 作品地址必须是公网 https（来源播放页地址带查询参数也算有效——原生此前按「直链媒体」
   // 校验，带一个参数就整条拒绝，表现就是「播放进度保存失败」）；其余情况跳过本次记录。
   const mediaUrl = safeLabel(item.url, 2048)
@@ -1538,7 +2027,7 @@ function persistProgress(completed = false): Promise<void> {
   const previous = bestHistoryRecord(mediaUrl, activeEpisodeId.value || item.url)
   if (!completed && previous && previous.positionSeconds > 60 && position < previous.positionSeconds - 60) return Promise.resolve()
   const entry = {
-    mediaUrl, title: safeLabel(item.title, 120) || '未命名作品',
+    mediaUrl, title: safeLabel(item.title, 120) || '未命名作品', sourceContext: item.sourceContext,
     // 有的来源没有独立线路/条目 id，也没有条目标题：这三个字段是展示用的，
     // 空值会让原生侧整条历史被拒（就是「有的会保存失败」），统一给出可读的非空值。
     episodeId: safeLabel(activeEpisodeId.value || item.url, 256),
@@ -1553,22 +2042,23 @@ function persistProgress(completed = false): Promise<void> {
   progressQueue = progressQueue.then(async () => {
     // 原生调用可能永远不回调（插件内部抛错、WebView 被冻结）：没有超时的话，
     // 这一个悬空的 Promise 会把后面所有保存都卡在队列里——用户看到的就是「从此再也存不下历史」。
-    await withNativeTimeout(androidCatalog.recordProgress(entry), 8_000)
+    const result = await withNativeTimeout(androidCatalog.recordProgress(entry), 8_000)
+    if (!result.item.sourceContext && !result.item.sourceKey) persistSourceContext(historySourceBindingKey(result.item), item.sourceContext)
     if (completed || section.value === 'history') await reloadHistory(false)
-  }).catch((cause: unknown) => {
-    // 原生侧的拒绝原因要露出来：此前统一吞成一句「保存失败」，排查时无法区分是地址被拒、
-    // 参数非法还是数据库不可写（用户看到的是「观看历史就是存不下来」）。
-    const reason = cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : ''
-    const detail = safeLabel(reason, 80)
-    notifyOnce(detail ? `播放进度保存失败，本次记录已跳过：${detail}` : '播放进度保存失败，本次记录已跳过。')
+  }).catch(() => {
+    notifyOnce('这次播放进度未能保存，不影响继续观看。')
   })
   return progressQueue
 }
 
 function onTimeUpdate() {
+  if (video.value) playbackObservation?.tick(video.value.currentTime, !video.value.paused, seekingPlayback.value || seekDragging.value)
   // 画面在前进就说明缓冲结束、卡顿解除（VQ-61）。
-  if (playbackStallTimer !== undefined) { window.clearTimeout(playbackStallTimer); playbackStallTimer = undefined }
-  if (buffering.value) buffering.value = false
+  if (!seekingPlayback.value && !video.value?.seeking && video.value && video.value.currentTime > playbackStallPosition + 0.05) {
+    clearPlaybackStallWatchdog()
+    if (buffering.value) buffering.value = false
+    if (!video.value.paused && !video.value.ended) armPlaybackStallWatchdog()
+  }
   if (!seekingPlayback.value) playbackSeconds.value = video.value?.currentTime || 0
   if (video.value && video.value.currentTime > 0 && Date.now() - lastSavedAt > 5000) {
     lastSavedAt = Date.now()
@@ -1598,6 +2088,7 @@ function togglePlayback() {
 }
 
 function onPlaybackEnded() {
+  playbackObservation?.finish()
   playing.value = false
   playbackEnded.value = true
   chromeVisible.value = true
@@ -1720,7 +2211,7 @@ function setScreenBrightness(value: number): number {
   return next
 }
 function gestureSpan(axis: 'x' | 'y'): number {
-  const box = playerStage.value?.getBoundingClientRect()
+  const box = video.value?.getBoundingClientRect()
   const size = axis === 'x' ? box?.width : box?.height
   return Math.max(1, size || (axis === 'x' ? window.innerWidth : window.innerHeight))
 }
@@ -1736,7 +2227,7 @@ function beginSurfaceGesture(event: PointerEvent) {
   gestureStartBrightness = screenBrightness.value
   gestureStartVolume = playbackVolume.value
   gestureStartSeconds = seekPositionSeconds.value
-  const box = playerStage.value?.getBoundingClientRect()
+  const box = video.value?.getBoundingClientRect()
   gestureStartSide = box && event.clientX - box.left < box.width / 2 ? 'left' : 'right'
 }
 function moveSurfaceGesture(event: PointerEvent) {
@@ -1789,7 +2280,7 @@ function endSurfaceGesture(event: PointerEvent) {
 }
 /**
  * 进度条拖动：整个 30px 高容器都是命中区，视觉上只画一条细轨道。
- * 拖动期间按帧更新指针位置，并按 280ms 节流预览定位，让画面跟着手指走；
+ * 拖动期间按帧更新指针位置，已缓冲目标采用短节流，未缓冲目标减少网络定位；
  * 松手时提交最终位置。HLS 每次定位都会中止在途分片，因此预览有节流上限。
  */
 function seekSecondsAt(clientX: number, rect: DOMRect | null = null): number {
@@ -1804,20 +2295,22 @@ let seekRect: DOMRect | null = null
 let seekFrame = 0
 let seekPendingX = 0
 let lastPreviewSeekAt = 0
-/**
- * 拖动期间的节流预览定位：让画面跟着手指走，但相邻预览至少间隔 280ms
- * 且目标位移超过 2 秒，避免 HLS 反复中止在途分片反而更卡。
- */
+let pendingSeekTarget: { generation: number; seconds: number } | null = null
 /**
  * 定位预览（VQ-59）：拖动期间把画质链路降成只出原帧，并把「最小位移」按进度条分辨率折算。
  * 原来固定 2 秒位移对短视频等于大半个进度条，手指拖动几乎不产生新画面，用户感到「拖不动」。
  */
 function previewSeek(target: number) {
   const element = video.value
-  if (!element || seekMax.value <= 0) return
+  if (!element || seekMax.value <= 0 || element.seeking || pendingSeekTarget) return
   const now = Date.now()
-  if (now - lastPreviewSeekAt < 140) return
-  const minStep = Math.max(0.4, seekMax.value / 240)
+  let buffered = false
+  for (let index = 0; index < element.buffered.length; index++) {
+    if (target >= element.buffered.start(index) && target < element.buffered.end(index) - 0.15) { buffered = true; break }
+  }
+  // 已缓冲的目标跟手预览；未缓冲目标减少分片请求。一次定位落位前不反复中止 HLS 下载。
+  if (now - lastPreviewSeekAt < (buffered ? 50 : 280)) return
+  const minStep = Math.max(0.2, seekMax.value / 480)
   if (Number.isFinite(element.currentTime) && Math.abs(element.currentTime - target) < minStep) return
   lastPreviewSeekAt = now
   try { element.currentTime = target } catch { /* 缓冲范围未就绪时忽略本次预览 */ }
@@ -1860,7 +2353,7 @@ function commitSeekTo(target: number) {
   const element = video.value
   const max = seekMax.value
   seekDragging.value = false
-  seekingPlayback.value = false
+  seekingPlayback.value = true
   // 定位是播放段边界：静默窗口内不参与 GPU 后端判定（VQ-49）。
   motionStability.reset()
   motionGuardResumeAt = performance.now() + 2_500
@@ -1868,10 +2361,12 @@ function commitSeekTo(target: number) {
   // 播完后再定位等于重新选位置，结束遮罩必须让开，否则画面会被“本集播放结束”压住。
   if (max <= 0 || target < max - 0.5) playbackEnded.value = false
   if (element) {
-    try { element.currentTime = target } catch { /* 缓冲范围未就绪时忽略本次定位 */ }
+    pendingSeekTarget = { generation: playbackGeneration, seconds: target }
+    if (!element.seeking) onSeekSettled()
+  } else {
+    seekingPlayback.value = false
   }
   syncPlaybackDuration()
-  void persistProgress()
   scheduleChromeHide()
   // 落位后留出解码与缓冲的时间，再把完整档位接回来（VQ-59）：立即恢复会让拖动末尾又变卡。
   if (enhancementSession) {
@@ -1879,6 +2374,25 @@ function commitSeekTo(target: number) {
     if (previewTimer !== undefined) window.clearTimeout(previewTimer)
     previewTimer = window.setTimeout(() => { previewTimer = undefined; if (enhancementSession === session) session.setPreview(false) }, 400)
   }
+}
+/** 松手的最终目标不参与预览节流，等待当前定位结束后只提交最后一次选择。 */
+function onSeekSettled() {
+  const element = video.value
+  if (!element || element.seeking) return
+  const pending = pendingSeekTarget
+  pendingSeekTarget = null
+  if (pending && pending.generation === playbackGeneration) {
+    try {
+      if (Math.abs(element.currentTime - pending.seconds) > 0.05) element.currentTime = pending.seconds
+    } catch { /* 尚未可定位时保留媒体实际位置，不保存虚假的目标时间。 */ }
+    if (element.seeking) return
+  }
+  if (seekDragging.value) return
+  seekingPlayback.value = false
+  playbackSeconds.value = Number.isFinite(element.currentTime) ? element.currentTime : 0
+  clearPlaybackStallWatchdog()
+  if (!element.paused) armPlaybackStallWatchdog()
+  void persistProgress()
 }
 function commitSeek(event?: PointerEvent) {
   if (!seekDragging.value) return
@@ -1892,22 +2406,8 @@ function cancelSeek() {
   if (!seekDragging.value) return
   if (seekFrame) { window.cancelAnimationFrame(seekFrame); seekFrame = 0 }
   seekRect = null
-  seekDragging.value = false
-  seekingPlayback.value = false
-  // 拖动过程中预览已经改过 element.currentTime（previewSeek）：只同步 UI 是不够的，
-  // 画面会停在被拖到的位置，随后的定时保存还会把它当成真实进度（VQ-61）。
-  const element = video.value
-  if (element && seekOriginSeconds > 0) {
-    try { element.currentTime = seekOriginSeconds } catch { /* 缓冲范围未就绪时忽略 */ }
-  }
-  playbackSeconds.value = element && Number.isFinite(element.currentTime) ? element.currentTime : playbackSeconds.value
-  // 与 commitSeekTo 一致：落位后留出解码时间再把完整档位接回来，避免取消瞬间抖一下。
-  if (enhancementSession) {
-    const session = enhancementSession
-    if (previewTimer !== undefined) window.clearTimeout(previewTimer)
-    previewTimer = window.setTimeout(() => { previewTimer = undefined; if (enhancementSession === session) session.setPreview(false) }, 400)
-  }
-  scheduleChromeHide()
+  // 包含从 0 秒开始的拖动；取消也等当前预览落位再恢复，不留下预览进度。
+  commitSeekTo(seekOriginSeconds)
 }
 /** 键盘与读屏用户同样可以定位：左右 5 秒，Home/End 直达首尾。 */
 function onSeekKeydown(event: KeyboardEvent) {
@@ -1925,14 +2425,21 @@ function onSeekKeydown(event: KeyboardEvent) {
 /** 同一作品同一集在本地记录里最靠前的未完成进度（跨线路取最大，VQ-61）。 */
 function bestHistoryRecord(mediaUrl: string, episodeId: string) {
   return history.value
-    .filter((entry) => entry.mediaUrl === mediaUrl && (!episodeId || entry.episodeId === episodeId) && !entry.completed && entry.positionSeconds > 0)
+    .filter((entry) => entry.mediaUrl === mediaUrl && (!episodeId || entry.episodeId === episodeId) && sameHistorySource(entry.sourceContext, selected.value?.sourceContext) && !entry.completed && entry.positionSeconds > 0)
     .sort((left, right) => right.positionSeconds - left.positionSeconds)[0]
+}
+function sameHistorySource(left?: SourceContext, right?: SourceContext) {
+  return (left?.content || '') === (right?.content || '')
+    && left?.sourceIndex === right?.sourceIndex
 }
 /** 落位：把已看过的进度写进 <video>；时长为 0（清单还没解析完）或已接近结尾时不动。 */
 function applyResumePosition(element: HTMLVideoElement, record: { positionSeconds: number; completed: boolean } | undefined) {
   if (!record || record.completed || record.positionSeconds <= 0) return false
   if (!Number.isFinite(element.duration) || record.positionSeconds >= element.duration - 5) return false
-  try { element.currentTime = record.positionSeconds } catch { return false }
+  // HLS 已从续播分片起播时不再次定位，避免取消首片并重复下载。
+  if (Math.abs(element.currentTime - record.positionSeconds) > 0.25) {
+    try { element.currentTime = record.positionSeconds } catch { return false }
+  }
   playbackSeconds.value = record.positionSeconds
   return true
 }
@@ -1948,43 +2455,208 @@ function restorePosition() {
   const element = video.value
   const item = selected.value
   if (!element || !item) return
-  const exact = () => history.value.find((entry) => entry.mediaUrl === item.url && entry.episodeId === activeEpisodeId.value && entry.lineId === activeLineId.value)
-  if (applyResumePosition(element, exact() ?? bestHistoryRecord(item.url, activeEpisodeId.value))) return
+  const generation = playbackGeneration
+  // HLS 在首片追加后自行落到 startPosition。metadata 时 currentTime 仍可能为 0，
+  // 此时再手动 seek 会取消已下载的首片，甚至对同一 URL 重读。
+  if (hlsResumeGeneration === generation) { pendingLinePosition = null; return }
+  const episodeId = activeEpisodeId.value
+  const lineId = activeLineId.value
+  if (pendingLinePosition?.generation === generation) {
+    const seconds = pendingLinePosition.seconds
+    pendingLinePosition = null
+    if (seconds >= 0 && Number.isFinite(element.duration) && seconds < element.duration) {
+      try { element.currentTime = seconds; playbackSeconds.value = seconds; return } catch { /* 继续走历史续播。 */ }
+    }
+  }
+  const current = () => generation === playbackGeneration && video.value === element && selected.value?.url === item.url
+    && activeEpisodeId.value === episodeId && activeLineId.value === lineId && !seekingPlayback.value
+  if (item.url === downloadedPlaybackUrl) { if (offlineResumePosition > 0) applyResumePosition(element, { positionSeconds: offlineResumePosition, completed: false }); return }
+  const exact = () => history.value.find((entry) => entry.mediaUrl === item.url && entry.episodeId === episodeId && entry.lineId === lineId && sameHistorySource(entry.sourceContext, item.sourceContext))
+  if (!current()) return
+  if (applyResumePosition(element, exact() ?? bestHistoryRecord(item.url, episodeId))) return
   void reloadHistory(false).then(() => {
-    if (video.value !== element || element.currentTime >= 3) return
-    applyResumePosition(element, exact() ?? bestHistoryRecord(item.url, activeEpisodeId.value))
+    if (!current() || element.currentTime >= 3) return
+    applyResumePosition(element, exact() ?? bestHistoryRecord(item.url, episodeId))
   }).catch(() => { /* 读取失败时保持从头播放 */ })
 }
 
-async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'direct', episodeTitle = '直链媒体', lineId = 'main', forcePlay = true, mediaHint: MediaType | null = null) {
+let pendingLinePosition: { generation: number; seconds: number } | null = null
+let hlsResumeGeneration = -1
+
+function saveNativeProgress(item: SavedMedia, episodeId: string, episodeTitle: string, lineId: string, coverUrl: string, event: NativePlaybackProgress): Promise<void> {
+  const position = event.positionSeconds, duration = event.durationSeconds
+  if (!/^https:\/\//i.test(item.url) || /^https:\/\/localhost(?:[:/]|$)/i.test(item.url)
+    || !Number.isFinite(position) || position <= 0 || !Number.isFinite(duration) || duration < 0) return Promise.resolve()
+  const entry = {
+    mediaUrl: safeLabel(item.url, 2048), title: safeLabel(item.title, 120) || '未命名作品', sourceContext: item.sourceContext,
+    episodeId: safeLabel(episodeId, 256), episodeTitle: safeLabel(displayText(episodeTitle), 120) || '正片',
+    lineId: safeLabel(lineId, 256), coverUrl: safeCoverUrl(coverUrl),
+    positionSeconds: duration > 0 ? Math.min(position, duration) : position, durationSeconds: duration, completed: event.completed,
+  }
+  progressQueue = progressQueue.then(async () => {
+    const result = await withNativeTimeout(androidCatalog.recordProgress(entry), 8000)
+    if (!result.item.sourceContext && !result.item.sourceKey) persistSourceContext(historySourceBindingKey(result.item), item.sourceContext)
+  }).catch(() => { notifyOnce('这次播放进度未能保存，不影响继续观看。') })
+  return progressQueue
+}
+
+async function startMedia3Playback(item: SavedMedia, url: string, type: MediaType, generation: number, linePosition: number | null, autoPlay: boolean) {
+  const localPlayback = item.url === downloadedPlaybackUrl
+  const offlineId = localPlayback ? downloadedPlaybackId : ''
+  let offlineWrittenAt = 0
+  const id = nextNativeSessionId(), episodeId = activeEpisodeId.value, episodeTitle = activeEpisodeTitle.value, lineId = activeLineId.value
+  const coverUrl = activeCoverUrl.value
+  const choices = new Map<string, SourceEpisode>()
+  const choiceId = (episode: SourceEpisode) => `${episode.id}\u0000${episode.lineId || 'main'}`
+  for (const episode of playerEpisodes.value) choices.set(choiceId(episode), episode)
+  const nextChoice = nextEpisode.value
+  const currentGroup = episodeGroups.value.find(group => group.episodes.some(episode => episode.id === episodeId && (episode.lineId || 'main') === lineId))
+  const currentIndex = currentGroup?.episodes.findIndex(episode => episode.id === episodeId && (episode.lineId || 'main') === lineId) ?? -1
+  const previousChoice = currentGroup && currentIndex > 0 ? currentGroup.episodes[currentIndex - 1] : undefined
+  const records = history.value.filter(entry => entry.mediaUrl === item.url && entry.episodeId === episodeId && sameHistorySource(entry.sourceContext, item.sourceContext))
+  const exact = records.find(entry => entry.lineId === lineId)
+  const best = records.filter(entry => !entry.completed).sort((a, b) => b.positionSeconds - a.positionSeconds)[0]
+  const resume = exact ?? best
+  const position = linePosition ?? (localPlayback ? offlineResumePosition : resume && !resume.completed && (!resume.durationSeconds || resume.positionSeconds < resume.durationSeconds - 5) ? resume.positionSeconds : 0)
+  const opening = new AbortController()
+  nativeOpening = opening
+  try {
+    const session = await openNativePlayback({
+      sessionId: id, url: localPlayback ? downloadedNativeUrl : url,
+      mimeType: type === 'hls' ? 'application/x-mpegURL' : 'video/mp4', title: item.title, episodeTitle,
+      requestHeaders: activeSourceEpisode().requestHeaders,
+      positionSeconds: position, rate: settings.value.playbackRate, volume: playbackVolume.value, autoPlay,
+      nextChoiceId: nextChoice ? choiceId(nextChoice) : undefined,
+      previousChoiceId: previousChoice ? choiceId(previousChoice) : undefined,
+      choices: [...choices].slice(0, 500).map(([id, episode]) => ({ id, group: episodeGroups.value.find(group => group.episodes.includes(episode))?.key || '选集', label: episodeLabel(episode).slice(0, 160), selected: episode.id === episodeId && (episode.lineId || 'main') === lineId })),
+      firstFrameTimeoutMs: bundledTakeoverAvailable() ? 20_000 : 30_000,
+      lightTheme: appearanceLight.value,
+      replaceId: retainedNativeId || undefined, autoNext: settings.value.autoPlay,
+    }, event => {
+      if (generation !== playbackGeneration || opening.signal.aborted) return
+      nativePlaybackPosition = event
+      if (offlineId && (Date.now() - offlineWrittenAt >= 5000 || event.completed)) {
+        offlineWrittenAt = Date.now()
+        void androidDownloads.recordProgress(offlineId, event.positionSeconds, event.durationSeconds).catch(() => { notifyOnce('离线进度未能保存，请稍后重试。') })
+      }
+      if (Date.now() - lastSavedAt >= 5000 || event.completed) {
+        lastSavedAt = Date.now()
+        void saveNativeProgress(item, episodeId, episodeTitle, lineId, coverUrl, event)
+      }
+    }, opening.signal)
+    if (generation !== playbackGeneration || opening.signal.aborted) { session.close(); return }
+    media3Session = session
+    retainedNativeId = ''
+    void session.result.then(async result => {
+      if (offlineId) void androidDownloads.recordProgress(offlineId, result.positionSeconds, result.durationSeconds).catch(() => {})
+      // 进度按队列落盘，切集无需等待一次 SQLite 往返。
+      void saveNativeProgress(item, episodeId, episodeTitle, lineId, coverUrl, result)
+      if (!localPlayback && typeof result.started === 'boolean') recordPlaybackSample(healthKey(item.url, item.sourceContext), {
+        started: result.started, failed: result.action === 'error', firstFrameMs: result.firstFrameMs ?? 0,
+        watchedSeconds: result.watchedSeconds ?? 0, stallSeconds: result.stallSeconds ?? 0,
+      })
+      if (generation !== playbackGeneration || opening.signal.aborted) return
+      media3Session = undefined
+      if (result.retained) retainedNativeId = id
+      if (PLAYBACK_RATES.some(rate => rate === result.rate) && result.rate !== settings.value.playbackRate) void updateSettings({ playbackRate: result.rate })
+      if (result.volume !== undefined && result.volume !== settings.value.volume) void updateSettings({ volume: result.volume })
+      if (result.action === 'retry') {
+        nativePlaybackPosition = result
+        if (sourcePreview.value?.sourceUrl === item.url && !mediaType(item.url) && !localPlayback) {
+          await retryCurrentLine()
+          if (generation === playbackGeneration) { disposePlayer(); selected.value = null; watchPage.value = false }
+        } else await watch(item, url, episodeId, episodeTitle, lineId, true, type)
+        if (retainedNativeId === id && generation === playbackGeneration) { await failRetainedNativePlayback(id); retainedNativeId = ''; disposePlayer(); selected.value = null; watchPage.value = false }
+        return
+      }
+      if (result.action === 'switch') {
+        nativePlaybackPosition = result
+        await switchToFallbackLine()
+        if (generation !== playbackGeneration) return
+        sourceError.value = playerError.value || '当前选集没有其他可用线路。'
+      }
+      if (result.action === 'choice' && result.choiceId) {
+        const episode = choices.get(result.choiceId)
+        if (episode) {
+          nativePlaybackPosition = result
+          await playSourceEpisode(episode)
+          if (retainedNativeId === id && generation === playbackGeneration) { await failRetainedNativePlayback(id); retainedNativeId = ''; disposePlayer(); selected.value = null; watchPage.value = false }
+          return
+        }
+      }
+      if (result.action === 'error') {
+        nativePlaybackPosition = result
+        await handlePlaybackFailure(result.error || '播放失败，请换条线路或重试。')
+        if (generation !== playbackGeneration) return
+        sourceError.value = playerError.value || result.error || '这条线路暂时无法播放，请选择其他线路。'
+        if (!sourcePreview.value) notifyOnce(sourceError.value)
+      }
+      if (retainedNativeId === id) { await failRetainedNativePlayback(id); retainedNativeId = '' }
+      disposePlayer()
+      selected.value = null
+      watchPage.value = false
+      void reloadHistory()
+    }).catch(failure => {
+      if (generation !== playbackGeneration || opening.signal.aborted) return
+      sourceError.value = failure instanceof Error ? failure.message : '原生播放器未能完成播放，请重试。'
+      if (!sourcePreview.value) notifyOnce(sourceError.value)
+      disposePlayer(); selected.value = null; watchPage.value = false
+    })
+  } catch (failure) {
+    if (generation !== playbackGeneration || opening.signal.aborted) return
+    sourceError.value = failure instanceof Error ? failure.message : '原生播放器启动失败，请重试。'
+    if (!sourcePreview.value) notifyOnce(sourceError.value)
+    disposePlayer(); selected.value = null; watchPage.value = false
+  }
+}
+
+async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'direct', episodeTitle = '视频', lineId = 'main', forcePlay = true, mediaHint: MediaType | null = null) {
   const type = playbackType(playbackUrl) ?? mediaHint
-  if (!type) { playerError.value = '此地址不是可直接播放的 MP4 或 HLS 媒体；作品网页需要后续来源适配。'; return }
-  const keepPlaying = !!video.value && !video.value.paused
+  if (!type) { playerError.value = '这个地址暂时无法播放，请选择其他线路。'; return }
+  const keepPlaying = nativePlaybackPosition?.playing || (!!video.value && !video.value.paused)
   ++episodeRequest
   sourceLoading.value = false
   // 换集/换线时画面会短暂空白、声音中断：给一个舞台内「正在切换线路…」提示（VQ-61）。
   const previousSelection = selected.value
+  const previousEpisode = activeSourceEpisode()
+  const targetEpisode = sourcePreview.value?.episodes.find((episode) => episode.id === episodeId)
+    ?? { id: episodeId, title: episodeTitle, sourceUrl: episodeId, playbackUrl, mimeType: '', lineId }
+  const sameWork = previousSelection && sameHistorySource(previousSelection.sourceContext, item.sourceContext) && (previousSelection.url === item.url
+    || (bundledWork.value?.sourceUrl === item.url && titleKey(previousSelection.title) === titleKey(item.title)))
+  const linePosition = sameWork && sameEpisode(previousEpisode, targetEpisode)
+    && (nativePlaybackPosition !== undefined || activeLineId.value !== lineId || activePlaybackUrl.value !== playbackUrl)
+    ? (nativePlaybackPosition?.positionSeconds ?? (seekingPlayback.value ? playbackSeconds.value : video.value?.currentTime ?? playbackSeconds.value)) : null
   const switchingEpisode = previousSelection !== null
-    && (previousSelection.url !== item.url || activeEpisodeId.value !== episodeId || activeLineId.value !== lineId)
+    && (previousSelection.url !== item.url || !sameHistorySource(previousSelection.sourceContext, item.sourceContext) || activeEpisodeId.value !== episodeId || activeLineId.value !== lineId)
   switchingLine.value = switchingEpisode
   activePlaybackUrl.value = playbackUrl
   // 起播前先和媒体主机建链（VQ-48）：首片请求不再额外等一次 DNS/TLS。
   warmMediaHost(playbackUrl)
   // Capture the outgoing identity before replacing the player; persistence must not stall playback.
   void persistProgress()
-  disposePlayer()
+  disposePlayer(Boolean(retainedNativeId && nativePlaybackAvailable() && sameWork))
   const generation = playbackGeneration
+  if (item.url !== downloadedPlaybackUrl) { downloadedPlaybackId = ''; offlineResumePosition = 0 }
+  switchingLine.value = switchingEpisode
+  if (linePosition !== null && Number.isFinite(linePosition)) pendingLinePosition = { generation, seconds: linePosition }
   selected.value = item
   activeEpisodeId.value = episodeId
   activeEpisodeTitle.value = episodeTitle
   activeLineId.value = lineId
   playerError.value = ''
   lastSavedAt = 0
+  if (nativePlaybackAvailable() && item.url === downloadedPlaybackUrl) {
+    nativePlaybackActive.value = true
+    await startMedia3Playback(item, playbackUrl, type, generation, linePosition, settings.value.autoPlay || keepPlaying || forcePlay)
+    return
+  }
   await nextTick()
   if (generation !== playbackGeneration) return
   const element = video.value
   if (!element) return
   element.playbackRate = settings.value.playbackRate
+  releaseSystemPlayback = attachSystemPlayback(element, () => ({ title: selected.value?.title || 'sanye_anime', episode: activeEpisodeTitle.value }))
+  playbackObservation = item.url === downloadedPlaybackUrl ? undefined : createPlaybackObservation(healthKey(item.url, item.sourceContext))
   element.volume = playbackVolume.value
   if (volumeChangeHandler) element.removeEventListener('volumechange', volumeChangeHandler)
   volumeChangeHandler = () => {
@@ -1995,28 +2667,20 @@ async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'dire
     const { default: HlsRuntime } = await import('hls.js')
     if (generation !== playbackGeneration) return
     if (HlsRuntime.isSupported()) {
-      // 与 PC 播放器同一套超时/重试口径：既能容忍手机网络的慢，也不会让失效线路把起播拖到几十秒。
-      // 分片缓存与缓冲窗口按手机口径取值：换集/回看命中内存分片时不再重新下载，
-      // 60 秒前向缓冲把常见网络抖动挡在起播与拖动之后（VQ-48）。
+      // 与网页共用加载和带宽策略，手机采用更小的缓冲窗口，分片缓存仍用于换集和回看。
+      const mediaRecovery = new HlsMediaRecovery()
+      const headers = targetEpisode.requestHeaders || {}
+      const NativeLoader = inlineMediaAvailable() ? inlineMediaLoader(HlsRuntime, headers) : undefined
+      const resume = history.value.find(entry => entry.mediaUrl === item.url && entry.episodeId === episodeId
+        && entry.lineId === lineId && sameHistorySource(entry.sourceContext, item.sourceContext)) ?? bestHistoryRecord(item.url, episodeId)
+      const startPosition = linePosition ?? (resume && !resume.completed && resume.positionSeconds > 0
+        && (!resume.durationSeconds || resume.positionSeconds < resume.durationSeconds - 5) ? resume.positionSeconds : 0)
+      if (startPosition > 0 || linePosition !== null) hlsResumeGeneration = generation
       hls = new HlsRuntime({
-        fLoader: androidFragmentCache(HlsRuntime).Loader,
-        enableWorker: true,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        backBufferLength: 60,
-        // 移动端收敛（VQ-61）：默认 maxBufferSize 是 60MB，与 64MB 分片缓存叠加时峰值内存偏高；
-        // capLevelToPlayerSize 让清晰度不超过舞台实际像素，390px 宽的竖屏不会再白拉 1080P。
-        capLevelToPlayerSize: true,
-        maxBufferSize: 40 * 1000 * 1000,
-        startLevel: -1,
-        manifestLoadingTimeOut: 12_000,
-        manifestLoadingMaxRetry: 2,
-        manifestLoadingMaxRetryTimeout: 8_000,
-        levelLoadingTimeOut: 12_000,
-        levelLoadingMaxRetry: 3,
-        fragLoadingTimeOut: 20_000,
-        fragLoadingMaxRetry: 4,
-        fragLoadingMaxRetryTimeout: 10_000,
+        ...hlsPlaybackConfig(true),
+        startPosition,
+        ...(NativeLoader ? { loader: NativeLoader } : {}),
+        fLoader: androidFragmentCache(HlsRuntime, NativeLoader, `${sourceCacheKey(item.url, item.sourceContext)}\u0000${JSON.stringify(headers)}`).Loader,
       })
       hls.on(HlsRuntime.Events.ERROR, (_, data) => {
         if (generation !== playbackGeneration) return
@@ -2030,11 +2694,13 @@ async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'dire
         }
         clearStallWatchdog()
         clearPlaybackStallWatchdog()
-        let host = ''
-        try { host = new URL(playbackUrl).host } catch { host = '' }
-        void handlePlaybackFailure(host
-          ? `当前线路（${host}）加载失败，已尝试其他可用线路；请检查网络或稍后重试。`
-          : '当前线路加载失败，已尝试其他可用线路；请检查网络或稍后重试。')
+        if (data.type === HlsRuntime.ErrorTypes.MEDIA_ERROR && hls && mediaRecovery.attempt()) {
+          hls.recoverMediaError()
+          armStallWatchdog(generation)
+          armPlaybackStallWatchdog()
+          return
+        }
+        void handlePlaybackFailure('播放失败，请换条线路或重试。')
       })
       hls.on(HlsRuntime.Events.MANIFEST_PARSED, () => {
         if (generation !== playbackGeneration || !hls) return
@@ -2058,7 +2724,7 @@ async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'dire
       hls.loadSource(playbackUrl)
       hls.attachMedia(element)
     } else if (element.canPlayType('application/vnd.apple.mpegurl')) element.src = playbackUrl
-    else playerError.value = '此设备暂不支持 HLS 播放。'
+    else playerError.value = '此设备暂时无法播放这条线路，请换条线路。'
   } else if (type === 'mp4') {
     element.src = playbackUrl
   }
@@ -2067,24 +2733,13 @@ async function watch(item: SavedMedia, playbackUrl = item.url, episodeId = 'dire
 }
 
 async function playWhenReady(element: HTMLVideoElement, generation: number) {
-  if (element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
-    await new Promise<void>((resolve) => {
-      let timer: number | undefined
-      const done = () => {
-        if (timer !== undefined) window.clearTimeout(timer)
-        element.removeEventListener('canplay', done)
-        element.removeEventListener('error', done)
-        resolve()
-      }
-      element.addEventListener('canplay', done, { once: true })
-      element.addEventListener('error', done, { once: true })
-      timer = window.setTimeout(done, 8000)
-    })
-  }
   if (generation !== playbackGeneration || element !== video.value || playerError.value) return
   try {
     await element.play()
-  } catch {
+  } catch (failure) {
+    // 起播被后台暂停、切集或手动暂停取消后，不得用静音重试偷偷恢复。
+    if (generation !== playbackGeneration || element !== video.value || document.hidden || backgroundPaused.value) return
+    if (failure instanceof Error && (failure.name === 'AbortError' || failure.message === '播放请求已取消')) return
     // Android WebView 通常禁止带声音的自动播放；按 PC 端外部预览策略静音重试，
     // 视频先开始播放，用户点击声音按钮后再恢复音频，不把系统策略误报为线路失败。
     element.muted = true
@@ -2098,12 +2753,14 @@ async function playWhenReady(element: HTMLVideoElement, generation: number) {
 }
 
 async function continueWatching(entry: WatchHistory) {
+  const context = entry.sourceContext ?? savedSourceContext(historySourceBindingKey(entry)) ?? { content: '' }
   // 「继续观看」必须落到带播放器和作品详情的页面：先切到详情，再解析并播放原来的选集/线路。
+  watchPage.value = true
   section.value = 'detail'
   detailReturn.value = 'history'
   if (!mediaType(entry.mediaUrl)) {
     // 历史记录指向随包作品时直接用已有线路续播，不再让来源站往返决定等待时间。
-    const work = bundledWorkFor(entry.title, entry.mediaUrl)
+    const work = (context?.content ?? sourceContent(entry.mediaUrl)) ? undefined : bundledWorkFor(entry.title, entry.mediaUrl)
     const pool = bundledEpisodes(work)
     const bundled = pool.find((candidate) => candidate.id === entry.episodeId && (candidate.lineId || 'main') === entry.lineId)
       ?? pool.find((candidate) => candidate.id === entry.episodeId)
@@ -2111,13 +2768,13 @@ async function continueWatching(entry: WatchHistory) {
     // 这条历史不属于随包作品：清掉上一部作品的已有线路池，避免换线时串到别的作品。
     bundledPool.value = []
     bundledWork.value = null
-    await previewSource(entry.mediaUrl)
+    await previewSource(entry.mediaUrl, false, { title: entry.title, coverUrl: entry.coverUrl || '', summary: '', sourceContext: context })
     const episode = sourcePreview.value?.episodes.find((candidate) => candidate.id === entry.episodeId && (candidate.lineId || 'main') === entry.lineId)
       ?? sourcePreview.value?.episodes.find((candidate) => candidate.id === entry.episodeId && !candidate.playbackUrl)
     if (!episode) {
       // 解析不到原选集时留在详情页，用户可以直接在下面的选集列表里挑一条；历史记录不会丢。
-      sourceError.value = '原选集目前无法解析；历史记录已保留，可在下方选集里手动选择。'
-      if (!sourcePreview.value) { section.value = 'library'; fail('原作品目前无法解析，历史记录已保留。') }
+      sourceError.value = '原选集暂时无法播放，请在下方重新选择。历史记录仍保留。'
+      if (!sourcePreview.value) { section.value = 'library'; fail('作品加载失败，请稍后再试。历史记录仍保留。') }
       return
     }
     await playSourceEpisode(episode, entry.lineId)
@@ -2128,6 +2785,10 @@ async function continueWatching(entry: WatchHistory) {
 
 /** 重新进入搜索页：清掉上一次的关键词、结果与空态，避免“上一次的文字还在”。 */
 function resetSearch() {
+  searchRequest++
+  searchLoading.value = false
+  searchProgress.value = ''
+  searchInFlightKeyword = ''
   if (searchTimer) { clearTimeout(searchTimer); searchTimer = null }
   sourceKeyword.value = ''
   sourceHits.value = []
@@ -2142,83 +2803,155 @@ function resetSearch() {
  * 静默隔 350ms 重试一次，仍然失败才把错误交给界面。
  * 两次都加 JS 侧期限（VQ-61）：原生 15s 兜底之外再守一道，避免接口永久悬空时按钮一直禁用。
  */
-async function requestHits(keyword: string): Promise<SourceHit[]> {
-  try { return (await withNativeTimeout(androidSource.search({ keyword }), 15_000)).hits }
-  catch {
+async function requestHits(keyword: string, request: number, progress: (result: SourceSearchResult) => void): Promise<SourceSearchResult> {
+  if (activeSubscriptionContent()) return await withNativeTimeout(androidSource.search({ keyword }, progress), 13_000)
+  try { return await withNativeTimeout(androidSource.search({ keyword }, progress), 15_000) }
+  catch (cause) {
+    if ((cause as { code?: string })?.code === 'E_SEARCH_CANCELLED' || request !== searchRequest) return { hits: [] }
     await new Promise((resolve) => setTimeout(resolve, 350))
-    return (await withNativeTimeout(androidSource.search({ keyword }), 15_000)).hits
+    if (request !== searchRequest) return { hits: [] }
+    return await withNativeTimeout(androidSource.search({ keyword }, progress), 15_000)
   }
 }
 
 /** 当前在途检索的关键词：同一个关键词不重复打来源，新的关键词取代旧检索（不再直接丢弃）。 */
 let searchInFlightKeyword = ''
+watchValue(activeSubscriptionScope, () => {
+  searchVersionChecks.reset()
+  rejectedSearchVersions.value = new Set()
+  recentKeywords.value = recentSearches(activeSubscriptionScope())
+  repositoryQuery.value = ''
+  repositorySortOpen.value = false
+  // 保存原播放器进度后退出，旧订阅的选集与手动候选不留在新作用域。
+  if (selected.value) void closePlayer()
+  watchPage.value = false
+  if (section.value === 'detail') section.value = 'home'
+  repositoryRequest++
+  repositoryHits.value = []
+  repositoryNextPages.value = {}; repositoryIsDirectory.value = false; repositoryTruncated.value = false; repositoryLoading.value = false
+  repositoryError.value = ''
+  searchRequest++; previewRequest++; episodeRequest++
+  sourceLoading.value = false
+  searchLoading.value = false
+  searchProgress.value = ''
+  sourceError.value = ''; sourceSearched.value = false
+  searchInFlightKeyword = ''; lastHitsKeyword = ''
+  sourceHits.value = []; sourcePreview.value = null
+  searchSourceFilter.value = ''
+  sourceQueue.value = []; bundledPool.value = []; bundledWork.value = null
+  if (section.value === 'library') void loadRepository()
+  if (section.value === 'search' && sourceKeyword.value.trim()) void nextTick(() => searchSources())
+}, { flush: 'sync' })
 async function searchSources() {
   if (searchTimer) { clearTimeout(searchTimer); searchTimer = null }
   const keyword = sourceKeyword.value.trim()
   if (!keyword) return
-  const cacheKey = keyword.toLocaleLowerCase()
+  if (usingSubscription.value && !activeSubscriptionContent()) {
+    sourceError.value = '来源未就绪，请重新选择。'
+    sourceSearched.value = true
+    return
+  }
+  const normalizedKeyword = keyword.toLocaleLowerCase()
+  const cacheKey = `${activeSubscriptionScope()}\u0000${normalizedKeyword}`
   // 原来这里是 `if (sourceLoading.value) return`：旧检索还在跑时，用户改了关键词再触发检索会被**静默丢弃**
   // ——实测输入框显示「第二」、列表还是「第一」的结果，而桥接只收到一次 search。现在改成：同一关键词不重复发，
   // 不同关键词直接取代（stale 响应本来就由 searchRequest 序号丢弃）。
-  if (sourceLoading.value && cacheKey === searchInFlightKeyword) return
+  if (searchLoading.value && cacheKey === searchInFlightKeyword) return
   const request = ++searchRequest
   searchInFlightKeyword = cacheKey
-  sourceLoading.value = true
+  searchLoading.value = true
+  searchProgress.value = '正在搜索来源…'
   sourceError.value = ''
   sourceSearched.value = true
+  recentKeywords.value = rememberSearch(activeSubscriptionScope(), keyword)
   // 连点两次搜索时不要先把上一次的结果清空：清空 + 来源请求排队会让界面看起来“搜不到”。
-  if (cacheKey !== lastHitsKeyword) sourceHits.value = []
+  if (cacheKey !== lastHitsKeyword) { searchVersionChecks.cancel(); sourceHits.value = []; searchSourceFilter.value = '' }
   sourcePreview.value = null
-  try {
-    const cached = searchCache.get(cacheKey)
-    const useCached = !!(cached && cached.expires > Date.now())
-    const hits = useCached ? cached!.hits : await requestHits(keyword)
-    if (request !== searchRequest) return
-    if (hits.length && !useCached) {
-      if (searchCache.size >= 20) searchCache.delete(searchCache.keys().next().value!)
-      searchCache.set(cacheKey, { expires: Date.now() + 45_000, hits })
-    }
-    if (sourceKeyword.value.trim().toLocaleLowerCase() === cacheKey) {
+  const publish = (result: SourceSearchResult) => {
+    if (request !== searchRequest || `${activeSubscriptionScope()}\u0000${sourceKeyword.value.trim().toLocaleLowerCase()}` !== cacheKey) return
+    const hits = result.hits
+    if (sourceKeyword.value.trim().toLocaleLowerCase() === normalizedKeyword) {
       // 同一关键词的空结果（来源抖动或竞速超时）保留上一次的结果，而不是直接显示“没有找到”。
       if (hits.length || !sourceHits.value.length) {
-        sourceHits.value = hits
+        const merged = new Map(sourceHits.value.map(hit => [sourceHitKey(hit), hit]))
+        for (const hit of hits) merged.set(sourceHitKey(hit), hit)
+        sourceHits.value = [...merged.values()]
         lastHitsKeyword = cacheKey
       }
       warmTopHit(sourceHits.value)
     }
+    searchProgress.value = result.total ? `搜索中 ${result.completed ?? 0}/${result.total}` : '搜索中…'
   }
-  catch { if (request === searchRequest) sourceError.value = '公开来源暂不可用，请检查网络后重试；本地片库不受影响。' }
+  try {
+    const result = await requestHits(keyword, request, publish)
+    if (request !== searchRequest) return
+    publish(result)
+    // 搜索先展示，后台最多两项核查；检查只更新提示，不删除已展示的作品。
+    // 首条预热优先；离开搜索或更换关键词后，旧任务不再入队。
+    void warmTopHit(sourceHits.value).then(() => {
+      if (request === searchRequest && section.value === 'search') {
+        void searchVersionChecks.enqueue(result.hits.filter(hit => hit.kind !== 'resource'))
+      }
+    })
+    if (usingSubscription.value) {
+      const merged = new Map(repositoryHits.value.map(hit => [sourceHitKey(hit), hit]))
+      for (const hit of result.hits) merged.set(sourceHitKey(hit), hit)
+      repositoryHits.value = [...merged.values()].slice(0, 200)
+    }
+    if (result.warnings?.length) sourceError.value = '部分来源暂不可用，可重试。'
+  }
+  catch { if (request === searchRequest) sourceError.value = '搜索失败，请检查网络后重试。' }
   // 只有最新一次请求能收掉「读取中」：被取代的旧请求结束时不能把新请求的状态一起清掉。
-  finally { if (request === searchRequest) { sourceLoading.value = false; searchInFlightKeyword = '' } }
+  finally { if (request === searchRequest) { searchLoading.value = false; searchProgress.value = ''; searchInFlightKeyword = '' } }
 }
 
-async function previewSource(sourceUrl: string, fresh = false, seed?: { title: string; coverUrl: string; summary: string }): Promise<boolean> {
+async function previewSource(sourceUrl: string, fresh = false, seed?: { title: string; coverUrl: string; summary: string; sourceContext?: SourceContext }): Promise<boolean> {
   const request = ++previewRequest
   const previousSection = section.value
   sourceLoading.value = true
   sourceError.value = ''
   // 详情区先用搜索命中或已保存作品的标题、封面和简介占位，避免点击后长时间空白，
   // 也避免在上一次预览未失效时短暂显示上一部作品的选集。
-  const previous = sourcePreview.value?.sourceUrl === sourceUrl ? sourcePreview.value : null
+  const context = seed?.sourceContext ?? { content: sourceContent(sourceUrl) }
+  const previous = sourcePreview.value?.sourceUrl === sourceUrl && sameHistorySource(sourcePreview.value.sourceContext, context) ? sourcePreview.value : null
+  const expectedTitle = seed?.title || previous?.title
+    || sourceHits.value.find((hit) => hit.sourceUrl === sourceUrl && sameHistorySource(hit.sourceContext, context))?.title
+    || items.value.find((item) => item.url === sourceUrl && sameHistorySource(item.sourceContext, context))?.title
+    || catalogSnapshot.find((item) => item.sourceUrl === sourceUrl)?.title || ''
   sourcePreview.value = {
     title: seed?.title || previous?.title || '',
     sourceUrl,
     coverUrl: seed?.coverUrl || previous?.coverUrl || '',
     summary: seed?.summary || previous?.summary || '',
     episodes: previous?.episodes ?? [],
+    sourceContext: context,
   }
   try {
-    const preview = await fetchPreview(sourceUrl, fresh)
+    const preview = await fetchPreview(sourceUrl, fresh, context)
     if (request !== previewRequest) return false
-    const known = sourceHits.value.find((hit) => hit.sourceUrl === preview.sourceUrl)
-      ?? items.value.find((item) => item.url === preview.sourceUrl)
+    // 来源有明确标题时必须仍是用户选择的作品；缺标题继续使用既有种子降级。
+    const sameWorkVersion = groupSearchVersions([
+      { title: expectedTitle || '', sourceUrl, coverUrl: '', summary: '', sourceContext: context },
+      { title: preview.title, sourceUrl, coverUrl: '', summary: '', sourceContext: context },
+    ]).length === 1
+    if (titleKey(expectedTitle) && preview.title.trim() && !sameWorkVersion) {
+      sourcePreview.value = { ...sourcePreview.value!, episodes: [] }
+      sourceError.value = '来源中的作品不对，请选择其他来源。'
+      return false
+    }
+    const known = sourceHits.value.find((hit) => hit.sourceUrl === preview.sourceUrl && sameHistorySource(hit.sourceContext, preview.sourceContext))
+      ?? items.value.find((item) => item.url === preview.sourceUrl && sameHistorySource(item.sourceContext, preview.sourceContext))
     sourcePreview.value = {
       ...preview,
       // 原生不再因为页面没有标题就整次失败（VQ-60）：标题缺省时用搜索命中或已保存作品的标题补上，
       // 不能把进入详情前的占位标题覆盖成空串。
       title: preview.title || seed?.title || previous?.title || '',
-      coverUrl: preview.coverUrl || known?.coverUrl || '',
-      summary: preview.summary || known?.summary || '',
+      coverUrl: known?.coverUrl || seed?.coverUrl || previous?.coverUrl || preview.coverUrl || '',
+      summary: preview.summary || seed?.summary || previous?.summary || known?.summary || '',
+    }
+    const repositoryKey = `${sourcePreview.value.sourceContext?.sourceIndex ?? ''}\u0000${sourceUrl}`
+    if (usingSubscription.value && repositoryHits.value.some(hit => sourceHitKey(hit) === repositoryKey)) {
+      repositoryHits.value = repositoryHits.value.map(hit => sourceHitKey(hit) === repositoryKey ? { ...hit, coverUrl: hit.coverUrl || sourcePreview.value?.coverUrl || preview.coverUrl } : hit)
     }
     if (previousSection !== 'detail') detailReturn.value = previousSection
     section.value = 'detail'
@@ -2226,17 +2959,19 @@ async function previewSource(sourceUrl: string, fresh = false, seed?: { title: s
     warmPreviewHosts(sourcePreview.value)
     return true
   }
-  catch { if (request === previewRequest) sourceError.value = '该来源页暂无法预览，未更改本地片库。'; return false }
+  catch { if (request === previewRequest) sourceError.value = '作品加载失败，请重试或换个来源。'; return false }
   finally { if (request === previewRequest) sourceLoading.value = false }
 }
 
 /** 依次尝试备用来源，成功播放返回 true；全部失败返回 false 交给调用方显示错误。 */
 async function tryNextSource(): Promise<boolean> {
+  const expected = sourcePreview.value
+  const seed = expected ? { title: expected.title, coverUrl: expected.coverUrl, summary: expected.summary, sourceContext: expected.sourceContext } : undefined
   while (sourceQueue.value.length) {
     const next = sourceQueue.value[0]!
     sourceQueue.value = sourceQueue.value.slice(1)
     sourceTried.value = [...sourceTried.value, next]
-    const ok = await previewSource(next)
+    const ok = await previewSource(next, false, seed)
     const preview = sourcePreview.value
     if (!ok || !preview || !preview.episodes.length) continue
     lineNotice.value = '主来源不可用，已切换到备用来源'
@@ -2249,10 +2984,13 @@ async function tryNextSource(): Promise<boolean> {
 }
 
 async function playSaved(item: SavedMedia) {
-  await watchSearchResult(item.url, item)
+  await watchSearchResult(item.url, { ...item, sourceContext: item.sourceContext ?? savedSourceContext(`saved:${item.id}`) ?? { content: '' } })
 }
 
-async function watchSearchResult(sourceUrl: string, saved?: SavedMedia, candidates: string[] = []) {
+async function watchSearchResult(sourceUrl: string, saved?: SavedMedia, candidates: string[] = [], chosenHit?: SourceHit) {
+  const hit = chosenHit ?? sourceHits.value.find(candidate => candidate.sourceUrl === sourceUrl)
+  const context = saved ? saved.sourceContext ?? { content: sourceContent(saved.url) } : hit?.sourceContext
+  const subscription = context?.content ?? sourceContent(sourceUrl)
   if (selected.value) await closePlayer()
   watchPage.value = true
   lineFallbackTried.clear()
@@ -2263,7 +3001,7 @@ async function watchSearchResult(sourceUrl: string, saved?: SavedMedia, candidat
   if (saved && mediaType(saved.url)) {
     detailReturn.value = section.value
     sourcePreview.value = { title: saved.title, sourceUrl: saved.url, coverUrl: savedCover(saved), summary: saved.summary || '',
-      episodes: [{ id: 'direct', title: '直链媒体', sourceUrl: saved.url, playbackUrl: saved.url, mimeType: '', lineId: 'main' }] }
+      episodes: [{ id: 'direct', title: '视频', sourceUrl: saved.url, playbackUrl: saved.url, mimeType: '', lineId: 'main' }] }
     section.value = 'detail'
     await watch(saved)
     return
@@ -2271,13 +3009,14 @@ async function watchSearchResult(sourceUrl: string, saved?: SavedMedia, candidat
   // 先切到观看工作区展示播放器占位，来源解析在后台继续，避免点击后长时间停留在搜索页。
   detailReturn.value = section.value
   section.value = 'detail'
-  const hit = sourceHits.value.find((candidate) => candidate.sourceUrl === sourceUrl)
   const seed = {
     title: saved?.title || hit?.title || '',
     coverUrl: saved?.coverUrl || hit?.coverUrl || '',
     summary: saved?.summary || hit?.summary || '',
+    sourceContext: context,
   }
   // 随包已有线路：外站线路不可用或超过起播预算时静默接管，用户不必等来源站超时。
+  // 当前订阅的同一部作品若没有可播线路，也可用随包已有线路接管；作品身份仍由标题/来源守卫确认。
   const work = bundledWorkFor(seed.title, sourceUrl)
   const bundled = bundledEpisodes(work)
   bundledPool.value = bundled
@@ -2315,6 +3054,33 @@ async function watchSearchResult(sourceUrl: string, saved?: SavedMedia, candidat
 }
 
 async function browseBundledItem(item: CatalogSnapshotItem) {
+  if (usingSubscription.value) {
+    const scope = activeSubscriptionScope()
+    const request = ++previewRequest
+    sourceLoading.value = true
+    sourceError.value = ''
+    detailReturn.value = 'home'
+    watchPage.value = false
+    sourcePreview.value = { title: item.title, sourceUrl: item.sourceUrl, coverUrl: item.coverUrl, summary: '', episodes: [], sourceContext: { content: activeSubscriptionContent() } }
+    section.value = 'detail'
+    const fallback = async (expectedRequest = request) => {
+      if (expectedRequest !== previewRequest || activeSubscriptionScope() !== scope) return
+      if (bundledEpisodes(item).length) await playBundledEpisode(item)
+      else sourceError.value = '当前来源暂不可用，请检查网络后重试。'
+    }
+    try {
+      if (!activeSubscriptionContent()) { await fallback(); return }
+      const result = await withNativeTimeout(androidSource.search({ keyword: item.title }), 13_000)
+      if (request !== previewRequest || activeSubscriptionScope() !== scope) return
+      const hit = result.hits.find(candidate => candidate.kind !== 'resource' && titleKey(candidate.title) === titleKey(item.title))
+      if (!hit) { await fallback(); return }
+      const previewAttempt = previewRequest + 1
+      const ready = await previewSource(hit.sourceUrl, false, { ...hit, coverUrl: hit.coverUrl || item.coverUrl })
+      if (!ready || !sourcePreview.value?.episodes.length) await fallback(previewAttempt)
+    } catch { await fallback() }
+    finally { if (request === previewRequest) sourceLoading.value = false }
+    return
+  }
   // 随包推荐作品自带已有线路：点“查看”直接进入带播放器的详情，不再等待来源页。
   const pool = bundledEpisodes(item)
   if (pool.length) { await playBundledEpisode(item); return }
@@ -2326,7 +3092,8 @@ async function switchMovieSource() {
   if (!target) return
   if (selected.value) await closePlayer()
   watchPage.value = true
-  await previewSource(target)
+  const previous = sourcePreview.value
+  await previewSource(target, false, previous ? { title: previous.title, coverUrl: previous.coverUrl, summary: previous.summary } : undefined)
   // A separate source can list different edits; let the user choose an episode explicitly.
 }
 
@@ -2344,8 +3111,8 @@ async function savePreview() {
   const preview = sourcePreview.value
   if (!preview || previewSaving.value) return
   previewSaving.value = true
-  try { await androidCatalog.save({ title: preview.title, url: preview.sourceUrl, coverUrl: safeCoverUrl(preview.coverUrl), summary: preview.summary }); await reload(); error.value = ''; filter.value = 'all'; keyword.value = ''; section.value = 'library' }
-  catch { sourceError.value = '保存来源失败，原片库未更改。' }
+  try { const result = await androidCatalog.save({ title: preview.title, url: preview.sourceUrl, coverUrl: safeCoverUrl(preview.coverUrl), summary: preview.summary, sourceContext: preview.sourceContext }); if (!result.item.sourceContext && !result.item.sourceKey) persistSourceContext(`saved:${result.item.id}`, preview.sourceContext); await reload(); error.value = ''; filter.value = 'all'; keyword.value = ''; section.value = 'library' }
+  catch { sourceError.value = '保存失败，请重试。' }
   finally { previewSaving.value = false }
 }
 
@@ -2354,10 +3121,11 @@ async function collectPreview() {
   if (!preview || previewSaving.value) return
   previewSaving.value = true
   try {
-    await androidCatalog.save({ title: preview.title, url: preview.sourceUrl, coverUrl: safeCoverUrl(preview.coverUrl), summary: preview.summary, favorite: true })
+    const result = await androidCatalog.save({ title: preview.title, url: preview.sourceUrl, coverUrl: safeCoverUrl(preview.coverUrl), summary: preview.summary, favorite: true, sourceContext: preview.sourceContext })
+    if (!result.item.sourceContext && !result.item.sourceKey) persistSourceContext(`saved:${result.item.id}`, preview.sourceContext)
     await reload()
     sourceError.value = ''
-  } catch { sourceError.value = '收藏失败，本机原有作品和收藏未更改。' }
+  } catch { sourceError.value = '收藏失败，请重试。' }
   finally { previewSaving.value = false }
 }
 
@@ -2401,47 +3169,63 @@ async function playSourceEpisode(episode: SourceEpisode, requiredLineId?: string
   // 解析失败或没有受支持直链时，按顺序再试下一条候选（每条只试一次），不把用户留在错误上。
   const retryNextEpisode = async (message: string) => {
     const candidate = nextUntriedEpisode(episode)
-    if (!candidate) { sourceError.value = message; return }
+    if (!candidate) {
+      if (sourceQueue.value.length && await tryNextSource()) return
+      sourceError.value = message
+      return
+    }
     lineFallbackTried.add(fallbackKey(candidate))
-    lineNotice.value = `已自动尝试其他选集：${displayText(candidate.title)}`
+    lineNotice.value = `已自动尝试同集其他线路：${displayText(candidate.title)}`
     await playSourceEpisode(candidate)
   }
   if (!episode.playbackUrl && episode.sourceUrl) {
     sourceLoading.value = true
     try {
-      const options = await episodeOptions(episode.sourceUrl)
+      const direct = await androidSource.resolve(episode.sourceUrl, episode.sourceContext ?? preview.sourceContext)
+      const options = direct ? [{ ...episode, playbackUrl: direct.playbackUrl, mimeType: direct.mimeType, requestHeaders: direct.requestHeaders }] : await episodeOptions(episode.sourceUrl, episode.sourceContext ?? preview.sourceContext)
       if (request !== episodeRequest || preview !== sourcePreview.value) return
       const requestedLine = requiredLineId || (episode.lineId && episode.lineId !== 'main' ? episode.lineId : '')
       const playable = options.filter((candidate) => episodeMediaType(candidate))
       const resolved = resolvePlayableLine(playable, episode, requestedLine, Boolean(requiredLineId))
       if (!resolved) {
-        // 历史续播只认原线路，不能自动换；首次观看则允许自动尝试下一条选集。
-        if (requiredLineId) { sourceError.value = '原线路目前不可用；历史记录已保留，不会自动切换到其他线路。'; return }
-        await retryNextEpisode(requestedLine ? '所选线路目前不可用；不会自动切换到其他线路。' : '该集目前没有可播放直链，已保留选集地址。')
+        // 历史续播只认原线路；首次观看也只能尝试同集其他线路。
+        if (requiredLineId) { sourceError.value = '原线路暂不可用，请手动换线。历史记录仍保留。'; return }
+        await retryNextEpisode(requestedLine ? '这条线路暂不可用，请手动换线。' : '这集暂时无法播放，请换线或稍后重试。')
         return
       }
       // 只有真正匹配到所选线路时才沿用分组名；否则保存来源自身编号，历史续播才能命中同一条。
       const lineId = requestedLine && (resolved.lineId || 'main') === requestedLine ? requestedLine : resolved.lineId || 'main'
       episode = { ...resolved, id: episode.id, title: episode.title, lineId }
-    } catch {
+      // 后续原生启动和同集重试必须沿用这次解析的防盗链字段。
+      if (episode.requestHeaders) preview.episodes = preview.episodes.map(candidate =>
+        candidate.id === episode.id && (candidate.lineId || 'main') === lineId ? { ...candidate, requestHeaders: episode.requestHeaders } : candidate)
+    } catch (failure) {
       if (request !== episodeRequest) return
+      if ((episode.sourceContext ?? preview.sourceContext)?.content ?? sourceContent(episode.sourceUrl)) {
+        if (!requiredLineId && /未找到静态媒体直链|没有可播放选集/.test(failure instanceof Error ? failure.message : String(failure))) {
+          await retryNextEpisode('这个版本暂未取得播放地址，请换线或稍后重试。')
+          return
+        }
+        sourceError.value = '这条线路暂不可用，请换线或重试。'
+        return
+      }
       if (!requiredLineId) { await retryNextEpisode('该集来源页暂不可用，请稍后重试。'); return }
-      sourceError.value = '原线路目前不可用；历史记录已保留。'
+      sourceError.value = '原线路暂不可用，请手动换线。历史记录仍保留。'
       return
     }
     finally { if (request === episodeRequest) sourceLoading.value = false }
   }
   if (request !== episodeRequest || preview !== sourcePreview.value) return
-  if (requiredLineId && (episode.lineId || 'main') !== requiredLineId) { sourceError.value = '原线路目前不可用；历史记录已保留。'; return }
+  if (requiredLineId && (episode.lineId || 'main') !== requiredLineId) { sourceError.value = '原线路暂不可用，请手动换线。历史记录仍保留。'; return }
   const episodeType = episodeMediaType(episode)
   if (!episodeType) {
-    if (!requiredLineId) { await retryNextEpisode('当前选集没有受支持的 MP4 或 HLS 地址，请换线路或刷新选集。'); return }
-    sourceError.value = '原线路目前不可用；历史记录已保留。'
+    if (!requiredLineId) { await retryNextEpisode('这集暂时无法播放，请换线或刷新选集。'); return }
+    sourceError.value = '原线路暂不可用，请手动换线。历史记录仍保留。'
     return
   }
-  await watch({ id: -2, title: preview.title, url: preview.sourceUrl, favorite: false, updatedAt: Date.now() },
+  await watch({ id: -2, title: preview.title, url: preview.sourceUrl, coverUrl: preview.coverUrl, favorite: false, updatedAt: Date.now(), sourceContext: preview.sourceContext },
     episode.playbackUrl, episode.id, episode.title, episode.lineId || 'main', true, episodeType)
-  warmAdjacentEpisode(episode, preview)
+  scheduleAdjacentWarm(episode, preview)
 }
 
 async function closePlayer() {
@@ -2515,9 +3299,55 @@ async function updateSettings(update: Partial<AndroidSettings>) {
   } catch {
     if (request !== settingsRequest) return
     settings.value = previous
-    notifyOnce('设置保存失败，原有偏好未更改。')
+    notifyOnce('设置保存失败，请重试。')
   }
 }
+function setPlaybackRate(value: number) {
+  if (PLAYBACK_RATES.some(rate => rate === value)) void updateSettings({ playbackRate: value })
+}
+async function playDownloaded(item: { url: string; nativeUrl?: string; title: string; id?: string; position?: number; duration?: number }) {
+  if (selected.value) await closePlayer()
+  downloadedPlaybackUrl = item.url
+  downloadedNativeUrl = item.nativeUrl || ''
+  downloadedPlaybackId = item.id || ''
+  offlineResumePosition = item.duration && item.position && item.position < item.duration - 5 ? item.position : 0
+  ++previewRequest
+  sourcePreview.value = null
+  sourceError.value = ''
+  detailReturn.value = 'settings'
+  section.value = 'detail'
+  watchPage.value = true
+  const saved: SavedMedia = { id: -Date.now(), title: item.title, url: item.url, favorite: false, updatedAt: Date.now() }
+  await watch(saved, item.url, 'downloaded', item.title, 'local', true, 'mp4')
+}
+async function downloadCurrent() {
+  if (!canDownloadCurrent.value || downloadBusy.value) return
+  downloadBusy.value = true
+  try {
+    await androidDownloads.enqueue(activePlaybackUrl.value, `${selected.value?.title || '视频'} ${activeEpisodeTitle.value}`.slice(0, 200))
+    notifyOnce('已加入下载队列。')
+  } catch (failure) { notifyOnce(failure instanceof Error ? failure.message : '下载添加失败，请重试。') }
+  finally { downloadBusy.value = false }
+}
+async function restorePersonalViews() {
+  await Promise.all([reload(), reloadHistory(), reloadSettings()])
+}
+async function reloadSettings() {
+  const request = ++settingsRequest
+  try {
+    const loaded = (await withNativeTimeout(androidCatalog.getSettings(), 8_000)).settings
+    if (request !== settingsRequest) return
+    const restoredQuality = restoreQualityProfile(loaded.qualityProfile)
+    const restoredFrame = restoreFrameTarget(loaded.frameTarget)
+    const restoredVolume = typeof loaded.volume === 'number' && Number.isFinite(loaded.volume) && loaded.volume >= 0 && loaded.volume <= 1 ? loaded.volume : 1
+    qualityProfile.value = restoredQuality
+    frameTarget.value = restoredFrame
+    playbackVolume.value = restoredVolume
+    settings.value = { ...loaded, theme: loaded.theme ?? 'system', autoPlay: loaded.autoPlay ?? false,
+      playbackRate: loaded.playbackRate ?? 1, qualityProfile: restoredQuality, frameTarget: frameTargetSetting(restoredFrame), volume: restoredVolume }
+  } catch { if (request === settingsRequest) fail('设置暂时无法读取。') }
+}
+watchValue(() => settings.value.playbackRate, rate => { if (video.value) video.value.playbackRate = rate })
 
 /**
  * 清除观看历史：用应用内二次确认替代 `window.confirm`。
@@ -2543,8 +3373,8 @@ async function clearHistory() {
   }
   disarmClearHistory()
   clearRunning.value = true
-  try { await androidCatalog.clearHistory(); await reloadHistory() }
-  catch { fail('清理历史失败，原有记录未更改。') }
+  try { await androidCatalog.clearHistory(); clearHistorySourceContexts(); await reloadHistory() }
+  catch { fail('清除失败，请重试。历史记录仍保留。') }
   finally { clearRunning.value = false }
 }
 
@@ -2554,14 +3384,30 @@ async function clearHistory() {
  * （`clearMediaCache` 在桥接里声明了却从未被调用）。这里清原生缓存目录 + 内存里的分片表。
  */
 const cacheClearing = ref(false)
+const coverCacheStatus = ref('')
+const coverCacheClearing = ref(false)
+async function refreshCoverCacheStatus() {
+  const stats = await getCoverCacheStats()
+  coverCacheStatus.value = stats.available ? `${stats.entries} 张 · ${(stats.bytes / 1024 / 1024).toFixed(1)} MB` : '当前环境使用系统图片缓存'
+}
+async function clearCoverImages() {
+  if (coverCacheClearing.value) return
+  coverCacheClearing.value = true
+  try {
+    const cleared = await clearCoverCache()
+    await refreshCoverCacheStatus()
+    notifyOnce(cleared ? '封面缓存已清理，收藏和历史不受影响。' : '当前环境没有可清理的独立封面缓存。')
+  } finally { coverCacheClearing.value = false }
+}
+watchValue(section, value => { if (value !== 'search') searchVersionChecks.cancel(); if (value !== 'library') repositorySortOpen.value = false; if (value === 'library') void loadRepository(); if (value === 'settings') void refreshCoverCacheStatus(); if (value === 'history') void recoverHistoryCovers() })
 async function clearMediaCache() {
   if (cacheClearing.value) return
   cacheClearing.value = true
   try {
-    const result = await withNativeTimeout(androidCatalog.clearMediaCache(), 8_000)
+    await withNativeTimeout(androidCatalog.clearMediaCache(), 8_000)
     fragmentCacheHandle?.clear()
     fragmentCacheHandle = null
-    notifyOnce(`已清理媒体缓存${result && typeof result.removed === 'number' ? `（${result.removed} 项）` : ''}。`)
+    notifyOnce('媒体缓存已清理。')
   } catch {
     notifyOnce('媒体缓存暂时无法清理，请稍后重试。')
   } finally {
@@ -2583,10 +3429,13 @@ async function reload() {
   catalogLoading.value = true
   try {
     // 同上：片库读取有上限，超时走失败重试而不是一直停在「正在读取」（VQ-60）。
-    items.value = (await withNativeTimeout(androidCatalog.list(), 8_000)).items
+    let raw = (await withNativeTimeout(androidCatalog.list(), 8_000)).items
+    const migration = await withNativeTimeout(migrateLegacySourceBindings(raw, []), 8_000)
+    if (migration.migrated) raw = (await withNativeTimeout(androidCatalog.list(), 8_000)).items
+    items.value = raw.map(item => ({ ...item, sourceContext: item.sourceContext ?? savedSourceContext(`saved:${item.id}`) ?? { content: '' } }))
     clearError()
   } catch {
-    fail('无法读取本地片库。请重试；已有数据不会自动清除。', () => { void reload() })
+    fail('片库加载失败，请重试。已有作品仍保留。', () => { void reload() })
   } finally {
     catalogLoading.value = false
   }
@@ -2612,7 +3461,7 @@ async function toggleFavorite(item: SavedMedia) {
     if (updated) applyFavorite(updated.favorite)
   } catch {
     applyFavorite(item.favorite)
-    fail('收藏状态保存失败，原有数据未更改。')
+    fail('收藏保存失败，请重试。')
   } finally {
     favoritePending.delete(item.id)
   }
@@ -2642,23 +3491,18 @@ function markPressed(event: Event) {
 }
 
 onMounted(() => {
+  // 与原生 v9 迁移同步清掉旧历史的来源快照；一次成功后不影响此后新产生的观看记录。
+  try {
+    const key = 'sanye:android-history-reset:6.2'
+    if (localStorage.getItem(key) !== 'done') { clearHistorySourceContexts(); localStorage.setItem(key, 'done') }
+  } catch { /* 本地存储不可用时，数据库迁移仍负责清空观看历史。 */ }
+  if (downloadsAvailable()) void androidDownloads.resume().catch(() => { notifyOnce('下载队列恢复失败，请在离线下载中重试。') })
+  const subscription = currentSubscription.value
+  if (subscription && subscriptionNeedsRefresh(subscription)) void refreshSubscription(subscription.url).catch(() => { /* 离线时继续使用已选缓存 */ })
   void reload()
   void reloadHistory()
   // 设置读取同样是设置页能否离开「读取中」的前提（VQ-60）。
-  void withNativeTimeout(androidCatalog.getSettings(), 8_000).then((value) => {
-    const loaded = value.settings
-    // 画质与帧率随设置一起恢复（VQ-48）：点开作品即以用户上次的档位起播，不需要每次重选。
-    const restoredQuality = restoreQualityProfile(loaded.qualityProfile)
-    const restoredFrame = restoreFrameTarget(loaded.frameTarget)
-    // 音量随设置恢复（VQ-61）：起播前就设好，避免先以 100% 出声再跳变。
-    const restoredVolume = typeof loaded.volume === 'number' && Number.isFinite(loaded.volume) && loaded.volume >= 0 && loaded.volume <= 1 ? loaded.volume : 1
-    qualityProfile.value = restoredQuality
-    frameTarget.value = restoredFrame
-    playbackVolume.value = restoredVolume
-    // 旧版本插件或测试桥接可能缺字段，这里补齐后再交给模板使用。
-    settings.value = { ...loaded, theme: loaded.theme ?? 'system', autoPlay: loaded.autoPlay ?? false,
-      playbackRate: loaded.playbackRate ?? 1, qualityProfile: restoredQuality, frameTarget: frameTargetSetting(restoredFrame), volume: restoredVolume }
-  }).catch(() => { fail('设置暂时无法读取。') })
+  void reloadSettings()
   prewarmPlaybackModules()
   void (async () => {
     try { const info = await App.getInfo(); appVersion.value = `${info.version}（${info.build}）` }
@@ -2671,6 +3515,7 @@ onMounted(() => {
   window.addEventListener('orientationchange', deferEnhancementJudgementOnce)
   lightSchemeQuery?.addEventListener('change', onSystemSchemeChange)
   void App.addListener('backButton', () => {
+    if (sourcePicker.value?.open) { dismissSourcePicker(); return }
     if (document.fullscreenElement) { void document.exitFullscreen(); return }
     if (chromeMenu.value) { chromeMenu.value = null; scheduleChromeHide(); return }
     if (stageFullscreen.value) { stageFullscreen.value = false; setNativeLandscape(false); setNativeImmersive(false); return }
@@ -2685,8 +3530,11 @@ onMounted(() => {
   }).catch(() => { /* 浏览器样例不提供安卓返回键。 */ })
 })
 onBeforeUnmount(() => {
+  searchVersionChecks.cancel()
   const element = video.value
   unmounted = true
+  for (const entry of manifestPrefetches.values()) entry.controller.abort()
+  manifestPrefetches.clear()
   // 组件卸载时把在途计时器全部收掉（VQ-61）：此前只有部分计时器被清，退出播放页后
   // 提示、按住态、搜索防抖等回调仍会跑一次，甚至会碰到已经销毁的播放器状态。
   const timers: Array<ReturnType<typeof setTimeout> | number | null | undefined> = [
@@ -2713,11 +3561,23 @@ onBeforeUnmount(() => {
   <main class="android-app" :data-theme="settings.theme" @pointerdown="markPressed" @pointerup="clearPressed" @pointercancel="clearPressed" @touchmove.passive="clearPressed">
     <header class="android-topbar">
       <div class="android-brand"><strong>三叶动漫</strong></div>
-      <button class="android-top-search" type="button" aria-label="搜索作品与来源" :aria-current="section === 'search' || (section === 'detail' && detailReturn === 'search') ? 'page' : undefined" @click="section = 'search'"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="search"><path v-for="shape in ICONS.search ?? []" :key="shape" :d="shape" /></svg><span class="android-top-search-label">搜索作品或来源</span></button>
+      <button class="android-top-search" type="button" aria-label="搜索作品与来源" :aria-current="section === 'search' || (section === 'detail' && detailReturn === 'search') ? 'page' : undefined" @click="openSearchInput"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="search"><path v-for="shape in ICONS.search ?? []" :key="shape" :d="shape" /></svg><span class="android-top-search-label">搜索作品或来源</span></button>
       <button class="android-theme-toggle" type="button" :aria-label="appearanceLight ? '切换深色模式' : '切换浅色模式'" @click="updateSettings({ theme: appearanceLight ? 'dark' : 'light' })"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" :data-icon="appearanceLight ? 'moon' : 'sun'"><path v-for="shape in (appearanceLight ? ICONS.moon : ICONS.sun) ?? []" :key="shape" :d="shape" /></svg></button>
     </header>
 
+    <div v-if="section === 'home' || section === 'search' || section === 'library'" class="android-source-context" aria-label="当前来源">
+      <div><strong>{{ sourceLabel }}</strong><span v-if="currentSourceStatus" role="status">{{ currentSourceStatus }}</span></div>
+      <button type="button" aria-label="切换来源订阅" @click="showSourcePicker">切换</button>
+    </div>
+
     <!-- 一次性提示：同一条文案一次运行只出现一次，几秒后自动收回。 -->
+    <dialog ref="sourcePicker" class="android-source-sheet" aria-labelledby="source-sheet-title" @cancel="dismissSourcePicker" @click="($event.target === sourcePicker) && dismissSourcePicker()">
+      <div class="android-sheet-heading"><h2 id="source-sheet-title">选择订阅</h2><button type="button" aria-label="关闭来源选择" @click="dismissSourcePicker">关闭</button></div>
+      <button class="android-source-choice" type="button" :aria-pressed="!usingSubscription" @click="chooseSubscription('')"><strong>樱花动漫</strong><span>{{ !usingSubscription ? '已启用' : '选择' }}</span></button>
+      <button v-for="item in availableSourceChoices" :key="`${item.url}:${item.sourceIndex}`" class="android-source-choice" type="button" :aria-pressed="subscriptionState.active === item.url && activeSubscriptionSourceIndex() === item.sourceIndex" @click="chooseSubscription(item.url, item.sourceIndex)"><strong>{{ item.name }} <em v-if="item.recommended" class="android-source-recommended">推荐</em></strong><span>{{ subscriptionState.active === item.url && activeSubscriptionSourceIndex() === item.sourceIndex ? '当前' : '' }}</span></button>
+      <p v-if="pickerError" class="android-error" role="alert">{{ pickerError }}</p>
+      <button class="android-secondary-button" type="button" @click="dismissSourcePicker(); personalPanel = 'subscriptions'; section = 'settings'">管理订阅</button>
+    </dialog>
     <p v-if="notice" class="android-notice" role="status">{{ notice }}</p>
 
     <nav class="android-nav" aria-label="安卓功能导航">
@@ -2725,14 +3585,14 @@ onBeforeUnmount(() => {
         :key="entry[0]" type="button" :aria-current="section === entry[0] || (section === 'detail' && detailReturn === entry[0]) ? 'page' : undefined" @click="section = entry[0]"><span aria-hidden="true"><svg viewBox="0 0 24 24"><path v-for="shape in NAV_ICONS[entry[0]]" :key="shape" :d="shape" /></svg></span><small>{{ entry[1] }}</small></button>
     </nav>
 
-    <div v-if="section !== 'home'" class="android-page-heading"><button v-if="section === 'detail'" class="android-back" type="button" @click="section = detailReturn"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="back"><path v-for="shape in ICONS.back ?? []" :key="shape" :d="shape" /></svg> 返回{{ detailReturn === 'search' ? '搜索结果' : detailReturn === 'library' ? '片库' : '上一页' }}</button><span class="android-kicker">{{ pageKicker }}</span><h1>{{ section === 'search' ? '搜索作品' : section === 'detail' ? (watchPage ? '观看作品' : '作品详情') : section === 'library' ? '番剧仓库' : section === 'history' ? '继续观看' : section === 'schedule' ? '一周排期' : '我的空间' }}</h1></div>
+    <div v-if="section !== 'home'" class="android-page-heading"><button v-if="section === 'detail'" class="android-back" type="button" @click="section = detailReturn"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="back"><path v-for="shape in ICONS.back ?? []" :key="shape" :d="shape" /></svg> 返回{{ detailReturn === 'search' ? '搜索结果' : detailReturn === 'library' ? '片库' : '上一页' }}</button><h1>{{ section === 'search' ? '搜索作品' : section === 'detail' ? (watchPage ? '观看作品' : '作品详情') : section === 'library' ? '番剧仓库' : section === 'history' ? '继续观看' : section === 'schedule' ? '一周排期' : '我的空间' }}</h1></div>
 
-    <div v-if="section === 'detail' && watchPage && !selected" class="android-watch-top android-watch-placeholder" role="status">
-      <img v-if="previewCover && !failedCovers.has(previewCover)" :src="previewCover" alt="" referrerpolicy="no-referrer" @error="coverFailed(previewCover)" />
+    <div v-if="section === 'detail' && watchPage && !selected && !sourceError" class="android-watch-top android-watch-placeholder" role="status">
+      <AndroidCover v-if="previewCover && !failedCovers.has(previewCover)" :src="previewCover" loading="eager" alt="" referrerpolicy="no-referrer" @error="coverFailed(previewCover)" />
       <div><strong>{{ displayText(sourcePreview?.title || '选择选集开始观看') }}</strong></div>
     </div>
 
-    <section v-if="selected" class="android-player" :class="watchPage && section === 'detail' ? 'android-player--inline' : 'android-player--overlay'" aria-label="视频播放">
+    <section v-if="selected && !nativePlaybackActive" class="android-player" :class="watchPage && section === 'detail' ? 'android-player--inline' : 'android-player--overlay'" aria-label="视频播放">
       <div v-if="!watchPage || section !== 'detail'" class="android-section-title"><h2>{{ displayText(selected.title) }}</h2></div>
       <p v-if="lineNotice && !stageFullscreen" class="android-player-notice">{{ lineNotice }}</p>
       <div
@@ -2748,8 +3608,9 @@ onBeforeUnmount(() => {
         @pointercancel="endSurfaceGesture"
         @dragstart.prevent
       >
-        <img v-if="showPoster" class="android-player-poster" :src="playerArtwork" alt="" referrerpolicy="no-referrer" @error="coverFailed(playerArtwork)" />
-        <video ref="video" playsinline preload="metadata" @loadedmetadata="syncPlaybackDuration(); restorePosition()" @loadeddata="onFirstFrame()" @durationchange="syncPlaybackDuration" @progress="syncPlaybackDuration" @timeupdate="onTimeUpdate" @play="playing = true" @playing="onPlayerPlay()" @canplay="syncPlaybackDuration()" @pause="playing = false; persistProgress()" @ended="onPlaybackEnded" @waiting="onVideoWaiting" @stalled="onVideoWaiting" @error="onVideoError('无法加载视频，请检查来源、格式或网络连接。')" />
+        <div class="android-player-viewport">
+        <AndroidCover v-if="showPoster" class="android-player-poster" :src="playerArtwork" loading="eager" alt="" referrerpolicy="no-referrer" @error="coverFailed(playerArtwork)" />
+        <video ref="video" playsinline preload="metadata" @loadedmetadata="syncPlaybackDuration(); restorePosition()" @loadeddata="onFirstFrame()" @durationchange="syncPlaybackDuration" @progress="syncPlaybackDuration" @timeupdate="onTimeUpdate" @seeked="onSeekSettled" @play="playing = true" @playing="onPlayerPlay()" @canplay="syncPlaybackDuration()" @pause="playing = false; buffering = false; clearPlaybackStallWatchdog(); playbackObservation?.pause(); persistProgress()" @ended="onPlaybackEnded" @waiting="onVideoWaiting" @stalled="onVideoWaiting" @error="onVideoError('无法加载视频，请检查来源、格式或网络连接。')" />
         <div class="android-player-dim" :style="{ opacity: playerDim }" aria-hidden="true"></div>
         <div
           class="android-player-surface"
@@ -2764,7 +3625,20 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <button v-else-if="!playing" type="button" class="android-player-big-play" aria-label="播放" @click.stop="onBigPlayTap"><svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="play"><path v-for="shape in ICONS.play ?? []" :key="shape" :d="shape" /></svg></button>
-        <div ref="controlsBar" class="android-player-controls" :class="{ 'is-hidden': !chromeVisible }" aria-label="播放控制" @click.stop="onPlayerSurfaceTap">
+        <div v-if="stageAlert" class="android-player-alert" :class="{ 'android-player-alert--calm': !stageAlert.urgent }" role="alert">
+          <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" :data-icon="stageAlert.icon"><path v-for="shape in ICONS[stageAlert.icon] ?? []" :key="shape" :d="shape" /></svg>
+          <p>{{ stageAlert.text }}</p>
+          <button v-if="stageAlert.action === 'switch'" type="button" @click.stop="switchToFallbackLine()">切换线路</button>
+          <button v-else-if="stageAlert.action === 'retry'" type="button" @click.stop="void retryCurrentLine()">重试当前线路</button>
+          <button v-else-if="stageAlert.action === 'resume'" type="button" @click.stop="resumeFromBackground()">继续播放</button>
+        </div>
+        <div v-if="gestureHint" class="android-player-hud" role="status">
+          <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" :data-icon="gestureHint.kind === 'brightness' ? 'brightness' : 'volume'"><path v-for="shape in (gestureHint.kind === 'brightness' ? ICONS.brightness : ICONS.volume) ?? []" :key="shape" :d="shape" /></svg>
+          <strong>{{ gestureHint.percent }}%</strong>
+        </div>
+        <p v-if="qualityNotice" class="android-player-adapt" role="status">{{ qualityNotice }}</p>
+        </div>
+        <div ref="controlsBar" class="android-player-controls" :class="{ 'is-hidden': !chromeVisible }" :inert="!chromeVisible" aria-label="播放控制" @click.stop="onPlayerSurfaceTap">
           <div
             ref="seekBar"
             class="android-player-seek"
@@ -2810,7 +3684,7 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="qualityLevels.length > 1" class="android-player-list-group">
                 <button type="button" class="android-player-list-item" :aria-pressed="chosenQuality === -1" @click="changeQuality('-1')">自动</button>
-                <button v-for="level in qualityLevels" :key="level.index" type="button" class="android-player-list-item" :aria-pressed="chosenQuality === level.index" :title="level.label" @click="changeQuality(String(level.index))">{{ level.label.split(' · ')[0] }}</button>
+                <button v-for="level in qualityLevels" :key="level.index" type="button" class="android-player-list-item" :aria-pressed="activeLevel === level.index" :title="level.label.split(' · ')[0]" @click="changeQuality(String(level.index))">{{ level.label.split(' · ')[0] }}</button>
               </div>
             </template>
             <template v-else-if="chromeMenu === 'fps'">
@@ -2822,7 +3696,7 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="availableFps.length > 1" class="android-player-list-group">
                 <button type="button" class="android-player-list-item" :aria-pressed="chosenFps === 'auto'" title="随片源" @click="changeFps('auto')">原帧</button>
-                <button v-for="fps in availableFps" :key="fps" type="button" class="android-player-list-item" :aria-pressed="chosenFps === String(fps)" :title="`${fps} FPS`" @click="changeFps(String(fps))">{{ fps }}</button>
+                <button v-for="fps in availableFps" :key="fps" type="button" class="android-player-list-item" :aria-pressed="activeLevel >= 0 && qualityLevels[activeLevel]?.fps === fps" :title="`${fps} FPS`" @click="changeFps(String(fps))">{{ fps }}</button>
               </div>
             </template>
             <template v-else-if="chromeMenu === 'volume'">
@@ -2849,7 +3723,7 @@ onBeforeUnmount(() => {
               </div>
             </template>
             <template v-else>
-              <p v-if="!playerEpisodes.length">当前媒体没有来源选集</p>
+              <p v-if="!playerEpisodes.length">当前视频没有其他选项</p>
               <div v-for="group in episodeGroups" :key="group.key" class="android-player-menu-group">
                 <h4 v-if="episodeGroups.length > 1">{{ group.key }}</h4>
                 <button v-for="episode in group.episodes" :key="`${episode.id}:${episode.lineId || 'main'}`" type="button"
@@ -2859,29 +3733,6 @@ onBeforeUnmount(() => {
             </template>
           </div>
         </div>
-        <!-- 舞台内提示（VQ-61）：放大/全屏时舞台覆盖整个视口，舞台外的提示与错误块不可见，
-             这里给出唯一一条需要用户看到/操作的信息（错误、缓冲、切换、后台恢复、线路提示）。 -->
-        <div v-if="stageAlert" class="android-player-alert" :class="{ 'android-player-alert--calm': !stageAlert.urgent }" role="alert">
-          <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" :data-icon="stageAlert.icon"><path v-for="shape in ICONS[stageAlert.icon] ?? []" :key="shape" :d="shape" /></svg>
-          <p>{{ stageAlert.text }}</p>
-          <button v-if="stageAlert.action === 'switch'" type="button" @click.stop="switchToFallbackLine()">切换线路</button>
-          <button v-else-if="stageAlert.action === 'retry'" type="button" @click.stop="void retryCurrentLine()">重试当前线路</button>
-          <button v-else-if="stageAlert.action === 'resume'" type="button" @click.stop="resumeFromBackground()">继续播放</button>
-        </div>
-        <!-- 画面手势提示（VQ-56）：只显示亮度与音量；屏幕中间的进度提示按用户要求不出现。 -->
-        <div v-if="gestureHint" class="android-player-hud" role="status">
-          <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" :data-icon="gestureHint.kind === 'brightness' ? 'brightness' : 'volume'"><path v-for="shape in (gestureHint.kind === 'brightness' ? ICONS.brightness : ICONS.volume) ?? []" :key="shape" :d="shape" /></svg>
-          <strong>{{ gestureHint.percent }}%</strong>
-        </div>
-        <p v-if="qualityNotice" class="android-player-adapt" role="status">{{ qualityNotice }}</p>
-      </div>
-      <div v-if="playerEpisodes.length && !(watchPage && section === 'detail')" class="android-player-episodes" aria-label="切换选集与线路">
-        <h3>选集与线路</h3>
-        <div v-for="group in episodeGroups" :key="group.key" class="android-episode-group"><h4>{{ group.key }}</h4>
-          <div class="android-episode-grid"><button v-for="episode in group.episodes" :key="`${episode.id}:${episode.lineId || 'main'}`" type="button"
-            :disabled="episode.id === activeEpisodeId && (episode.lineId || 'main') === activeLineId"
-            :aria-label="`播放${episodeLabel(episode)}`" @click="playSourceEpisode(episode)">{{ episodeLabel(episode) }}</button></div>
-        </div>
       </div>
       <!-- 放大/全屏时这些提示看不见（舞台 fixed inset:0），此时由舞台内的 .android-player-alert 接管。 -->
       <div v-if="playerError && !stageFullscreen" class="android-player-error" role="alert">
@@ -2890,70 +3741,111 @@ onBeforeUnmount(() => {
         <button type="button" @click="void retryCurrentLine()">重试当前线路</button>
       </div>
       <p v-if="sourceError && !stageFullscreen" role="alert" class="android-error">{{ sourceError }}</p>
+      <div v-if="playerEpisodes.length && !(watchPage && section === 'detail')" class="android-player-episodes" aria-label="切换选集与线路">
+        <h3>选集与线路</h3>
+        <div v-for="group in episodeGroups" :key="group.key" class="android-episode-group"><h4>{{ group.key }}</h4>
+          <div class="android-episode-grid"><button v-for="episode in group.episodes" :key="`${episode.id}:${episode.lineId || 'main'}`" type="button"
+            :disabled="episode.id === activeEpisodeId && (episode.lineId || 'main') === activeLineId"
+            :aria-label="`播放${episodeLabel(episode)}`" @click="playSourceEpisode(episode)">{{ episodeLabel(episode) }}</button></div>
+        </div>
+      </div>
     </section>
 
-    <section v-if="section === 'home'" class="android-home">
+    <section v-if="section === 'home' || (section === 'library' && usingSubscription)" class="android-home" aria-label="订阅作品仓库">
+      <section v-if="section === 'home' && homeContinue.length" class="android-home-continue" aria-label="最近观看"><div class="android-sheet-heading"><h2>继续观看</h2><button type="button" class="android-secondary-button" @click="section = 'history'">全部</button></div><div class="android-continue-shelf"><button v-for="entry in homeContinue" :key="historySourceBindingKey(entry)" type="button" @click="continueWatching(entry)"><AndroidCover :src="historyCover(entry)" alt="" loading="lazy" /><strong>{{ entry.title }}</strong><small>{{ entry.episodeTitle }} · {{ historyProgress(entry) }}</small></button></div></section>
+      <template v-if="section === 'library' && usingSubscription">
+        <div class="android-section-heading"><h2>订阅作品</h2><button type="button" :disabled="repositoryLoading" @click="loadRepository(true)">{{ repositoryLoading ? '读取中…' : '刷新作品' }}</button></div>
+        <p class="android-repository-count" role="status">已显示 {{ displayedRepositoryEntries.length }} 部 · 已读取 {{ repositoryEntries.length }} 部<template v-if="repositoryHasNextPage"> · 还有后续页面</template><template v-else-if="repositoryHits.length && !repositoryIsDirectory"> · 当前只显示搜索候选</template><template v-else-if="repositoryTruncated"> · 部分页面达到读取上限</template><template v-else-if="repositoryHits.length && !repositoryError && !repositoryLoading"> · 当前来源已读完</template></p>
+        <div class="android-repository-toolbar"><input v-model="repositoryQuery" aria-label="筛选已读取作品" placeholder="筛选已读取作品" autocomplete="off" /><button type="button" class="android-repository-sort-toggle" :aria-expanded="repositorySortOpen" aria-controls="android-repository-sort-options" @click="repositorySortOpen = !repositorySortOpen">排序：{{ repositoryOrder === 'source' ? '来源顺序' : '名称' }} <span aria-hidden="true">{{ repositorySortOpen ? '⌃' : '⌄' }}</span></button></div>
+        <div v-if="repositorySortOpen" id="android-repository-sort-options" class="android-repository-sort-options" role="group" aria-label="作品排序方式" @keydown.esc="repositorySortOpen = false">
+          <button type="button" :aria-pressed="repositoryOrder === 'source'" @click="repositoryOrder = 'source'; repositorySortOpen = false">来源顺序<small>按当前来源返回的次序</small></button>
+          <button type="button" :aria-pressed="repositoryOrder === 'title'" @click="repositoryOrder = 'title'; repositorySortOpen = false">名称<small>已读取作品按名称排列</small></button>
+        </div>
+        <p v-if="repositoryLoading" class="android-empty" role="status">加载中…</p>
+        <p v-if="repositoryError" class="android-error" role="alert">{{ repositoryError }} <button type="button" :disabled="repositoryLoading" @click="loadRepository(true)">重试读取</button></p>
+        <ul class="android-list android-catalog android-subscription-catalog"><li v-for="(entry, index) in displayedRepositoryEntries" :key="sourceHitKey(entry)">
+          <button type="button" class="android-catalog-open" :aria-label="`查看 ${entry.title} 详情`" @click="openRepositoryHit(entry)">
+            <AndroidCover :src="displayCover(entry.title, entry.sourceUrl, entry.coverUrl) || placeholderCover" alt="" width="160" height="224" :loading="index < 4 ? 'eager' : 'lazy'" :fetchpriority="index < 2 ? 'high' : 'auto'" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(displayCover(entry.title, entry.sourceUrl, entry.coverUrl))" />
+            <span class="android-catalog-copy"><strong>{{ entry.title }}</strong><small>{{ entry.sourceName || '订阅来源' }}</small></span>
+          </button>
+        </li></ul>
+        <p v-if="repositoryQuery && !repositoryEntries.length && repositoryHits.length" class="android-empty">已读取的作品中没有匹配项，可换个词或继续读取。</p>
+        <button v-if="repositoryDisplayLimit < repositoryEntries.length || repositoryHasNextPage" class="android-repository-more" type="button" :disabled="repositoryLoading" @click="showMoreRepository">{{ repositoryDisplayLimit < repositoryEntries.length ? '显示更多已读取作品' : '读取下一页' }}</button>
+        <button v-if="!repositoryHits.length && !repositoryLoading" type="button" @click="section = 'search'">搜索具体作品</button>
+      </template>
+      <template v-else>
       <div class="android-hero">
-        <div class="android-hero-copy"><span class="android-hero-tag">{{ catalogSnapshot[0]?.updateText || '精选推荐' }}</span><h2>{{ catalogSnapshot[0]?.title }}</h2><p>随包收录 {{ catalogSnapshot.length }} 部作品 · {{ snapshotLineCount }} 条已核验线路</p><button type="button" :disabled="sourceLoading" @click="browseBundledItem(catalogSnapshot[0]!)">查看作品详情 <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="arrow"><path v-for="shape in ICONS.arrow ?? []" :key="shape" :d="shape" /></svg></button></div>
-        <div class="android-hero-art"><img v-if="catalogSnapshot[0]?.coverUrl" :src="catalogSnapshot[0].coverUrl" alt="" /><span aria-hidden="true">精选推荐</span></div>
+        <div class="android-hero-copy"><span class="android-hero-tag">{{ catalogSnapshot[0]?.updateText || '精选推荐' }}</span><h2>{{ catalogSnapshot[0]?.title }}</h2><p>精选 {{ catalogSnapshot.length }} 部作品 · {{ snapshotLineCount }} 条播放线路</p><button type="button" :disabled="sourceLoading" @click="browseBundledItem(catalogSnapshot[0]!)">查看作品详情 <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="arrow"><path v-for="shape in ICONS.arrow ?? []" :key="shape" :d="shape" /></svg></button></div>
+        <div class="android-hero-art"><AndroidCover v-if="catalogSnapshot[0]?.coverUrl" :src="catalogSnapshot[0].coverUrl" loading="eager" alt="" decoding="async" /></div>
       </div>
-      <div class="android-section-heading"><div><span class="android-kicker">三叶精选</span><h2>推荐作品</h2></div><button type="button" @click="section = 'library'">全部 <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="arrow"><path v-for="shape in ICONS.arrow ?? []" :key="shape" :d="shape" /></svg></button></div>
+      <div class="android-section-heading"><h2>推荐作品</h2><button type="button" @click="section = 'library'">我的片库 <svg class="android-icon" viewBox="0 0 24 24" aria-hidden="true" data-icon="arrow"><path v-for="shape in ICONS.arrow ?? []" :key="shape" :d="shape" /></svg></button></div>
       <ul class="android-list android-catalog"><li v-for="entry in catalogSnapshot" :key="entry.id">
         <button type="button" class="android-catalog-open" :disabled="sourceLoading" :aria-label="`查看 ${entry.title} 详情`" @click="browseBundledItem(entry)">
-          <img :src="entry.coverUrl" alt="" loading="lazy" />
+          <AndroidCover :src="entry.coverUrl || placeholderCover" alt="" width="160" height="224" loading="lazy" decoding="async" @error="usePlaceholderCover" />
           <span class="android-catalog-copy"><strong>{{ entry.title }}</strong><small>{{ entry.updateText || '更新时间未知' }}</small></span>
         </button>
       </li></ul>
+      </template>
     </section>
 
     <section v-if="section === 'search'" class="android-panel android-page-section" aria-label="公开来源搜索">
       <form class="android-search-form" @submit.prevent="searchSources">
-        <label for="source-keyword">作品关键词</label>
-        <input id="source-keyword" v-model="sourceKeyword" maxlength="50" required placeholder="输入作品名称" />
-        <button type="submit" :disabled="sourceLoading">{{ sourceLoading ? '读取中…' : '搜索来源' }}</button>
-        <p class="android-search-hint">输入即搜：停止输入后自动检索公开来源，也可以直接点「搜索来源」。</p>
+        <input id="source-keyword" ref="sourceKeywordInput" v-model="sourceKeyword" aria-label="作品关键词" maxlength="50" required placeholder="输入作品名称" enterkeyhint="search" autocomplete="off" />
+        <button type="submit" :disabled="sourceLoading || (searchLoading && searchInFlightKeyword === `${activeSubscriptionScope()}\u0000${sourceKeyword.trim().toLocaleLowerCase()}`)">{{ searchLoading ? '读取中…' : '搜索来源' }}</button>
       </form>
+      <section v-if="recentKeywords.length && !sourceKeyword.trim()" class="android-search-memory" aria-label="搜索记录"><div class="android-search-memory-heading"><h2>最近搜索</h2><button type="button" class="android-secondary-button" @click="clearSearchMemory">清空</button></div><div class="android-search-memory-list"><div v-for="word in recentKeywords" :key="word" class="android-search-memory-item"><button type="button" class="android-search-memory-word" @click="sourceKeyword = word; searchSources()">{{ word }}</button><button type="button" class="android-search-memory-remove" :aria-label="`删除搜索记录 ${word}`" @click="removeSearchMemory(word)">×</button></div></div></section>
       <!-- 一级标题是页面 h1，这里必须是 h2：原来用 h3 会让文档大纲从 1 直接跳到 3。 -->
-      <h2 class="android-search-source-heading">在线来源</h2>
-      <p v-if="sourceError" role="alert" class="android-error">{{ sourceError }}</p>
-      <p v-else-if="sourceSearched && !sourceLoading && !sourceHits.length" class="android-empty">没有找到匹配作品</p>
-      <ul v-if="sourceHits.length" class="android-list"><li v-for="hit in sourceHits" :key="hit.sourceUrl">
-        <img v-if="displayCover(hit.title, hit.sourceUrl, hit.coverUrl) && !failedCovers.has(displayCover(hit.title, hit.sourceUrl, hit.coverUrl))" class="android-cover" :src="displayCover(hit.title, hit.sourceUrl, hit.coverUrl)" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(displayCover(hit.title, hit.sourceUrl, hit.coverUrl))" />
-        <span v-else class="android-cover android-cover-empty" aria-label="暂无封面">暂无封面</span>
-        <div><strong>{{ displayText(hit.title) }}</strong></div>
-        <button type="button" :disabled="sourceLoading" @click="watchSearchResult(hit.sourceUrl)">立即观看</button>
+      <div class="android-search-results-heading"><h2 class="android-search-source-heading">在线来源</h2><span v-if="groupedSearchHits.length">{{ groupedSearchHits.length }} 部作品</span></div>
+      <div v-if="searchSourceGroups.length > 1" class="android-source-filters" role="group" aria-label="筛选搜索来源">
+        <button type="button" :aria-pressed="!searchSourceFilter" @click="searchSourceFilter = ''">全部 {{ groupedSearchHits.length }}</button>
+        <button v-for="group in searchSourceGroups" :key="group.key" type="button" :aria-pressed="searchSourceFilter === group.key" @click="searchSourceFilter = group.key">{{ group.name }} {{ group.count }}</button>
+      </div>
+      <p v-if="searchLoading" role="status" class="android-search-hint">{{ searchProgress }}</p>
+      <p v-if="sourceError" role="alert" class="android-error"><span>{{ sourceError }}</span> <button type="button" :disabled="searchLoading" @click="searchSources">重新搜索</button></p>
+      <p v-else-if="sourceSearched && !searchLoading && !sourceHits.length" class="android-empty">没有找到匹配作品</p>
+      <ul v-if="sourceHits.length" class="android-list android-source-results"><li v-for="(hit, hitIndex) in visibleSourceHits" :key="sourceHitKey(hit)">
+        <AndroidCover v-if="displayCover(hit.title, hit.sourceUrl, hit.coverUrl) && !failedCovers.has(displayCover(hit.title, hit.sourceUrl, hit.coverUrl))" class="android-cover" :src="displayCover(hit.title, hit.sourceUrl, hit.coverUrl)" alt="" :loading="hitIndex < 2 ? 'eager' : 'lazy'" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(displayCover(hit.title, hit.sourceUrl, hit.coverUrl))" />
+        <AndroidCover v-else class="android-cover" :src="placeholderCover" alt="暂无封面" loading="lazy" />
+        <div class="android-source-result-copy"><strong>{{ displayText(hit.title) }}</strong><small>{{ hitSourceLabel(hit) }}<template v-if="hit.versions.length > 1"> · {{ hit.versions.length }} 个版本</template><template v-if="searchVersionNotice(hit)"> · {{ searchVersionNotice(hit) }}</template></small></div>
+        <a v-if="hit.kind === 'resource' && hit.resourceUrl" :href="hit.resourceUrl" target="_blank" rel="noopener noreferrer">外部下载</a>
+        <button v-else type="button" :disabled="sourceLoading" @click="watchSearchVersions(hit)">{{ searchVersionNotice(hit) === '播放地址待重试' ? '尝试播放' : '立即观看' }}</button>
       </li></ul>
     </section>
 
     <section v-if="section === 'detail' && sourcePreview" class="android-panel android-detail" aria-label="作品详情">
-        <div class="android-detail-hero">
-          <img v-if="previewCover && !failedCovers.has(previewCover)" class="android-detail-cover" :src="previewCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(previewCover)" />
-          <span v-else class="android-detail-cover android-cover-empty" aria-label="暂无封面">暂无封面</span>
-          <div class="android-detail-copy"><span class="android-kicker">作品档案</span><h2>{{ displayText(sourcePreview.title) }}</h2><p>{{ displayText(sourcePreview.summary || '来源没有提供简介。') }}</p><small>{{ sourcePreview.episodes.length }} 个条目</small></div>
-          <div class="android-detail-actions">
-            <button v-if="alternateMovieSource" type="button" :disabled="sourceLoading" @click="switchMovieSource">{{ alternateSourceLabel }}</button>
-            <button v-if="!previewSaved" type="button" :disabled="previewSaving" @click="savePreview">{{ previewSaving ? '保存中…' : '保存到本机' }}</button>
-            <button v-if="!previewSaved" type="button" :disabled="previewSaving" @click="collectPreview">{{ previewSaving ? '收藏中…' : '收藏作品' }}</button>
-            <button v-else type="button" @click="togglePreviewFavorite">{{ previewSaved.favorite ? '取消收藏' : '收藏作品' }}</button>
-            <button type="button" :disabled="sourceLoading" @click="previewSource(sourcePreview.sourceUrl, true)">刷新选集</button>
+        <div class="android-detail-episodes">
+          <p v-if="sourceLoading && !sourcePreview.episodes.length" role="status">正在加载选集…</p>
+          <p v-else-if="!sourcePreview.episodes.length">暂无选集，请刷新或换源。</p>
+          <div v-else class="android-sheet-heading"><h3>{{ movieLike ? '播放线路' : '选集' }}</h3><button v-if="!movieLike" type="button" class="android-secondary-button" @click="episodeDescending = !episodeDescending; episodePage = 0">{{ episodeDescending ? '倒序' : '正序' }}</button></div>
+          <div v-if="episodeGroups.length > 1" class="android-source-filters" role="group" aria-label="选择播放线路"><button v-for="group in episodeGroups" :key="group.key" type="button" :aria-pressed="detailGroup?.key === group.key" @click="chooseEpisodeGroup(group.key)">{{ group.key }}</button></div>
+          <div v-if="detailGroup && detailEpisodeList.length > 30" class="android-episode-ranges" role="group" aria-label="选集分段"><button v-for="index in Math.ceil(detailEpisodeList.length / 30)" :key="index" type="button" :aria-pressed="episodePage === index - 1" @click="episodePage = index - 1">{{ (index - 1) * 30 + 1 }}–{{ Math.min(index * 30, detailEpisodeList.length) }}</button></div>
+          <div v-for="group in (detailGroup ? [detailGroup] : [])" :key="group.key" class="android-episode-group">
+            <h4>{{ group.key }}</h4>
+            <div class="android-episode-grid"><button v-for="episode in detailEpisodes" :key="`${episode.id}:${episode.lineId || 'main'}`" type="button"
+              :aria-label="`播放${episodeLabel(episode)}`" :aria-pressed="selected !== null && activeEpisodeId === episode.id && activeLineId === (episode.lineId || 'main')" @click="playSourceEpisode(episode)">{{ episodeLabel(episode) }}</button></div>
           </div>
         </div>
-        <p v-if="sourceError" role="alert" class="android-error">{{ sourceError }}</p>
-        <p v-if="sourceLoading && !sourcePreview.episodes.length" role="status">正在读取选集与线路…</p>
-        <p v-else-if="!sourcePreview.episodes.length">当前页未找到受支持的 MP4/HLS 直链，可保留来源并稍后重试。</p>
-        <h3 v-else>选集与线路 <small>选择后即可观看</small></h3>
-        <div v-for="group in episodeGroups" :key="group.key" class="android-episode-group">
-          <h4>{{ group.key }}</h4>
-          <div class="android-episode-grid"><button v-for="episode in group.episodes" :key="`${episode.id}:${episode.lineId || 'main'}`" type="button"
-            :aria-label="`播放${episodeLabel(episode)}`" @click="playSourceEpisode(episode)">{{ episodeLabel(episode) }}</button></div>
+        <div class="android-detail-hero">
+          <AndroidCover v-if="previewCover && !failedCovers.has(previewCover)" class="android-detail-cover" :src="previewCover" alt="" loading="eager" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(previewCover)" />
+          <AndroidCover v-else class="android-detail-cover" :src="placeholderCover" alt="暂无封面" loading="eager" />
+          <div class="android-detail-copy"><h2>{{ displayText(sourcePreview.title) }}</h2><small class="android-detail-source">{{ hitSourceLabel(sourcePreview) }}</small></div>
+          <div class="android-detail-actions">
+            <button type="button" class="android-primary-button" :disabled="sourceLoading || !sourcePreview.episodes.length" @click="playPreviewPrimary">{{ previewResume ? '继续观看' : '播放' }}</button>
+            <button v-if="alternateMovieSource" type="button" :disabled="sourceLoading" @click="switchMovieSource">{{ alternateSourceLabel }}</button>
+            <button v-if="!previewSaved" type="button" :disabled="previewSaving" @click="collectPreview">{{ previewSaving ? '收藏中…' : '收藏作品' }}</button>
+            <button v-else type="button" @click="togglePreviewFavorite">{{ previewSaved.favorite ? '取消收藏' : '收藏作品' }}</button>
+            <details class="android-detail-more"><summary>更多</summary><div class="android-detail-more-content"><button v-if="!previewSaved" type="button" :disabled="previewSaving" @click="savePreview">保存到本机</button><button type="button" :disabled="sourceLoading" @click="previewSource(sourcePreview.sourceUrl, true, sourcePreview)">刷新选集</button><div class="android-setting-row"><label for="android-auto-play">自动连播</label><input id="android-auto-play" type="checkbox" :checked="settings.autoPlay" @change="updateSettings({ autoPlay: ($event.target as HTMLInputElement).checked })" /></div></div></details>
+          </div>
         </div>
+        <details open class="android-summary android-detail-description"><summary>剧情简介</summary><p>{{ sourcePreview.summary ? displayText(sourcePreview.summary) : sourceLoading ? '正在加载详情…' : '该来源暂未提供剧情简介。' }}</p></details>
+        <p v-if="sourceError" role="alert" class="android-error">{{ sourceError }}</p>
     </section>
 
     <p v-if="error" class="android-error" role="alert">{{ error }} <button v-if="retryAction" type="button" @click="retryAction()">重试读取</button></p>
 
-    <section v-if="section === 'library'" class="android-page-section" aria-label="本地作品">
+    <section v-if="section === 'library' && !usingSubscription" class="android-page-section android-library" aria-label="本地作品">
       <div class="android-section-title">
-        <div><h2>本地作品</h2></div>
+        <div><h2>本地作品 <small>{{ items.length }}</small></h2></div>
         <div role="group" aria-label="筛选作品">
           <button type="button" :aria-pressed="filter === 'all'" @click="filter = 'all'">全部</button>
           <button type="button" :aria-pressed="filter === 'favorites'" @click="filter = 'favorites'">收藏</button>
@@ -2964,10 +3856,10 @@ onBeforeUnmount(() => {
       <p v-if="catalogLoading" class="android-empty" role="status">正在读取本机片库…</p>
       <!-- 读取失败时不再声称「还没有保存作品」，否则会把“读不到”说成“确实没有”。 -->
       <p v-else-if="!visible.length && !error" class="android-empty">{{ keyword.trim() ? '没有符合搜索条件的本地作品。' : filter === 'favorites' ? '还没有收藏作品。' : '本机还没有保存作品。' }}</p>
-      <ul v-else class="android-list">
+      <ul v-else class="android-list android-library-grid">
         <li v-for="item in visible" :key="item.id">
-          <img class="android-cover" :src="savedCover(item) || placeholderCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="usePlaceholderCover" />
-          <div><strong>{{ displayText(item.title) }}</strong><small>{{ displayText(item.summary || '来源未提供简介') }}</small><small>{{ mediaType(item.url) ? '本机直链' : '来源网页' }} · {{ new Date(item.updatedAt).toLocaleDateString('zh-CN') }}</small></div>
+          <button class="android-library-open" type="button" :disabled="sourceLoading" :aria-label="`查看 ${displayText(item.title)} 详情`" @click="playSaved(item)"><AndroidCover class="android-cover" :src="savedCover(item) || placeholderCover" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="usePlaceholderCover" /><strong>{{ displayText(item.title) }}</strong></button>
+          <small class="android-library-meta">{{ mediaType(item.url) ? '已保存视频' : '已保存作品' }} · {{ new Date(item.updatedAt).toLocaleDateString('zh-CN') }}</small>
           <div class="android-actions"><button type="button" :disabled="sourceLoading" @click="playSaved(item)">{{ mediaType(item.url) ? '播放' : '查看选集' }}</button>
           <button type="button" :aria-label="item.favorite ? `取消收藏${item.title}` : `收藏${item.title}`" @click="toggleFavorite(item)">{{ item.favorite ? '已收藏' : '收藏' }}</button></div>
         </li>
@@ -2985,11 +3877,11 @@ onBeforeUnmount(() => {
       <p v-else-if="!history.length" class="android-empty">尚无观看记录。</p>
       <!-- 竖列表：一屏内左右滑动翻找在手机上既容易误触又看不到全部，改成与片库同一套行式列表。 -->
       <ul v-else class="android-list android-history-list">
-        <li v-for="entry in history" :key="`${entry.mediaUrl}:${entry.episodeId}:${entry.lineId}`">
-          <img class="android-cover" :src="historyCover(entry)" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="usePlaceholderCover" />
+        <li v-for="entry in history" :key="historySourceBindingKey(entry)">
+          <AndroidCover class="android-cover" :src="historyCover(entry)" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" @error="coverFailed(historyCover(entry)); void recoverHistoryCovers()" />
           <div class="android-history-copy">
             <strong>{{ displayText(entry.title) }}</strong>
-            <small>{{ displayText(entry.episodeTitle) }} · {{ historyProgress(entry) }}</small>
+            <small>{{ episodeDisplayText(entry.episodeTitle) }} · {{ historyProgress(entry) }}</small>
             <progress v-if="!entry.completed && entry.durationSeconds > 0" :value="entry.positionSeconds" :max="entry.durationSeconds"></progress>
           </div>
           <button type="button" @click="continueWatching(entry)">{{ entry.completed ? '重新观看' : '继续播放' }}</button>
@@ -2999,39 +3891,37 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-if="section === 'schedule'" class="android-panel android-page-section" aria-label="一周排期">
-      <p>截至 {{ new Date(catalogSnapshotAsOf).toLocaleDateString('zh-CN') }}，只收录来源目录写明星期与时间的作品。</p>
+      <template v-if="usingSubscription"><p class="android-empty">当前订阅未提供排期信息。</p><button type="button" @click="section = 'library'">查看订阅作品</button></template>
+      <template v-else>
+      <p>随包排期 · {{ new Date(catalogSnapshotAsOf).toLocaleDateString('zh-CN') }}</p>
       <div v-for="day in snapshotSchedule" :key="day.label" :class="{ 'is-empty': !day.items.length }">
         <h2>{{ day.label }}</h2>
         <p v-if="!day.items.length">暂无</p>
-        <ul v-else class="android-list"><li v-for="item in day.items" :key="item.id"><div><strong>{{ item.title }}</strong><small>来源目录记录：{{ item.time }}</small></div><button type="button" :disabled="sourceLoading" @click="browseBundledItem(item)">查看</button></li></ul>
+        <ul v-else class="android-list"><li v-for="item in day.items" :key="item.id"><div><strong>{{ item.title }}</strong><small>更新时间：{{ item.time }}</small></div><button type="button" :disabled="sourceLoading" @click="browseBundledItem(item)">查看</button></li></ul>
       </div>
+      </template>
     </section>
 
-    <section v-if="section === 'settings'" class="android-panel android-page-section">
-
-      <div class="android-setting-group">
-        <span class="android-kicker">播放</span>
-        <div class="android-setting-list">
-          <!-- 这里不再提供「自动播放」开关：起播一律由用户操作触发（watch 的 forcePlay 默认 true），
-               该开关点了没有任何效果；偏好字段与 PC 端保持一致保留，只不作为用户可见开关
-               （v0.14 移除、v0.41 同时要求去掉每行设置后面的解释句）。 -->
-          <div class="android-setting-row android-setting-row--stack">
-            <div><strong>播放速度</strong></div>
-            <div class="android-setting-chips">
-              <button v-for="rate in PLAYBACK_RATES" :key="rate" type="button" :aria-pressed="Math.abs(settings.playbackRate - rate) < 0.001" @click="updateSettings({ playbackRate: rate })">{{ rate }}×</button>
-            </div>
-          </div>
-        </div>
+    <section v-if="section === 'settings'" class="android-panel android-page-section" aria-label="个人设置">
+      <div class="android-personal-nav" role="group" aria-label="我的功能">
+        <button v-for="entry in ([['subscriptions', '订阅'], ['downloads', '下载'], ['storage', '缓存'], ['backup', '备份'], ['diagnostics', '诊断']] as const)" :key="entry[0]" type="button" :aria-pressed="personalPanel === entry[0]" @click="personalPanel = entry[0]">{{ entry[1] }}</button>
       </div>
+      <SubscriptionManager v-show="personalPanel === 'subscriptions'" android />
 
-      <div class="android-setting-group">
+      <div v-show="personalPanel === 'storage'" class="android-setting-group">
         <span class="android-kicker">存储</span>
         <div class="android-setting-list">
-          <div class="android-setting-row"><div><strong>媒体缓存</strong></div><span class="android-setting-value">播放分片缓存，最多 64MB</span></div>
+          <div class="android-setting-row android-setting-row--storage"><div><strong>媒体缓存</strong></div></div>
         </div>
         <!-- 此前桥接里的 clearMediaCache 声明了却从未被调用：缓存只能等系统回收（VQ-61）。 -->
         <button type="button" class="android-secondary-button android-cache-clear" :disabled="cacheClearing" @click="clearMediaCache">{{ cacheClearing ? '正在清理媒体缓存…' : '清理媒体缓存' }}</button>
+        <div class="android-setting-row"><div><strong>封面缓存</strong></div><span class="android-setting-value">{{ coverCacheStatus || '读取中…' }}</span></div>
+        <button type="button" class="android-secondary-button android-cache-clear" :disabled="coverCacheClearing" @click="clearCoverImages">{{ coverCacheClearing ? '正在清理…' : '清理封面缓存' }}</button>
       </div>
+
+      <AndroidDiagnostics v-show="personalPanel === 'diagnostics'" />
+      <AndroidBackup v-show="personalPanel === 'backup'" @restored="restorePersonalViews" />
+      <AndroidDownloads v-show="personalPanel === 'downloads'" @play="playDownloaded" />
 
       <div class="android-setting-group">
         <span class="android-kicker">关于</span>

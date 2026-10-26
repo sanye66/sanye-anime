@@ -67,7 +67,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     const file = target === root ? path.join(root, 'index.html') : target
     try {
       const data = await readFile(file)
-      response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html')
+      const contentTypes = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+      response.setHeader('Content-Type', contentTypes[path.extname(file)] || 'text/html')
       response.end(data)
     } catch { response.writeHead(404).end() }
   })
@@ -212,6 +213,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     // 首页主视觉的说明行不能再用 11.5px 小字：贴在亮封面上会糊成一片。
     assert.equal(await page.locator('.android-hero-copy p').evaluate((element) => getComputedStyle(element).fontSize), '12.5px', '首页主视觉说明字号偏小')
     // 随包封面路径留给后面历史封面用例复用（真实存在的资源，不会触发占位图回退）。
+    await page.waitForFunction(() => !!document.querySelector('.android-catalog img')?.getAttribute('src'))
     const bundledCover = await page.locator('.android-catalog img').first().getAttribute('src')
     await page.screenshot({ path: path.join(os.tmpdir(), 'sanye-android-home.png'), fullPage: true })
     await page.setViewportSize({ width: 360, height: 740 })
@@ -221,7 +223,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: '排期' }).click()
     await page.getByRole('heading', { name: '一周排期' }).waitFor()
-    assert.equal(await page.getByText('来源目录记录：21:00').count(), 1)
+    assert.equal(await page.getByText('更新时间：21:00').count(), 1)
     await page.locator('.android-top-search').click()
     await page.getByLabel('作品关键词').fill('你的名字')
     // 搜索页只展示外部来源结果：本机片库与随包目录改在「片库」页按关键词筛选。
@@ -234,13 +236,13 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '搜索来源' }).click()
     await page.getByText('来源作品', { exact: true }).waitFor()
     // 来源标题只差标点时按归一化标题命中随包封面，不留破图也不显示「暂无封面」。
-    const searchCovers = await page.locator('.android-search-source-heading ~ ul li img.android-cover')
+    const searchCovers = await page.locator('.android-source-results li img.android-cover')
       .evaluateAll((images) => images.map((image) => image.getAttribute('src') || ''))
     assert.ok(searchCovers.some((src) => /\/assets\/127-[^/]+\.jpg$/.test(src)), `来源封面缺失时未回退随包同名封面：${searchCovers.join('|')}`)
     await page.getByRole('button', { name: '立即观看' }).first().click()
     await page.locator('.android-player--inline video').waitFor()
     await page.waitForFunction(() => document.querySelector('.android-player--inline video')?.getAttribute('src')?.includes('episode.mp4'))
-    await page.getByRole('heading', { name: '选集与线路' }).waitFor()
+    await page.getByRole('heading', { name: '选集', exact: true }).first().waitFor()
     assert.equal(await page.getByRole('button', { name: '版本', exact: true }).count(), 0)
     await page.getByRole('button', { name: '返回搜索结果' }).click()
     await page.getByRole('button', { name: '片库', exact: true }).click()
@@ -303,7 +305,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '切换深色模式' }).click()
     await page.waitForTimeout(400)
     assert.equal(await page.locator('.android-notice').count(), 1, '设置保存失败提示重复出现')
-    assert.equal(await page.locator('.android-notice').textContent(), '设置保存失败，原有偏好未更改。')
+    assert.equal(await page.locator('.android-notice').textContent(), '设置保存失败，请重试。')
     assert.equal(await page.locator('.android-error').filter({ hasText: '设置保存失败' }).count(), 0, '设置保存失败又占用了全局错误条')
     await page.evaluate(() => { window.__failSettings = false })
     await page.screenshot({ path: path.join(os.tmpdir(), 'sanye-android-home-light.png'), fullPage: true })
@@ -316,7 +318,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByLabel('搜索本地作品').fill('测试作品')
     await page.getByRole('button', { name: '播放', exact: true }).click()
     assert.equal(await page.locator('video').count(), 1)
-    // 播放器卡必须与列表卡共用同一套卡面：同圆角、同渐变卡底，画面不再是纯黑直角块。
+    // 播放器卡沿用紧凑圆角与纯色卡面，画面仍保留嵌套比例。
     const playerFit = await page.evaluate(() => {
       const cardStyle = getComputedStyle(document.querySelector('.android-player--inline'))
       const stageStyle = getComputedStyle(document.querySelector('.android-player--inline .android-player-stage'))
@@ -327,11 +329,10 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
         stageBackground: stageStyle.backgroundColor,
       }
     })
-    assert.equal(playerFit.radius, '12px 18px', `播放器卡圆角未与列表卡统一：${JSON.stringify(playerFit)}`)
-    assert.match(playerFit.surface, /^linear-gradient/, `播放器卡仍是实心底色：${JSON.stringify(playerFit)}`)
-    // 画面与卡片只保留一层边框：画面铺满卡片宽度、自身不再重复圆角与描边，
-    // 否则「卡圆角 + 描边 + 画面圆角」三层嵌套看起来就是一个套娃。
-    assert.equal(playerFit.stageRadius, '0px', `画面重复了第二层圆角：${JSON.stringify(playerFit)}`)
+    assert.equal(playerFit.radius, '14px 14px', `播放器外框未使用升级后的统一圆角：${JSON.stringify(playerFit)}`)
+    assert.equal(playerFit.surface, 'none', `播放器卡不应再使用装饰渐变：${JSON.stringify(playerFit)}`)
+    // 前一轮视觉升级采用 8px 卡内留白，画面圆角与外框保持嵌套比例。
+    assert.equal(playerFit.stageRadius, '10px', `画面未与升级后的播放器外框协调：${JSON.stringify(playerFit)}`)
     assert.notEqual(playerFit.stageBackground, 'rgb(0, 0, 0)', `画面黑位仍是纯黑：${JSON.stringify(playerFit)}`)
     // 内嵌播放器不再重复详情卡的作品标题；竖屏画面右上角不再有挡画面的 ✕（关闭走页面返回）。
     assert.equal(await page.locator('.android-player--inline .android-section-title').count(), 0, '内嵌播放器重复渲染了作品标题')
@@ -343,7 +344,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
       player: Math.round(document.querySelector('.android-player').getBoundingClientRect().width),
     }))
     assert.ok(playerTaps.play >= 44, `播放按钮触控偏小：${JSON.stringify(playerTaps)}`)
-    assert.ok(playerTaps.stage >= playerTaps.player - 2, `画面没有铺满播放器宽度：${JSON.stringify(playerTaps)}`)
+    assert.ok(Math.abs(playerTaps.player - playerTaps.stage - 18) <= 2, `画面未保持两侧 8px 留白及外框描边：${JSON.stringify(playerTaps)}`)
     // 进度条排在按钮行下面：此前它被控件条顶在按钮上方，竖屏单手够不着。
     assert.equal(await page.locator('.android-player-controls > .android-player-seek').evaluate((element) => getComputedStyle(element).order), '2', '进度条没有压到控件行下面')
     assert.equal(await page.locator('video').getAttribute('controls'), null)
@@ -362,14 +363,54 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     // 竖屏必须能换集与静音：此前整组 --more 都被隐藏，换集只能先进横屏（VQ-61）。
     assert.equal(await compactControls.getByRole('button', { name: '选集' }).isVisible(), true)
     assert.equal(await compactControls.getByRole('button', { name: '音量' }).isVisible(), true)
-    // 点画面切换控制条显隐：再点一次恢复；播放中 3.2 秒后自动隐藏，暂停后保持可见。
+    // 小屏控件不换行、不重复计入系统底部安全区；菜单展开不撑高控制条。
+    for (const width of [360, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 })
+      const before = await compactControls.boundingBox()
+      assert.ok(before.height <= 78, `竖屏控制条占位过高：${JSON.stringify({ width, before })}`)
+      const geometry = await page.evaluate(() => {
+        const stage = document.querySelector('.android-player-stage')
+        const video = stage.querySelector('video').getBoundingClientRect()
+        const controls = stage.querySelector('.android-player-controls').getBoundingClientRect()
+        const bounds = stage.getBoundingClientRect()
+        const viewport = stage.querySelector('.android-player-viewport').getBoundingClientRect()
+        const canvas = document.createElement('canvas'); canvas.className = 'realtime-interpolation-canvas'; stage.append(canvas)
+        const frame = canvas.getBoundingClientRect(); canvas.remove()
+        const poster = document.createElement('img'); poster.className = 'android-player-poster'; stage.querySelector('.android-player-viewport').append(poster)
+        const artwork = poster.getBoundingClientRect(); poster.remove()
+        const play = stage.querySelector('.android-player-big-play')?.getBoundingClientRect()
+        return { overlap: video.bottom - controls.top, bottomGap: bounds.bottom - controls.bottom, videoHeight: video.height,
+          viewportHeight: viewport.height, canvasHeight: frame.height, canvasTop: frame.top - video.top, posterHeight: artwork.height,
+          playCenterOffset: play ? play.top + play.height / 2 - (video.top + video.height / 2) : 0, overflow: document.documentElement.scrollWidth > innerWidth }
+      })
+      assert.ok(geometry.overlap <= 1 && geometry.overlap >= -4, `控制条覆盖画面或离画面过远：${JSON.stringify({ width, geometry })}`)
+      assert.ok(geometry.bottomGap >= 0 && geometry.bottomGap <= 2, `控制条距底边过远：${JSON.stringify({ width, geometry })}`)
+      assert.ok(Math.abs(geometry.canvasHeight - geometry.videoHeight) < 1 && Math.abs(geometry.viewportHeight - geometry.videoHeight) < 1 && Math.abs(geometry.canvasTop) < 1, `补帧/视口未对齐视频：${JSON.stringify({ width, geometry })}`)
+      assert.ok(Math.abs(geometry.posterHeight - geometry.videoHeight) < 1 && Math.abs(geometry.playCenterOffset) < 1, `海报或中央播放键未对齐视频：${JSON.stringify({ width, geometry })}`)
+      assert.equal(geometry.overflow, false)
+      const boxes = await compactControls.locator('.android-player-controls-row button:visible').evaluateAll(nodes => nodes.map(node => {
+        const rect = node.getBoundingClientRect(); return { x: rect.x, y: rect.y, right: rect.right, height: rect.height }
+      }))
+      assert.ok(boxes.every(box => Math.abs(box.y - boxes[0].y) <= 4 && box.right <= width && box.height >= 36), JSON.stringify({ width, boxes }))
+      await compactControls.getByRole('button', { name: '选集' }).click()
+      const after = await compactControls.boundingBox()
+      assert.ok(Math.abs(before.height - after.height) < 1, '竖屏菜单撑高控制条')
+      const menu = await page.locator('.android-player-menu').boundingBox()
+      const stage = await page.locator('.android-player-stage').boundingBox()
+      assert.ok(menu.y >= stage.y && menu.y + menu.height <= before.y + 1, JSON.stringify({ menu, stage, before }))
+      await closePlayerMenu(page)
+      await page.screenshot({ path: path.join(os.tmpdir(), `sanye-android-portrait-${width}.png`) })
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    // 竖屏控件不遮画面，点画面或自动隐藏定时器都不应让它消失；横屏继续自动收起。
     const controlsOpacity = () => page.evaluate(() => getComputedStyle(document.querySelector('.android-player-controls')).opacity)
     await page.locator('.android-player-stage').click({ position: { x: 18, y: 18 } })
-    await page.waitForFunction(() => getComputedStyle(document.querySelector('.android-player-controls')).opacity === '0')
+    assert.equal(await controlsOpacity(), '1')
     await page.locator('.android-player-stage').click({ position: { x: 18, y: 18 } })
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.android-player-controls')).opacity === '1')
     await page.locator('video').evaluate((element) => element.dispatchEvent(new Event('play')))
-    await page.waitForFunction(() => getComputedStyle(document.querySelector('.android-player-controls')).opacity === '0', null, { timeout: 6000 })
+    await page.waitForTimeout(3400)
+    assert.equal(await controlsOpacity(), '1')
     await page.locator('video').evaluate((element) => element.dispatchEvent(new Event('pause')))
     await page.waitForFunction(() => getComputedStyle(document.querySelector('.android-player-controls')).opacity === '1')
     assert.equal(await controlsOpacity(), '1')
@@ -570,7 +611,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await closePlayerMenu(page)
     await controls.getByRole('button', { name: '选集' }).click()
     // 片库直链作品的选集里只有这条直链本身，既不出现来源线路，也不再是空态。
-    assert.equal(await page.locator('.android-player-menu').getByText('当前媒体没有来源选集').count(), 0)
+    assert.equal(await page.locator('.android-player-menu').getByText('当前视频没有其他选项').count(), 0)
     const directEpisodes = page.locator('.android-player-menu .android-player-menu-group button')
     await directEpisodes.first().waitFor()
     assert.equal(await directEpisodes.count(), 1)
@@ -693,7 +734,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
       return { overlap: Math.round((seek.top - row.bottom) * 10) / 10, trackGap: Math.round((track.top + track.height / 2 - row.bottom) * 10) / 10 }
     })
     assert.ok(controlsSpacing.overlap >= 0, `进度条命中区压住了按钮行：${JSON.stringify(controlsSpacing)}`)
-    assert.ok(controlsSpacing.trackGap >= 3 && controlsSpacing.trackGap <= 12, `进度条离按钮行过远或过近：${JSON.stringify(controlsSpacing)}`)
+    assert.ok(controlsSpacing.trackGap >= 3 && controlsSpacing.trackGap <= 18, `进度条离按钮行过远或过近：${JSON.stringify(controlsSpacing)}`)
     // 进度负载必须落在原生校验范围内：公网 https 地址、标题不超长、位置与时长有限。
     // 此前来源播放页地址带查询参数会被原生按「直链媒体」整条拒掉，用户看到「播放进度保存失败」。
     await page.locator('video').evaluate((element) => {
@@ -781,7 +822,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     assert.equal(await page.getByText('公开来源在线提供').count(), 0)
     assert.equal(await page.getByRole('button', { name: '预览' }).count(), 0)
     await page.screenshot({ path: path.join(os.tmpdir(), 'sanye-android-search.png'), fullPage: true })
-    await page.locator('.android-search-source-heading ~ ul').getByRole('button', { name: '立即观看' }).first().click()
+    await page.locator('.android-source-results').getByRole('button', { name: '立即观看' }).first().click()
     await page.getByRole('heading', { name: '观看作品' }).waitFor()
     await page.locator('.android-player--inline video').waitFor()
     // 竖屏控制条保留播放、时间、进度、下一集、选集、音量与放大入口，画质/帧率进放大后使用（VQ-61）。
@@ -807,9 +848,9 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     assert.equal(await page.locator('.android-player--inline').evaluate((player) => !!(player.compareDocumentPosition(document.querySelector('.android-detail')) & Node.DOCUMENT_POSITION_FOLLOWING)), true)
     assert.equal(await page.locator('.android-top-search').getAttribute('aria-current'), 'page')
     await page.locator('.android-detail-copy').getByRole('heading', { name: '来源作品' }).waitFor()
-    await page.getByLabel('暂无封面').last().waitFor()
+    await page.getByAltText('暂无封面').last().waitFor()
     await page.screenshot({ path: path.join(os.tmpdir(), 'sanye-android-detail.png'), fullPage: true })
-    assert.equal(await page.locator('.android-detail-cover.android-cover-empty').count(), 1)
+    assert.equal(await page.locator('.android-detail-cover[alt="暂无封面"]').count(), 1)
     await page.setViewportSize({ width: 360, height: 780 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.setViewportSize({ width: 390, height: 844 })
@@ -819,10 +860,27 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '切换深色模式' }).click()
     await page.getByRole('button', { name: '返回搜索结果' }).click()
     await page.getByRole('button', { name: '立即观看' }).last().click()
+    // 最后一项是《你的名字。》，桥接却返回《来源作品》：拒绝错片后只能使用同作品随包线路。
+    await page.locator('.android-player--inline video').waitFor()
+    assert.equal(await page.locator('.android-detail-copy h2').textContent(), '你的名字', '备用线路不能改变所选作品身份')
+    assert.notEqual(await page.locator('video').getAttribute('src'), 'https://cdn.example.org/episode.mp4',
+      '错片来源的媒体不能接管随包线路')
+    await page.locator('.android-detail-more summary').click()
+    await page.getByRole('button', { name: '刷新选集' }).click()
+    await page.getByRole('heading', { name: '播放线路', exact: true }).waitFor()
+    assert.equal(await page.locator('.android-detail-copy h2').textContent(), '你的名字')
+    assert.equal(await page.getByRole('region', { name: '作品详情' }).getByRole('button', { name: '播放第2集' }).count(), 0,
+      '单片线路不应被误当作剧集选项')
+    await page.getByRole('button', { name: '返回搜索结果' }).click()
+    // 后续刷新、保存与续播场景属于《来源作品》，按标题定位，不能依赖搜索结果顺序。
+    await page.locator('.android-source-results > li').filter({ has: page.getByText('来源作品', { exact: true }) })
+      .getByRole('button', { name: '立即观看' }).click()
+    await page.locator('.android-player--inline video').waitFor()
     const beforeRefresh = await page.evaluate(() => window.__androidCalls.filter((method) => method === 'preview').length)
+    await page.locator('.android-detail-more summary').click()
     await page.getByRole('button', { name: '刷新选集' }).click()
     await page.waitForFunction((count) => window.__androidCalls.filter((method) => method === 'preview').length > count, beforeRefresh)
-    await page.getByRole('heading', { name: '选集与线路' }).waitFor()
+    await page.getByRole('heading', { name: '选集', exact: true }).first().waitFor()
     assert.equal(await page.locator('.android-detail-hero .android-detail-actions').count(), 1)
     assert.equal(await page.locator('.android-detail').evaluate((detail) => detail.lastElementChild?.classList.contains('android-episode-group')), true)
     assert.equal(await page.locator('video').count(), 1)
@@ -833,7 +891,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '保存到本机' }).click()
     await page.getByText('来源作品').waitFor()
     assert.equal(await page.evaluate(() => window.__androidCalls.includes('save')), true)
-    await page.getByText('来源提供的作品简介').waitFor()
+    // 片库海报卡只显示标题与来源信息，简介仍必须随保存内容保留。
+    assert.equal(await page.evaluate(async () => (await window.Capacitor.nativePromise('SanyeCatalog', 'list')).items.find((item) => item.title === '来源作品')?.summary), '来源提供的作品简介')
     await page.screenshot({ path: path.join(os.tmpdir(), 'sanye-android-library.png'), fullPage: true })
     await page.getByRole('button', { name: '片库', exact: true }).click()
     const previewCalls = await page.evaluate(() => window.__androidCalls.filter((method) => method === 'preview').length)
@@ -865,6 +924,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     assert.equal(historyRows.every((row) => row.x === historyRows[0].x), true, `观看历史不是竖列表：${JSON.stringify(historyRows)}`)
     assert.equal(await page.locator('.android-history-actions').count(), 0, '观看历史仍在渲染左右滑动/查看全部按钮')
     assert.equal(await page.locator('.android-history-list .android-cover').count(), historyRows.length, '观看历史缺少封面')
+    await page.locator('.android-history-list .android-cover').first().scrollIntoViewIfNeeded()
+    await page.waitForFunction(src => document.querySelector('.android-history-list .android-cover')?.getAttribute('src') === src, bundledCover)
     assert.equal(await page.locator('.android-history-list .android-cover').first().getAttribute('src'), bundledCover, '观看历史没有沿用记录里的封面')
     await page.getByRole('button', { name: '继续播放' }).click()
     assert.equal(await page.locator('video').count(), 1)
@@ -874,7 +935,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '片库', exact: true }).click()
     await page.getByRole('button', { name: '历史' }).click()
     await page.getByRole('button', { name: '继续播放' }).last().click()
-    await page.getByText('原线路目前不可用；历史记录已保留，不会自动切换到其他线路。').waitFor()
+    await page.getByText('原线路暂不可用，请手动换线。历史记录仍保留。').waitFor()
     assert.equal(await page.locator('video').count(), 0)
     await page.evaluate(() => window.__seedAndroidCatalog())
     // 手动导入已删除：改用持久化种子 + 一次刷新，让片库读到 22 条作品（20 条样例 + 2 条直链）。
@@ -900,6 +961,7 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     assert.ok(mediaRequests.some((url) => /(?:ddbbffcdn|rrcdnbf6|bfllvip|lzcdn24|lzcdn31|lz-cdn16)\.com/.test(url)),
       `应立即起播随包已有线路：${mediaRequests.join('|')}`)
     assert.equal(await page.locator('.android-player--inline').evaluate((player) => !!(player.compareDocumentPosition(document.querySelector('.android-detail')) & Node.DOCUMENT_POSITION_FOLLOWING)), true)
+    await page.waitForFunction(() => /\/assets\/127-[^/]+\.jpg$/.test(document.querySelector('.android-detail-cover')?.getAttribute('src') || ''))
     assert.match(await page.locator('.android-detail-cover').getAttribute('src'), /\/assets\/127-[^/]+\.jpg$/)
     // 《你的名字》是单片：两条线路（正片 / HD中字）各只有一条记录，按线路并成一张列表。
     // 电影不能把线路描述成「第 1 集／第 2 集」——那正是用户报的错误描述。
@@ -936,6 +998,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.getByRole('button', { name: '取消收藏' }).waitFor()
     await page.getByRole('button', { name: '片库', exact: true }).click()
     await page.getByLabel('搜索本地作品').fill('')
+    await page.locator('.android-library li').filter({ hasText: '你的名字' }).first().scrollIntoViewIfNeeded()
+    await page.waitForFunction(() => [...document.querySelectorAll('.android-library img')].some(image => /\/assets\/127-[^/]+\.jpg/.test(image.getAttribute('src') || '')))
     assert.match((await page.locator('.android-list img').evaluateAll((images) =>
       images.map((image) => image.getAttribute('src')).join('|'))), /\/assets\/127-[^/]+\.jpg/)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)

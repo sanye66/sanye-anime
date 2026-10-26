@@ -1,0 +1,58 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const { createServer } = require('node:http')
+const { createRequire } = require('node:module')
+const { chromium } = require('playwright')
+const clientRequire = createRequire(path.resolve(__dirname, '../sanye_client/package.json'))
+const ts = clientRequire('typescript')
+const source = fs.readFileSync(path.resolve(__dirname, '../sanye_client/src/platform/android/subtitles.ts'), 'utf8')
+const compile = (source, module) => ts.transpileModule(source, { compilerOptions: { module, target: ts.ScriptTarget.ES2022 } }).outputText
+const exportsObject = {}
+vm.runInNewContext(compile(source, ts.ModuleKind.CommonJS), { exports: exportsObject, TextEncoder })
+test('本地字幕支持 SRT/WebVTT，拒绝空文件、无效时间和超量文本', () => {
+  const { parseSubtitles } = exportsObject
+  assert.equal(parseSubtitles('\uFEFF1\r\n00:00:01,000 --> 00:00:03,500\r\n<b>你好</b>')[0].text, '你好')
+  assert.equal(parseSubtitles('WEBVTT\n\n00:01.000 --> 00:03.500 align:start\n字幕')[0].end, 3.5)
+  for (const content of ['', '1\n00:99:01,000 --> 00:99:03,000\n字幕', '1\n00:00:03,000 --> 00:00:01,000\n字幕', 'x'.repeat(2 * 1024 * 1024 + 1)]) assert.throws(() => parseSubtitles(content))
+})
+test('真实播放器工具可调速、导入与偏移字幕、定时暂停并清理', async () => {
+  const { parse, compileScript } = clientRequire('vue/compiler-sfc')
+  const component = fs.readFileSync(path.resolve(__dirname, '../sanye_client/src/platform/android/androidPlaybackTools.vue'), 'utf8')
+  const script = compile(compileScript(parse(component).descriptor, { id: 'playback-tools', inlineTemplate: true }).content, ts.ModuleKind.ESNext)
+    .replaceAll('from "vue"', 'from "/vue.js"').replaceAll("from 'vue'", "from '/vue.js'").replaceAll("from './subtitles'", "from '/subtitles.js'")
+  const vue = fs.readFileSync(path.join(path.dirname(clientRequire.resolve('vue/package.json')), 'dist/vue.esm-browser.js'), 'utf8')
+  const css = fs.readFileSync(path.resolve(__dirname, '../sanye_client/src/platform/android/android.css'), 'utf8')
+  const server = createServer((request, response) => {
+    const files = { '/vue.js': vue, '/tools.js': script, '/subtitles.js': compile(source, ts.ModuleKind.ESNext), '/style.css': css }
+    if (files[request.url]) { response.setHeader('content-type', request.url.endsWith('.css') ? 'text/css' : 'text/javascript'); response.end(files[request.url]); return }
+    response.end('<!doctype html><link rel="stylesheet" href="/style.css"><div class="android-app" data-theme="light"><div id="app"></div></div><script type="module">import {createApp,ref} from "/vue.js"; import Tools from "/tools.js"; const video=document.createElement("video"); window.video=video; window.pauses=0; video.pause=()=>window.pauses++; window.app=createApp({components:{Tools}, setup(){return {video,rate:ref(1)}},template:`<Tools :video="video" :rate="rate" @rate="rate=$event"/>`});window.app.mount("#app");</script>')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const browser = await chromium.launch({ headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width: 320, height: 800 } })
+    await page.goto(`http://127.0.0.1:${server.address().port}`)
+    assert.equal(await page.getByText('播放设置', { exact: true }).count(), 0)
+    await page.getByLabel('速度').selectOption('1.5')
+    assert.equal(await page.getByLabel('速度').inputValue(), '1.5')
+    await page.getByLabel('导入本地字幕').setInputFiles({ name: '测试.srt', mimeType: 'text/plain', buffer: Buffer.from('1\n00:00:01,000 --> 00:00:03,500\n你好') })
+    await page.getByRole('button', { name: '关闭字幕' }).waitFor()
+    assert.equal(await page.evaluate(() => window.video.textTracks[0].cues[0].startTime), 1)
+    await page.getByLabel('字幕时间偏移').fill('2')
+    await page.waitForFunction(() => window.video.textTracks[0].cues[0].startTime === 3)
+    assert.equal(await page.evaluate(() => window.video.textTracks[0].cues[0].startTime), 3)
+    await page.clock.install()
+    await page.getByLabel('定时暂停').selectOption('15')
+    await page.clock.fastForward(15 * 60000)
+    assert.equal(await page.evaluate(() => window.pauses), 1)
+    await page.getByRole('button', { name: '关闭字幕' }).click()
+    assert.equal(await page.evaluate(() => { const track = window.video.textTracks[0]; track.mode = 'hidden'; return track.cues.length }), 0)
+    await page.getByLabel('定时暂停').selectOption('15')
+    await page.evaluate(() => window.app.unmount())
+    await page.clock.fastForward(15 * 60000)
+    assert.equal(await page.evaluate(() => window.pauses), 1)
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
+})

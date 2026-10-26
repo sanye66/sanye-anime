@@ -37,6 +37,10 @@ import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
@@ -81,11 +85,54 @@ public class SanyeSourcePlugin extends Plugin {
     }
     /** 预览请求池：只跑详情页与播放页的抓取解析，不与搜索抢占线程。 */
     private final ExecutorService requests = Executors.newFixedThreadPool(6, SanyeSourcePlugin::daemonThread);
-    /**
-     * 搜索请求池与预览池分开（VQ-60）：并发详情预览最多可以占满 6 条线程，
-     * 搜索排在同一个池里时连任务都排不上，界面只能一直停在「读取中」直到整体期限。
-     */
-    private final ExecutorService searches = Executors.newFixedThreadPool(2, SanyeSourcePlugin::daemonThread);
+    /** 搜索协调与预览分池，维持两条协调线程，不用增加并发掩盖旧任务积压。 */
+    private final SearchScheduler scheduledSearches = new SearchScheduler();
+    private final ExecutorService searches = scheduledSearches.pool;
+
+    /** 两条协调线程不变；交互任务优先，替换关键词时连同排队任务一起取消。 */
+    static final class SearchScheduler {
+        private final AtomicLong sequence = new AtomicLong();
+        private final java.util.Set<Job> jobs = ConcurrentHashMap.newKeySet();
+        private final ThreadPoolExecutor pool = new ThreadPoolExecutor(2, 2, 0, TimeUnit.MILLISECONDS,
+                new PriorityBlockingQueue<>(), SanyeSourcePlugin::daemonThread) {
+            @Override public void execute(Runnable command) {
+                super.execute(command instanceof SearchScheduler.Job ? command
+                        : new Job(false, "", "", command, () -> {}));
+            }
+        };
+        final class Job extends FutureTask<Void> implements Comparable<Job> {
+            final boolean background; final String group, keyword; final long order;
+            final Runnable cancelled;
+            Job(boolean background, String group, String keyword, Runnable task, Runnable cancelled) {
+                super(task, null); this.background = background; this.group = group; this.keyword = keyword;
+                this.cancelled = cancelled; order = sequence.getAndIncrement();
+            }
+            public int compareTo(Job other) {
+                int priority = Boolean.compare(background, other.background);
+                return priority != 0 ? priority : Long.compare(order, other.order);
+            }
+            @Override protected void done() {
+                jobs.remove(this); pool.remove(this);
+                if (isCancelled()) cancelled.run();
+            }
+        }
+        synchronized void submit(boolean background, String group, String keyword, Runnable task, Runnable cancelled) {
+            for (Job job : List.copyOf(jobs)) {
+                if ((!background && job.background)
+                        || (!group.isEmpty() && group.equals(job.group) && !keyword.equals(job.keyword))) job.cancel(true);
+            }
+            Job job = new Job(background, group, keyword, task, cancelled);
+            jobs.add(job);
+            try { pool.execute(job); } catch (RuntimeException failure) { jobs.remove(job); throw failure; }
+        }
+        synchronized void cancel(String group) {
+            for (Job job : List.copyOf(jobs)) if (group.equals(job.group)) job.cancel(true);
+        }
+        synchronized void shutdown() {
+            for (Job job : List.copyOf(jobs)) job.cancel(true);
+            pool.shutdownNow();
+        }
+    }
     /**
      * 搜索入口竞速单独排队：首集媒体探测会长时间占用自己的线程（阻塞式 HTTP 读无法被中断），
      * 若与搜索共用队列，连点两次搜索时后一次会在队列里等到超时，表现为“搜不到”。
@@ -101,13 +148,13 @@ public class SanyeSourcePlugin extends Plugin {
 
     /**
      * 插件随 Bridge 销毁时回收自有线程池。
-     * 三个池都是 daemon 线程，不回收不会拖住进程退出，但每次 WebView 重建都会新建一个插件实例，
+     * 自有池都是 daemon 线程，不回收不会拖住进程退出，但每次 WebView 重建都会新建一个插件实例，
      * 池里的线程和缓存会随之累积。
      */
     @Override
     protected void handleOnDestroy() {
         requests.shutdownNow();
-        searches.shutdownNow();
+        scheduledSearches.shutdown();
         searchRace.shutdownNow();
         hydration.shutdownNow();
         previewCache.clear();
@@ -139,6 +186,116 @@ public class SanyeSourcePlugin extends Plugin {
         }
     }
 
+    private void submitSearch(PluginCall call, String keyword, Runnable task) {
+        try {
+            scheduledSearches.submit(Boolean.TRUE.equals(call.getBoolean("background", false)),
+                    call.getString("searchGroup", ""), keyword, task,
+                    () -> call.reject("搜索已被更新或取消", "E_SEARCH_CANCELLED"));
+        } catch (RuntimeException failure) {
+            call.reject("来源请求已停止，请重新打开页面", "E_SOURCE_UNAVAILABLE", failure);
+        }
+    }
+
+    @PluginMethod
+    public void cancelSearch(PluginCall call) {
+        String group = call.getString("searchGroup", "");
+        if (!group.isEmpty()) scheduledSearches.cancel(group);
+        call.resolve();
+    }
+
+    /** 订阅只作为 JSON 数据读取，不执行其中的来源脚本。 */
+    @PluginMethod
+    public void fetchSubscription(PluginCall call) {
+        String url = call.getString("url", "");
+        submit(requests, () -> {
+            try {
+                String content = SubscriptionFetchPolicy.fetch(url);
+                try (com.google.gson.stream.JsonReader reader =
+                        new com.google.gson.stream.JsonReader(new java.io.StringReader(content))) {
+                    reader.setStrictness(com.google.gson.Strictness.STRICT);
+                    JsonElement json = JsonParser.parseReader(reader);
+                    if ((!json.isJsonObject() && !json.isJsonArray())
+                            || reader.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT) {
+                        throw new java.io.IOException("订阅内容必须是单个 JSON 对象或数组");
+                    }
+                } catch (com.google.gson.JsonParseException invalidJson) {
+                    // 网站地址也可以作为导入入口；前端会把 HTML 页面转换为通用网页来源规则。
+                    String trimmed = content == null ? "" : content.trim().toLowerCase(java.util.Locale.ROOT);
+                    if (!(trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html")
+                            || trimmed.startsWith("<head") || trimmed.startsWith("<body"))) throw invalidJson;
+                }
+                JSObject result = new JSObject();
+                result.put("content", content);
+                call.resolve(result);
+            } catch (Exception failure) {
+                call.reject("订阅读取失败：" + (failure.getMessage() == null ? "网络不可用或超时" : failure.getMessage()),
+                        "E_SUBSCRIPTION_FETCH", failure);
+            }
+        }, call);
+    }
+
+    @PluginMethod
+    public void subscriptionSearch(PluginCall call) { subscriptionRequest(call, "search"); }
+
+    @PluginMethod
+    public void subscriptionPreview(PluginCall call) { subscriptionRequest(call, "preview"); }
+
+    @PluginMethod
+    public void subscriptionResolve(PluginCall call) { subscriptionRequest(call, "resolve"); }
+
+    @PluginMethod
+    public void subscriptionCapabilities(PluginCall call) { subscriptionRequest(call, "capabilities"); }
+
+    @PluginMethod
+    public void subscriptionRepository(PluginCall call) { subscriptionRequest(call, "repository"); }
+
+    private void subscriptionRequest(PluginCall call, String operation) {
+        String content = call.getString("content", "");
+        String value = call.getString(operation.equals("search") ? "keyword" : "sourceUrl", "");
+        String requestId = call.getString("requestId", "");
+        boolean background = Boolean.TRUE.equals(call.getBoolean("background", false));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(background ? 8 : 10);
+        Runnable task = () -> {
+            try {
+                Integer sourceIndex = call.getInt("sourceIndex");
+                if (operation.equals("search") && sourceIndex == null) throw new IllegalArgumentException("搜索需要明确的 sourceIndex");
+                if (call.getData().has("sourceIndex")) {
+                    Object rawIndex = call.getData().opt("sourceIndex");
+                    if (!(rawIndex instanceof Number) || sourceIndex == null
+                            || ((Number) rawIndex).doubleValue() != sourceIndex.doubleValue()) {
+                        throw new IllegalArgumentException("sourceIndex 必须为有效整数");
+                    }
+                }
+                SubscriptionSourceEngine engine = new SubscriptionSourceEngine();
+                Integer page = call.getInt("page", 1);
+                if (operation.equals("repository")) {
+                    Object rawPage = call.getData().opt("page");
+                    if (sourceIndex == null || page == null || call.getData().has("page")
+                            && (!(rawPage instanceof Number) || ((Number) rawPage).doubleValue() != page.doubleValue())) {
+                        throw new IllegalArgumentException("目录需要有效整数 sourceIndex 与 page");
+                    }
+                }
+                JsonObject result = operation.equals("search") ? engine.search(content, value, sourceIndex, progress -> {
+                    if (Thread.currentThread().isInterrupted()) return;
+                    if (requestId.isEmpty()) return;
+                    try {
+                        JSObject event = new JSObject(progress.toString());
+                        event.put("requestId", requestId);
+                        notifyListeners("searchProgress", event);
+                    } catch (Exception failure) { Log.w(TAG, "搜索进度通知失败", failure); }
+                }, deadline, background ? 1 : 4)
+                        : operation.equals("capabilities") ? engine.capabilities(content)
+                        : operation.equals("repository") ? engine.repository(content, sourceIndex, page)
+                        : operation.equals("preview") ? engine.preview(content, value, sourceIndex) : engine.resolve(content, value, sourceIndex);
+                if (!Thread.currentThread().isInterrupted()) call.resolve(new JSObject(result.toString()));
+            } catch (Exception failure) {
+                if (Thread.currentThread().isInterrupted()) return;
+                call.reject("订阅来源处理失败：" + (failure.getMessage() == null ? "网络不可用或规则不受支持" : failure.getMessage()), "E_SUBSCRIPTION_SOURCE", failure);
+            }
+        };
+        if (operation.equals("search")) submitSearch(call, value, task); else submit(requests, task, call);
+    }
+
     @PluginMethod
     public void search(PluginCall call) {
         String keyword = call.getString("keyword", "").trim();
@@ -150,7 +307,7 @@ public class SanyeSourcePlugin extends Plugin {
         // 期限在入队前起算（VQ-60）：以前在任务体里起算，池满时的排队时间完全不计入期限，
         // 从桥接调用到 reject 可以远超 15s，界面只会一直显示「读取中」。
         long deadline = System.nanoTime() + REQUEST_DEADLINE_NANOS;
-        submit(searches, () -> {
+        submitSearch(call, keyword, () -> {
             SearchOutcome outcome;
             try {
                 String encoded = URLEncoder.encode(keyword, StandardCharsets.UTF_8.name());
@@ -158,6 +315,7 @@ public class SanyeSourcePlugin extends Plugin {
             } catch (Exception failure) {
                 outcome = new SearchOutcome(List.of(), failure);
             }
+            if (Thread.currentThread().isInterrupted()) return;
             if (outcome.failure() != null) {
                 // 两个入口都没能取到页面＝来源不可用，必须报错（VQ-60）。
                 // 以前这里返回空列表，界面把它当成「没有找到匹配作品」，而客户端的一次静默重试
@@ -176,7 +334,7 @@ public class SanyeSourcePlugin extends Plugin {
             }
             response.put("hits", items);
             call.resolve(response);
-        }, call);
+        });
     }
 
     /**
@@ -197,37 +355,40 @@ public class SanyeSourcePlugin extends Plugin {
      */
     SearchOutcome raceSearch(long deadline, List<Callable<List<SearchHit>>> entries) {
         ExecutorCompletionService<List<SearchHit>> race = new ExecutorCompletionService<>(searchRace);
-        for (Callable<List<SearchHit>> entry : entries) race.submit(entry);
-        Exception lastFailure = null;
-        boolean reachable = false;
-        for (int attempt = 0; attempt < entries.size(); attempt++) {
-            long remaining = (deadline - System.nanoTime()) / 1_000_000L;
-            if (remaining <= 0) {
-                if (lastFailure == null) lastFailure = new TimeoutException("搜索超过整体期限");
-                break;
+        List<Future<List<SearchHit>>> tasks = new ArrayList<>();
+        try {
+            for (Callable<List<SearchHit>> entry : entries) tasks.add(race.submit(entry));
+            Exception lastFailure = null;
+            boolean reachable = false;
+            for (int attempt = 0; attempt < entries.size(); attempt++) {
+                long remaining = (deadline - System.nanoTime()) / 1_000_000L;
+                if (remaining <= 0) {
+                    if (lastFailure == null) lastFailure = new TimeoutException("搜索超过整体期限");
+                    break;
+                }
+                Future<List<SearchHit>> finished;
+                try {
+                    finished = race.poll(Math.min(remaining, SINGLE_REQUEST_WAIT_MILLIS), TimeUnit.MILLISECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    lastFailure = interrupted;
+                    break;
+                }
+                if (finished == null) {
+                    if (lastFailure == null) lastFailure = new TimeoutException("搜索入口未在等待上限内返回");
+                    break;
+                }
+                try {
+                    List<SearchHit> hits = finished.get();
+                    if (!hits.isEmpty()) return new SearchOutcome(hits, null);
+                    reachable = true;
+                } catch (Exception failure) {
+                    // 一个入口失败不影响另一个；两个都失败时把最后一个原因带给调用方。
+                    lastFailure = failure;
+                }
             }
-            Future<List<SearchHit>> finished;
-            try {
-                finished = race.poll(Math.min(remaining, SINGLE_REQUEST_WAIT_MILLIS), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                lastFailure = interrupted;
-                break;
-            }
-            if (finished == null) {
-                if (lastFailure == null) lastFailure = new TimeoutException("搜索入口未在等待上限内返回");
-                break;
-            }
-            try {
-                List<SearchHit> hits = finished.get();
-                if (!hits.isEmpty()) return new SearchOutcome(hits, null);
-                reachable = true;
-            } catch (Exception failure) {
-                // 一个入口失败不影响另一个；两个都失败时把最后一个原因带给调用方。
-                lastFailure = failure;
-            }
-        }
-        return new SearchOutcome(List.of(), reachable ? null : lastFailure);
+            return new SearchOutcome(List.of(), reachable ? null : lastFailure);
+        } finally { for (Future<?> task : tasks) task.cancel(true); }
     }
 
     @PluginMethod
@@ -408,8 +569,8 @@ public class SanyeSourcePlugin extends Plugin {
         // 标题缺失不再让整次预览失败（VQ-60）：页面改版只剩播放器配置时，以前整页不可预览，
         // 连首集探测也一起失败。标题降级为空串，由客户端用搜索命中或已保存作品的标题补上。
         if (title.isBlank()) title = "";
-        Element image = document.selectFirst(".video_img img[src],.module-info-poster img[data-original],.module-info-poster img[src],.module-item-cover img[data-original],.module-item-cover img[data-src],.module-item-cover img[src],meta[property=og:image]");
-        String cover = image == null ? "" : firstNonBlank(image.attr("abs:data-original"), image.attr("abs:data-src"), image.attr("abs:src"), image.attr("abs:content"));
+        Element image = document.selectFirst(".video_img img[data-original],.video_img img[data-src],.video_img img[data-lazy-src],.video_img img[src],.module-info-poster img[data-original],.module-info-poster img[data-src],.module-info-poster img[data-lazy-src],.module-info-poster img[src],.module-item-cover img[data-original],.module-item-cover img[data-src],.module-item-cover img[data-lazy-src],.module-item-cover img[src],meta[property=og:image]");
+        String cover = image == null ? "" : firstNonBlank(image.attr("abs:data-original"), image.attr("abs:data-src"), image.attr("abs:data-lazy-src"), image.attr("abs:src"), image.attr("abs:content"));
         try { if (!allowedCover(URI.create(cover))) cover = ""; } catch (Exception ignored) { cover = ""; }
         Element description = document.selectFirst("meta[name=description],meta[property=og:description]");
         String summary = description == null ? "" : trim(description.attr("content").trim(), 500);
@@ -682,6 +843,7 @@ public class SanyeSourcePlugin extends Plugin {
     private static String fetch(URI start, long deadline) throws Exception {
         URI current = start;
         for (int redirects = 0; redirects <= 3; redirects++) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException("请求已取消");
             if (!allowedHost(current) || System.nanoTime() >= deadline) throw new IllegalArgumentException("来源无效");
             HttpURLConnection connection = (HttpURLConnection) current.toURL().openConnection();
             // 只有完整读完并原样返回时才把连接交回 JDK 的 keep-alive 池：同主机下一次请求
@@ -713,6 +875,7 @@ public class SanyeSourcePlugin extends Plugin {
                      InputStream input = gzipEncoded(connection) ? new GZIPInputStream(raw) : raw) {
                     byte[] buffer = new byte[8192];
                     for (int count; (count = input.read(buffer)) != -1;) {
+                        if (Thread.currentThread().isInterrupted()) throw new InterruptedException("请求已取消");
                         if (bytes.size() + count > MAX_HTML_BYTES || System.nanoTime() >= deadline) throw new IllegalArgumentException("来源过大或超时");
                         bytes.write(buffer, 0, count);
                     }

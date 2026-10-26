@@ -3,6 +3,7 @@ import type { Anime4KProfile } from '../../video/anime4k'
 import type { FrameRateTarget } from '../../video/frameCadence'
 
 export interface SavedMedia {
+  sourceKey?: string
   id: number
   title: string
   url: string
@@ -10,9 +11,12 @@ export interface SavedMedia {
   summary?: string
   favorite: boolean
   updatedAt: number
+  sourceContext?: import('./source').SourceContext
 }
 
 export interface WatchHistory {
+  sourceKey?: string
+  sourceContext?: import('./source').SourceContext
   mediaUrl: string
   title: string
   episodeId: string
@@ -49,9 +53,35 @@ export interface AndroidSettings {
   volume: number
 }
 
+export interface PersonalDataBackup {
+  format: 'sanye-personal-data'
+  version: 1 | 2
+  exportedAt: number
+  savedMedia: SavedMedia[]
+  watchHistory: WatchHistory[]
+  settings: Partial<AndroidSettings>
+}
+
+export interface PersonalDataImportResult {
+  /** 实际新增或更新的条数；保留较新数据或重复导入不计数。 */
+  savedMedia: number
+  watchHistory: number
+  settings: number
+  /** 备份作品 id → 本机合并后 id，用于恢复来源规则绑定。 */
+  savedIdMap: Record<string, number>
+  /** 资料/进度实际从备份恢复的记录；较新本机记录不能被旧规则绑定覆盖。 */
+  restoredSavedIds: number[]
+  restoredHistory: Array<Pick<WatchHistory, 'mediaUrl' | 'episodeId' | 'lineId' | 'sourceKey'>>
+}
+
+export interface RestoreJournal {
+  token: string
+  subscriptions: Array<{ url: string; name: string; content?: string; updatedAt?: number }>
+}
+
 interface AndroidCatalog {
   list(): Promise<{ items: SavedMedia[] }>
-  save(options: { title: string; url: string; coverUrl?: string; summary?: string; favorite?: boolean }): Promise<{ item: SavedMedia }>
+  save(options: { title: string; url: string; coverUrl?: string; summary?: string; favorite?: boolean; sourceContext?: import('./source').SourceContext }): Promise<{ item: SavedMedia }>
   setFavorite(options: { id: number; favorite: boolean }): Promise<{ item: SavedMedia }>
   recordProgress(options: Omit<WatchHistory, 'updatedAt'>): Promise<{ item: WatchHistory }>
   listHistory(): Promise<{ items: WatchHistory[] }>
@@ -59,6 +89,12 @@ interface AndroidCatalog {
   getSettings(): Promise<{ settings: AndroidSettings }>
   setSettings(options: { settings: Partial<AndroidSettings> }): Promise<{ settings: AndroidSettings }>
   clearMediaCache(): Promise<{ removed: number }>
+  exportPersonalData(): Promise<{ data: PersonalDataBackup }>
+  validatePersonalData(options: { data: PersonalDataBackup }): Promise<{ valid: boolean }>
+  importPersonalData(options: { data: PersonalDataBackup; recovery?: RestoreJournal }): Promise<PersonalDataImportResult>
+  getRestoreState(): Promise<{ pending: RestoreJournal | null }>
+  completeRestore(options: { token: string }): Promise<void>
+  migrateSourceBindings(options: { saved: Array<{ id: number; context: import('./source').SourceContext }>; history: Array<Pick<WatchHistory, 'mediaUrl' | 'episodeId' | 'lineId'> & { context: import('./source').SourceContext }> }): Promise<{ migrated: number }>
 }
 
 export const androidCatalog = registerPlugin<AndroidCatalog>('SanyeCatalog')

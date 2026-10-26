@@ -8,6 +8,11 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SanyeCatalogPlugin.class);
         registerPlugin(SanyeSourcePlugin.class);
         registerPlugin(SanyePlayerPlugin.class);
+        registerPlugin(SanyeMedia3Plugin.class);
+        registerPlugin(SanyeMediaFetchPlugin.class);
+        registerPlugin(SanyeBackupFilesPlugin.class);
+        registerPlugin(SanyeDownloadPlugin.class);
+        registerPlugin(SanyeCoverPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

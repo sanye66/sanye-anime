@@ -1,6 +1,71 @@
 # 安卓原生工程
 
-文档版本：v0.80；状态：草案；更新时间：2026-10-10。范围与验收以[安卓开发计划](../docs/android-development-plan.md)为准。
+更新记录：2026-10-15，v0.92，修复历史封面缺失与搜索记录体验。历史缺封面的当前订阅记录会按作品标题补一次同源搜索并缓存封面；失效的 weserv 新浪图片代理改用已验证的原始 lz.sinaimg.cn HTTPS 地址，避免先等待代理失败。详情页默认展示来源剧情简介；“更多”内容独立成稳定网格。竖屏点击画面可收起/恢复控制条，控件使用 inert 防止隐藏后误触；进度圆点端点增加安全边距，几何回归 81 状态通过。搜索记录改为当前订阅范围的双列可删除卡片，支持单条删除和全部清空。
+
+封面 9 项、前端流程/历史竞态/播放器/进度回归共 72 项通过；客户端 typecheck、安卓构建/同步、Gradle assembleDebug/testDebugUnitTest/lintDebug 通过，原生 130 项中 129 通过/1 跳过，lint 0 错误。模拟器复测封面原生读取 0.3–1.1 秒，缓存再次进入约 0.5–0.7 秒内命中；真实来源详情显示完整剧情简介。视频起播仍受外部来源 CDN 波动影响，未宣称稳定提速或全作品可用。
+
+更新记录：2026-10-14，v0.91，按要求交付桌面新安卓测试包：三叶动漫-v74-6.0-安卓测试.apk，versionName 6.0、versionCode 51、21,348,701 字节，SHA-256 8D7DF9C6DD76C5D0C2278EA64ECFF93F68AEA8F7082ADF908BBBFF07E2EF3821。文件位于 C:/Users/10121/Desktop，桌面副本与构建哈希一致；APK 内 27 个页面资源逐文件 SHA-256 与 dist-android 一致，aapt 版本核对及 Debug v2 签名校验通过。包含 v0.90 的搜索/起播优先调度、初始画质和续播取消首片修复、字节转换和取消幂等，保留此前来源与界面修复。
+
+安卓构建与同步、Gradle assembleDebug/testDebugUnitTest/lintDebug 成功；原生 128 项中 127 通过、1 跳过、0 失败，lint 0 错误、8 警告。前轮未变更的前端 63 项回归、类型及工作区构建证据沿用原收据，不虚构重新执行。最终从桌面文件安装 Android 15 模拟器，确认已安装版本 6.0/51；wedm 搜索“无职转生”1835ms，点击到 playing 且时间推进 6543ms，1920×1080，随后约 5 秒继续推进 5.11 秒，无暂停和错误。日志 package-v74-gradle.log、package-v74-playback.json 位于 sanye_deploy/.local/android-native-live-20261014/。没有删改桌面既有文件或提交推送；本包为调试测试包，实体手机、音频、整集播放与 CDN 稳定性仍待环境，不作为正式签名发行。
+
+更新记录：2026-10-14，v0.90，继续优化搜索至首帧。首条作品预热详情、解析和原生两层清单完成后才启动后台版本核查；详情已缓存仍完成媒体预热，同一在途任务共享。相邻集等当前集真实 playing 后解析，安卓清单使用原生共享缓存。HLS 已指定续播位置时不在 loadedmetadata 再 seek；清单初始自动画质不重复设置 currentLevel（该接口会 abortCurrentFrag 并清空缓冲），起播前指定档位用 loadLevel。分片字节转换改为循环写入，成功/失败清除请求标识，销毁已完成分片不再发送 cancel，重复中止只发一次。
+
+63 项定向回归全部通过，包含初始画质不清空、缓存详情预热、相邻集代次隔离、HLS 续播不二次定位、2 MiB 全字节载荷一致和取消幂等。pnpm typecheck、pnpm build、安卓构建/同步、Gradle assembleDebug 及 27 个资源 SHA-256 一致性检查通过。仅前端改动，本轮未重跑原生 Java 测试；前轮原生结果保留原日期。
+
+Android 15 模拟器，wedm 搜索“无职转生”的最终源码样本：立即点击搜索 2432ms、点击至 playing 且进度推进 6587ms；1920×1080，随后 30.4295 秒推进 30.4296 秒，无错误。停留 3.5 秒预热的另一次样本搜索 2129ms、点击 8231ms，首片 4561ms、第二片 2649ms；预热停留必须计入总流程。两次首片均没有同 URL 取消重读，也没有完成分片的 cancel。网络与历史位置不同，不报告整体提升百分比。期间一次搜索返回来源处理/网络失败，重试成功，来源可用性与 CDN 波动仍未关闭；不能把最佳耗时作为稳定速度保证。
+
+同模拟器 2 MiB 字符串转字节数组四次微基准：旧实现 269–341ms，新循环 4.9–37.8ms；这是转换耗时，不是整个播放速度。证据：sanye_deploy/.local/android-native-live-20261014/speed-round2-tests.log、speed-round2-decode.log、speed-round2-accepted-immediate.json、speed-round2-accepted-continuous.log、speed-round2-accepted-dwell.json，另保留失败和修复中间样本。当前构建已安装模拟器，源码 APK 位于 android/app/build/outputs/apk/debug/app-debug.apk；没有更新桌面旧包、提交或发布。实体手机、音频、整集和其他作品验收仍待环境。
+
+文档版本：v0.92；状态：草案；更新时间：2026-10-14。范围与验收以[安卓开发计划](../docs/android-development-plan.md)为准。
+
+
+更新记录：2026-10-14，v0.89，继续修复搜索到播放等待。网页读取不再每次销毁 OkHttp 连接池，复用安全客户端和 HTTPS 连接；取消强制 identity 允许透明压缩，继续按解压后 2 MB 上限读取并逐跳校验公网 HTTPS。播放器媒体挂载后直接请求播放，移除 canplay/8 秒前置等待；后台、切集、手动暂停与 AbortError 取消不静音重试。首条搜索命中预热解析及原生两层 HLS 清单，最多 8 条、15 秒、256 KiB，按 Referer/User-Agent 隔离并共享在途请求；不预下载视频分片，错误页面与直播动态列表不缓存。
+
+本轮 Android 15 模拟器 wedm 样本：搜索 1809–2520ms，网页详情/解析部分请求约 663–863ms；立即点击且续播不同位置时起播 10419–10561ms，初轮媒体分片慢达 6512ms、总起播 14016ms。搜索后停留 3.5 秒的样本点击至推进 3845ms；该停留时间必须计入完整流程，不能宣称所有起播均为 3.8 秒。最终交付包重新安装实测搜索 2111ms，停留后点击至实际推进 6329ms，1920×1080，随后 30.288 秒实际推进 30.288 秒，无暂停或错误。网络及续播位置不同，不能作为严格配对性能提升百分比；冷点击约 10 秒和外部 CDN 波动仍是未解决范围。
+
+证据目录 `sanye_deploy/.local/android-native-live-20261014/`：`speed-before-wedm.json`、`speed-after-wedm-1.json`、`speed-final-immediate.json`、`speed-final-immediate2.json`、`speed-final-dwell-wedm.json`、`speed-package-final.json`、`speed-package-continuous.log`。53 项定向回归通过；原生 128 项中 127 通过/1 跳过，lint 0 错误，网页安全重定向和连接复用/压缩测试通过。类型、安卓构建、同步、Gradle 和 27 个资源哈希通过。
+
+桌面新增 `三叶动漫-速度优化测试-5.9-20261014.apk`，仍为调试测试版本 5.9/50，本轮不虚构正式版本递增。21,640,482 字节，SHA-256 `9095CBBC5A5A409A66CBD24C2EB7C41B94763FF4D79F438FE578A1F5A780A433`，桌面副本与构建一致，Debug v2 验签通过，最终安装来自此桌面文件。包含最近节点清理、版本统一、圆点修复及速度优化；旧 v73 保留。实体手机音频、整集与所有作品仍待环境，没有提交、推送或正式发布。
+
+更新记录：2026-10-14，v0.88，按维护者要求复测默认 CSS 合集 19 个节点，删除 18 个未通过当前客户端观看检查的规则，只保留 wedm；原内置樱花和首页六部保持。失败搜索追加“你的名字”复核；热播之家复核能搜索但四条线路均无静态媒体，不能作为可播节点。樱花订阅虽出帧，30.056 秒只推进 6.770 秒，持续观看未通过；wedm 30.044 秒推进 29.574 秒，1920×1080，通过本轮样本。其他节点记录搜索/选集/解析/分片失败，不宣称全站永久失效。
+
+加载旧默认配置、刷新远端订阅及恢复备份均删除失败规则的 URL/选择器载荷。保留不可执行空槽以维持剩余节点原索引 16，避免历史错绑；管理页不计数、不展示空槽。旧当前选择迁移到保留节点，不删除收藏及历史的原始来源快照。用户自建订阅未获本机运行证据，保持原数据，本轮不声称已逐个验证用户手机订阅。选择面板实际只显示内置樱花和 wedm，管理页只显示 1 个来源，当前配置正文只含 wedm 的有效规则。
+
+证据位于 `sanye_deploy/.local/android-native-live-20261014/`：`single-source-live.json`、`source-resolve-live.json`、`subscription-frames-live.json`、`retest-stability.json`、`recheck-failed-search.json`、`recheck-rebo-detail.json`、`node-pruning-decisions.json`、`node-pruning-ui.json`。清理后的应用再次从搜索点击进入 wedm 播放：搜索 2410ms，起播 9358ms，1920×1080，随后 5 秒推进约 5.04 秒，无播放错误；见 `journey-fixed-wedm.json` 和 `journey-pruned-wedm.log`。33 项定向回归通过，覆盖迁移/刷新/备份清理、原索引、当前来源、版本及几何；类型、工作区/安卓构建、同步、Gradle 和资源校验通过。实体手机及所有作品长期可用仍待环境。本轮源码和模拟器已更新，没有新桌面发行包，桌面 v73 保持旧收据。
+
+更新记录：2026-10-14，v0.87，重点验收搜索到观看和触控定位。进度圆点使用轨道自身 50% 中线，去掉竖屏/全屏的二次偏移；原偏差分别 13px/4px。81 个浏览器几何状态中心偏差 0，真实 Android 15 模拟器竖屏与全屏偏差亦为 0。点击观看或离开搜索立即停止版本检查队列和迟到状态更新，已发出的桥接读取仍需自行结束。HLS 使用当前同作品/同集/原来源历史作为 startPosition，避免先取开头再取消重取；初始位置接近历史时不重复设置 currentTime。loadeddata 在 seeking 中不撤销等待保护，真正播放后收起慢线路提示。
+
+模拟器、同网络单次样本：wedm 搜索 4087ms，点击观看至播放事件且时间推进 7349ms，1920×1080；之后 30.117 秒实际进度推进 30.109 秒，无暂停和错误。原内置樱花搜索“你的名字”2076ms，点击至推进 10086ms，1280×720，后续 5 秒推进约 3.06 秒。樱花订阅搜索 4292ms，点击至推进 22885ms，后续 5 秒仅推进 0.58 秒，不能判为流畅通过；媒体节点单片读取 6609–13632ms，其余两条同作品线路被现有公网 HTTPS 策略拒绝，未绕过安全校验或跨来源接管。以上是当前网络和模拟器测量，不能证明修复前后稳定提升或实体手机性能。
+
+触控定位：竖屏目标 143.91 秒，约 1259ms 就绪并继续播放；全屏目标 359.78 秒，约 1424ms 就绪，5 秒后推进到 364.52 秒。竖屏真实拖动前进约 30 秒，目标 608.83 秒，1221ms 定位，3 秒后推进到 611.80 秒，证据 `seek-drag-final.json`。图像必须用 ADB 系统截图观察，调试截图不能捕获硬件视频。证据目录 `sanye_deploy/.local/android-native-live-20261014/` 的 `journey-baseline-sakura.json`、`journey-fixed-sakura.json`、`journey-fixed-wedm.json`、`journey-fixed-builtin.json`、`sakura-line-speed.json`、`continuous-30s.json`、`seek-touch-live.json`、`seek-fullscreen-final.json` 和 `seekfix-fullscreen.png`。第一次全屏触控因控件未显现没命中，不作为通过；重新显现控件后最终目标与推进通过。
+
+31 项定向回归包括几何、版本、界面、播放恢复、历史隔离及 HLS 初始位置验证；类型、安卓构建、同步与 Gradle 成功。外部樱花节点流畅度仍未解决，实体手机/音频及整集兼容待环境。本轮没有桌面新包，不把模拟器当前安装视为桌面 v73 已更新。
+
+更新记录：2026-10-14，v0.86，移除画质菜单内“播放设置”的标题及二次展开，工具直接使用。搜索按当前来源规则统一标点、季数字、字幕和清晰度版本；不同季、Part、上下部、剧场版和特别篇保留。一个作品入口自动使用剩余版本，解析失败可尝试同作品版本，保持原来源身份。后台最多两项核查且每作品最多三条同集线路，确认空选集或全部已检查线路不受支持的版本从搜索及片库剔除；网络、超时、未检查线路保持未知，不能把解析直链当作实播验证。
+
+本轮 35 项定向回归通过，涵盖版本分组、跨订阅隔离、剔除、保留未知、取消/超时、界面合并及工具操作；类型、工作区构建、安卓构建/同步通过。真实 Android 15 模拟器当前 wedm 的“无职转生”搜索从五条候选过滤为四条，保留不同季/分部；选首部作品后内嵌视频 1920×1080、进度推进，全屏画质菜单没有“播放设置”。证据：`sanye_deploy/.local/android-search-versions-regression.log`、`android-search-versions-build.log` 和 `android-native-live-20261014/search-versions-live.json`。本轮没有新版本递增或桌面交付，桌面 v73 收据仍对应上一轮源码；实体手机和所有作品媒体持续可用仍待环境。
+
+更新记录：2026-10-14，v0.85，按维护者确认恢复详情顶部内嵌播放器，远程播放不再打开独立 Media3 页面；离线下载沿用原生播放。HLS 清单与分片通过 SanyeMediaFetch 安全原生读取，页面内解码，携带来源请求头并隔离分片缓存。修复零范围分片被拒绝，以及 WebView 与系统控制器互抢音频焦点造成起播后立即暂停。详情仅保留画面内播放/时间/全屏入口；全屏点击显示原有选集、音量、画质和帧率，工具收进全屏菜单。
+
+选择订阅精确到站点原索引，一次点击生效；搜索、目录、选集和迟到请求以地址、正文及 sourceIndex 隔离。首页六部快照不变，片库只在进入时读取，移除成功播放时的泛化授权提示。默认 CSS 合集 19 个站点逐一搜索并对可解析候选读取媒体：本轮确认樱花动漫（订阅）与 wedm 解码并持续播放，默认选择列表只保留这两个及原内置樱花；个人订阅、历史正文和原索引保留。其他默认站点未通过，不标为可用。不能以本轮样本保证全站每部作品或长期可用。
+
+封面修复同卡片多个链接导致漏图、懒加载及详情海报；优先保留同来源搜索命中的封面，避免失效详情地址覆盖。真实模拟器图片解码确认 wedm 搜索封面 270×381、樱花封面 540×763。安全读取与格式验证保留，不跨站借图。
+
+本轮运行证据位于 `sanye_deploy/.local/android-native-live-20261014/`：`inline-six-live.json` 证明首页六部内嵌视频解码与进度推进；`single-source-live.json`、`source-resolve-live.json`、`subscription-frames-live.json` 记录来源通过与失败；`final-ui-v73.json` 记录最终界面一次只请求原索引 9、封面和来源选集；`final-fullscreen-adb.png` 为系统截图，避免 WebView 调试截图不能捕获硬件视频造成误判。暂停后时间保持，定位至 70 秒后继续推进。最终桌面包的安装版本、实际内嵌画面及历史封面分别存于 `final-package-live.json` 和 `final-history-v73.json`；旧历史失效封面会按同一来源恢复，内置作品可回退到对应随包封面。模拟器 Android 15 禁音，实体手机音频、蓝牙中断、整集长时播放、带专有请求头的 MP4 和旧 WebView 横屏边缘布局仍待环境或未全量验收。
+
+检查：`pnpm typecheck`、`pnpm build`、安卓构建与同步通过；44 项内嵌/单源/系统控制/界面/历史/封面回归通过；Gradle 单元测试共 127 项，126 通过、1 跳过、0 失败，lint 0 错误、8 既有警告。交付：桌面 `三叶动漫-v73-5.9-20261014.apk`，安装版本 5.9、内部版本 50，21,640,414 字节，SHA-256 `B47D5A18B94378DBF38DA57690783C845FCFB3396F5DD1FAF018DC8DAFB83086`，Debug v2 签名检查通过。27 个页面资源与构建逐哈希一致，桌面副本与构建 APK 摘要一致；旧桌面包保留。没有提交、推送或正式发布。
+
+更新记录：2026-10-14，v0.84，深查视频不可播放并交付修复测试包 v72（5.8/49）。新增安全网页读取，支持逐跳公网 HTTPS 重定向、HTML 请求头、声明字符集与中断取消；订阅 JSON 仍使用严格读取。来源解析扩展多个 player_* 配置和编码地址；将 Referer/User-Agent 从解析、前端、原生桥接传到每次新建的 Media3 媒体源，拒绝 Cookie/Authorization 和控制字符；换线不重复尝试已失败候选，换集不复用旧字幕或请求头。
+
+本轮使用 Android 15 x86_64 模拟器 `emulator-5554`，安装实际 APK，经 WebView 调试连接点击现有首页作品，真实原生 Media3 六部作品全部出现首帧并持续播放至少 5 秒，第一集首帧为 1036–2947 毫秒；第三季实际点击下一集后第 2 集首帧 1647 毫秒且进度持续推进；带防盗链字段的原生会话首帧 2862 毫秒。最终 5.8/49 包重新安装确认，内置电影再次出帧且累计观看超过 35 秒。截图和状态见 `sanye_deploy/.local/android-native-live-20261014/catalog-acceptance.json`、`catalog-0.png` 至 `catalog-5.png`、`next-episode.json`、`header-playback.json`、`state.json`。模拟器使用禁音模式，实体手机、实际音频输出、所有外部来源和整集长时播放未验收。
+
+现场外部订阅失败另存 `subscription-native-probe.json`：海星/wedm 脚本播放器无静态直链，叽哔媒体节点解析/网络不可达，嘀哩网页重定向修复后仍无静态直链，不写为已修复来源。首页数据、保存的订阅及历史保留，不跨订阅借用媒体。原生测试 123 项中 122 通过、1 跳过，lint 0 错误/8 既有警告；前端原生桥接/恢复/缓存 26 项通过，新增请求头传递后 13 项定向通过；类型、安卓构建、同步和 Gradle 构建通过。桌面文件 `三叶动漫-v72-5.8-20261014.apk`，21,338,237 字节，SHA-256 `2B14A75DC1066253872E1C5E707373E5515AB5D8F5A1EDBE118F52CBF0DDC7DF`，Debug v2 签名通过。旧包保留，没有提交、推送或正式发布。
+
+更新记录：2026-10-14，v0.83，交付安卓测试包 v71，安装版本 5.7、内部版本 48；桌面文件 `三叶动漫-v71-5.7-20261014.apk`，21,327,689 字节，SHA-256 `970602109C0B2FECB749BD843796E96EA5EDAAEE43801372CFD55D0DE1F081BB`。包含本轮订阅即时选择、选集范围过滤、封面原生恢复与 Media3 网络修复，保留首页快照。安卓构建、Capacitor 同步、Gradle assembleDebug/testDebugUnitTest/lintDebug 成功；原生 114 通过、1 跳过、0 失败；APK 内 27 个页面资源逐哈希一致，桌面副本哈希一致，v2 Debug 签名通过。ADB 无设备，未安装与真机实播。日志 `sanye_deploy/.local/android-v71-build-20261014.log`。
+
+更新记录：2026-10-13，v0.82，交付当前安卓源码测试包 v70：`versionCode 47`、`versionName 5.6`，桌面文件 `三叶动漫-v70-5.6-20261013.apk`，21,315,529 字节，SHA-256 `993854BF7EF35870BCB9CBC61FDCA9474CCEF1359AB1926B816F5E0876214FE8`。完成类型检查、安卓前端构建、Capacitor 同步、资源一致性与 32 项相关回归；SDK 路径缺失的初次原生构建失败后，显式使用本机 SDK 重新执行 `assembleDebug/testDebugUnitTest/lintDebug` 成功。原生 108 项中 107 通过、1 个现场来源测试跳过，0 失败；lint 0 错误、8 警告。APK 内 27 个页面资源与当前构建逐文件 SHA-256 一致，桌面副本与构建包一致。aapt 确认版本及 Android 10 最低支持，apksigner v2 通过，签名为 Android Debug，仍是测试包。目录生成器仅执行 `--check`，不替换既有快照。ADB 无设备，未安装、未实播、不推送、不发布，旧桌面包未删除。日志与交付记录位于 `sanye_deploy/.local/android-v70-*`。
+
+更新记录：2026-10-10，v0.81，按用户要求交付最新安卓测试包 v69：`versionCode 46`、`versionName 5.5`，桌面文件 `三叶动漫-v69-5.5-20261010.apk`，11,593,617 字节，SHA-256 `FA3D219539C8C2669782B2CF59A841FF85E9FD2C6E693617CD5A0495F90F6FA2`。包含当前界面、播放稳定性与声明式订阅来源实现；未部署网页/服务端。目录生成器只执行 `--check`，保留既有快照与备用线路，未把网络探测候选替换为已验证作品。完成类型检查、根构建、安卓构建、`npm run sync`、`verify-android-assets.mjs`；最终 APK 内部 27 个页面资源与当前构建逐文件 SHA-256 相同，桌面副本与构建 APK 哈希相同。安卓浏览器回归 30 项通过；Gradle `assembleDebug`、`testDebugUnitTest`、`lintDebug` 通过。修复新增订阅编码方法的 Android 10–12 兼容性，未禁用静态检查。`apksigner verify` 验证 v2 签名通过，仍为 Android Debug 测试签名，不是正式发布签名；`adb devices` 无设备，未做安装、触控、外站播放与温度验收。旧发行物未删除。
 
 更新记录：2026-10-10，v0.80，按用户「进行修复，并绕过本地 head 提交推送，放最新安卓的版本到桌面，应该不是 v45」交付 **v68**（`versionCode 45`／`versionName 5.4`，debug 包 11,464,143 字节，SHA-256 `818255BFA370BE6D4854D93E5C4CD76CC1410921FF60424D9C643856B354A3FE`（与构建产物 `app-debug.apk` 逐字节一致），签名仍是 Android Debug 证书、`apksigner verify` 走 v2 方案、退出码 0）。交付序号接 v66 之后跳到 v68：v67 未使用（v0.78 的 `versionCode 44` 包只做本地重建、未投递桌面），跳一号是为了不与任何可能的同号包混淆。**本轮真正的修复在交付链而不是功能**：以前本地打包只跑 `build:android` + gradle，漏了 `cap sync`，包内 `sanye_android/android/app/src/main/assets/public` 因此一直停在 2026-09-30 18:03 的那次同步——本轮第一次打包正是这样，包内 `index.html` 引用 `index-C3meCUND.js`／`index-BZRm-DRh.css`，而当时前端构建产物是 `index-DhS4HkVu.js`／`index-DQDnXRIr.css`，也就是「构建成功但打出来的是旧页面资源」（`.gitignore` 忽略包内 `assets/public`，所以这件事在 git 状态里看不出来）。修正后固定交付链为 `node sanye_android/generate-catalog.cjs` → `pnpm --filter @sanye/sanye_client build:android` → `cd sanye_android && npm run sync` → `gradlew --offline :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`，并新增门禁脚本 [../sanye_deploy/verify-android-assets.mjs](../sanye_deploy/verify-android-assets.mjs)（逐文件比名字与 SHA-256，忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`）与 8 项单元测试，接进 `.github/workflows/android-check.yml` 的 `校验包内页面资源与前端构建一致` 步骤。证据：`pnpm test:verify-android-assets` 8 通过；`pnpm verify:android-assets` 修复前报「前端 27 个 / 包内 29 个、名单差异 8 项、`index.html` 内容不同」，修复后报「前端 27 个 / 包内 27 个、逐文件 SHA-256 一致」；`gradlew` BUILD SUCCESSFUL；`apksigner verify --verbose` 退出码 0（v2 方案 true、签名者 1 个）；`aapt dump badging` 复核 `versionCode 45`／`versionName 5.4`／`sdkVersion 29`／`targetSdkVersion 36`／`application-label:'三叶动漫'`／仅 debug 带 `application-debuggable`。随包作品快照这一环还暴露了一个数据驱动的退化：本轮按交付链先跑了 `generate-catalog.cjs`，但它的输出把《你的名字》的随包候选来源由 4 条收窄成 1 条（只剩 `yinghuadongman.org.cn/p/52685/`），据此打出的包让 3 项安卓 e2e 场景失败——`android-bundled-fallback` 的「外站来源过慢」与「外站线路加载失败」两项回退场景、`android-ui` 的「切换备用来源」按钮点不动；本地按工作流原命令复现为 55 项 52 通过 3 失败，CI 的 `android-check` #14（run 38019831269）同样卡在 `安卓前端回归（隔离桥接）`。这不只是断言过时：候选来源只剩一条时应用确实没有备用来源可切。因此该数据改动已回退、保留既有快照（4 条候选来源），并把「生成器收窄候选来源」与「e2e 把随包来源写成常量」登记为待办；回退后同一条命令 55 项 55 通过 0 失败。最终交付包的两个中间产物归档在 `sanye_deploy/.local/android-retired/`（`…-v68-未同步资源废弃版.apk` 11,451,490 字节、`…-v68-来源快照变体废弃版.apk` 11,464,143 字节），均不进仓库；包内 `assets/public/index.html` 引用 `index-DhS4HkVu.js`／`index-DQDnXRIr.css`，与 `sanye_client/dist-android` 同名同哈希。
 

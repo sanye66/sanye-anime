@@ -92,7 +92,8 @@ before(async () => {
     const file = target === root ? path.join(root, 'index.html') : target
     try {
       const data = await readFile(file)
-      response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html')
+      const contentTypes = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+      response.setHeader('Content-Type', contentTypes[path.extname(file)] || 'text/html')
       response.end(data)
     } catch { response.writeHead(404).end() }
   })
@@ -124,6 +125,8 @@ const countCalls = (page, method) => page.evaluate((name) => window.__calls.filt
 
 /** 从「按下」到目标状态成立的毫秒数（用真实指针按下，避免合成触摸不触发 :active 的假结论）。 */
 const pressToState = async (page, locator, predicate) => {
+  // 固定底栏不属于 DOM 视口边界，居中后再测真实指针，避免把底栏遮挡误记为状态延迟。
+  await locator.evaluate(node => node.scrollIntoView({ block: 'center', inline: 'nearest' }))
   const box = await locator.boundingBox()
   await page.evaluate((body) => {
     window.__stateAt = 0
@@ -247,6 +250,7 @@ test('连点两次不会重复写原生（收藏与保存各只写一次）', as
     await page.locator('#source-keyword').fill('来源作品')
     await page.locator('.android-search-form button[type=submit]').click()
     await page.locator('.android-list li button', { hasText: '立即观看' }).first().click()
+    await page.locator('.android-detail-more summary').click()
     await page.locator('.android-detail-actions button', { hasText: '保存到本机' }).first().waitFor()
     const beforeSave = await countCalls(page, 'save')
     await page.evaluate(() => {

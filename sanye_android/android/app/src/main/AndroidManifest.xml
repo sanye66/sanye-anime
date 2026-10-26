@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:allowBackup="false"
@@ -26,6 +28,12 @@
             </intent-filter>
 
         </activity>
+        <activity android:name=".SanyeMediaPlayerActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|uiMode|density"
+            android:theme="@style/AppTheme.NoActionBar" />
+        <service android:name=".SanyeDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
 
         <!--
             这里原先声明了一个 androidx.core.content.FileProvider，路径表是 external-path path="."

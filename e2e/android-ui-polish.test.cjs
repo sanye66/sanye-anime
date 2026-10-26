@@ -35,7 +35,8 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
     const file = target === root ? path.join(root, 'index.html') : target
     try {
       const data = await readFile(file)
-      response.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html')
+      const contentTypes = { '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+      response.setHeader('Content-Type', contentTypes[path.extname(file)] || 'text/html')
       response.end(data)
     } catch { response.writeHead(404).end() }
   })
@@ -52,7 +53,7 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
         { id: 2, title: '已保存作品乙', url: 'https://www.yhdmtv.cc/p/123', favorite: false, updatedAt: Date.now() - 86400000, summary: '来源网页，点击后解析选集。' },
       ]
       const history = [
-        { mediaUrl: 'https://example.org/a.mp4', title: '已保存作品甲', episodeId: 'direct', episodeTitle: '直链媒体', lineId: 'main', positionSeconds: 300, durationSeconds: 1200, completed: false, updatedAt: Date.now() },
+        { mediaUrl: 'https://example.org/a.mp4', title: '已保存作品甲', episodeId: 'direct', episodeTitle: 'EP02', lineId: 'main', positionSeconds: 300, durationSeconds: 1200, completed: false, updatedAt: Date.now() },
         { mediaUrl: 'https://www.yhdmtv.cc/p/123', title: '来源作品', episodeId: 'https://www.yhdmtv.cc/p/124', episodeTitle: '第2集', lineId: 'main', positionSeconds: 40, durationSeconds: 120, completed: true, updatedAt: Date.now() - 3600000 },
       ]
       const settings = { theme: 'system', autoPlay: false, playbackRate: 1, qualityProfile: 'off', frameTarget: 'off' }
@@ -78,15 +79,16 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
             { title: '来源候选甲', sourceUrl: 'https://www.yhdmtv.cc/p/900', coverUrl: '', summary: '' },
             { title: '来源候选乙', sourceUrl: 'https://www.yhdmtv.cc/p/901', coverUrl: '', summary: '' },
           ] }
-          if (method === 'preview') return { title: '来源候选甲', sourceUrl: options.sourceUrl, coverUrl: '', summary: '', episodes: [
-            { id: options.sourceUrl, title: '第1集', sourceUrl: options.sourceUrl, playbackUrl: 'https://cdn.example.org/sample.m3u8', mimeType: 'application/vnd.apple.mpegurl', lineId: 'main' },
-          ] }
+          if (method === 'preview') return { title: '来源候选甲', sourceUrl: options.sourceUrl, coverUrl: window.__uiCover || '', summary: '海报与作品信息分开呈现，选集按来源保留。', episodes: Array.from({ length: 9 }, (_, index) => (
+            { id: `${options.sourceUrl}/${index}`, title: index === 0 ? '01' : index === 1 ? 'EP02' : `第${index + 1}集`, sourceUrl: `${options.sourceUrl}/${index}`, playbackUrl: 'https://cdn.example.org/sample.m3u8', mimeType: 'application/vnd.apple.mpegurl', lineId: 'main' }
+          )) }
           return { removed: 0 }
         },
       }
     })
     await page.goto(`http://127.0.0.1:${server.address().port}/`)
     await page.locator('.android-home .android-hero').waitFor()
+    await page.evaluate(() => { window.__uiCover = new URL(document.querySelector('.android-catalog img').getAttribute('src'), location.href).href })
     // 顶栏品牌只保留文字：左上角的方块标已按要求移除，品牌名仍是「三叶动漫」。
     assert.equal(await page.locator('.android-brand-mark').count(), 0, '左上角的品牌方块标记应已移除')
     assert.equal(await page.locator('.android-brand strong').textContent(), '三叶动漫')
@@ -98,10 +100,25 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
         await page.getByRole('button', { name: theme === 'dark' ? '切换深色模式' : '切换浅色模式' }).click()
       }
       await page.waitForFunction((value) => document.querySelector('.android-app')?.getAttribute('data-theme') === value, theme)
-      for (const width of [390, 360]) {
+      for (const width of [390, 360, 320]) {
         await page.setViewportSize({ width, height: 844 })
+        await page.getByRole('button', { name: '首页', exact: true }).click()
+        await page.evaluate(() => window.scrollTo(0, 0))
+        await page.waitForFunction(() => [...document.querySelectorAll('.android-home img')].every((image) => image.complete && image.naturalWidth > 0))
+        const homeLayout = await page.locator('.android-catalog').evaluate((element) => ({ columns: getComputedStyle(element).gridTemplateColumns.split(' ').length, scrollWidth: document.documentElement.scrollWidth, width: innerWidth }))
+        assert.equal(homeLayout.columns, 3, '手机推荐应为三列海报网格')
+        assert.ok(homeLayout.scrollWidth <= homeLayout.width, '首页海报网格不得横向溢出')
+        assert.equal(await page.locator('.android-catalog li').first().evaluate((element) => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)', '推荐海报不应带整块底板')
+        assert.equal(await page.locator('.android-catalog li').first().evaluate((element) => getComputedStyle(element).paddingLeft), '0px', '推荐海报不应有卡内留白')
+        const themeIcon = await page.locator('.android-theme-toggle').evaluate((button) => {
+          const outer = button.getBoundingClientRect(); const icon = button.querySelector('svg').getBoundingClientRect()
+          return { x: Math.abs(outer.x + outer.width / 2 - icon.x - icon.width / 2), y: Math.abs(outer.y + outer.height / 2 - icon.y - icon.height / 2) }
+        })
+        assert.ok(themeIcon.x < 1 && themeIcon.y < 1, '主题图标应水平和垂直居中')
+        await page.screenshot({ path: path.join(output, `home-${theme}-${width}.png`) })
         for (const entry of pages) {
           await openSection(page, entry)
+          await page.evaluate(() => window.scrollTo(0, 0))
           // 搜索页需要一次真实搜索才能看到结果卡片列表。
           if (entry.label === 'search') {
             await page.getByLabel('作品关键词').fill('来源')
@@ -112,7 +129,7 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
           const state = await page.evaluate(() => {
             const app = document.querySelector('.android-app')
             const section = document.querySelector('.android-page-section')
-            const kicker = document.querySelector('.android-page-heading .android-kicker')
+            const sourceAction = document.querySelector('.android-source-context button')
             const action = section?.querySelector('.android-list li button')
             const style = section ? getComputedStyle(section) : null
             const actionStyle = action ? getComputedStyle(action) : null
@@ -131,7 +148,7 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
               headingChars: (heading?.textContent ?? '').replace(/\s+/g, '').length,
               sectionChars: (section?.textContent ?? '').replace(/\s+/g, '').length,
               headingTitleSize: heading ? parseFloat(getComputedStyle(heading.querySelector('h1')).fontSize) : 0,
-              kickerColor: kicker ? getComputedStyle(kicker).color : '',
+              sourceActionColor: sourceAction ? getComputedStyle(sourceAction).color : '',
               appBg: app ? getComputedStyle(app).getPropertyValue('--app-bg').trim() : '',
               actionBackground: actionStyle?.backgroundColor ?? '',
               actionRadius: actionStyle?.borderTopLeftRadius ?? '',
@@ -146,16 +163,16 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
           assert.equal(state.sections > 0, true, `${entry.label} 还没有按页面分区处理`)
           assert.equal(state.sectionBorderWidth, '0px', `${entry.label} 分区仍在用整块面板边框`)
           assert.equal(state.sectionBackground, 'rgba(0, 0, 0, 0)', `${entry.label} 分区仍有面板底色`)
-          // 文案精简：不再有页面说明段，标题区只保留小标题与标题；分区正文控制在一屏可读的量。
+          // 文案精简：不再有重复的页面说明；动态订阅列表不以固定字数限制真实内容。
           assert.equal(state.notes, 0, `${entry.label} 仍在渲染多余的页面说明`)
+          assert.equal(await page.locator('.android-page-heading .android-kicker').count(), 0, `${entry.label} 不重复显示标题前的小标签`)
           assert.equal(state.headingChars <= 22, true, `${entry.label} 标题区文案过长：${state.headingChars}`)
-          assert.equal(state.sectionChars <= 220, true, `${entry.label} 分区文案过多：${state.sectionChars}`)
           assert.equal(state.scrollWidth <= state.innerWidth, true, `${entry.label} 在 ${width}px 出现横向溢出：${state.scrollWidth}`)
           assert.equal(state.headingTitleSize <= 34, true, `${entry.label} 标题字号偏大：${state.headingTitleSize}`)
-          if (state.rowRadius) assert.equal(state.rowRadius, '12px 18px', `${entry.label} 卡片圆角未统一到柔和档：${state.rowRadius}`)
+          if (state.rowRadius && entry.label !== 'library') assert.equal(state.rowRadius, '14px 14px', `${entry.label} 卡片圆角未统一：${state.rowRadius}`)
           // 药丸（999px）过圆，统一收敛成适度圆角；这里同时卡住上界，防止再改回全圆。
           if (state.actionRadius) {
-            assert.equal(state.actionRadius, '12px', `${entry.label} 动作按钮圆角未收敛到适度档：${state.actionRadius}`)
+            assert.equal(state.actionRadius, entry.label === 'library' ? '0px' : '10px', `${entry.label} 动作按钮圆角未收敛：${state.actionRadius}`)
             assert.ok(parseFloat(state.actionRadius) <= 14, `${entry.label} 动作按钮又变回药丸：${state.actionRadius}`)
           }
           if (state.actionBackground) {
@@ -169,7 +186,30 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
             assert.equal(state.layoutRows, state.gridRows, '设置行应为「左名称 + 右控件」的两列排版')
             assert.equal(state.firstListBorder, '1px', '设置分组应是一张有描边的卡片')
           }
+          if (entry.label === 'library') {
+            assert.equal(await page.locator('.android-library-grid').evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length), 2, '手机片库应采用两列海报网格')
+            await page.getByRole('button', { name: '收藏', exact: true }).first().click()
+            assert.equal(await page.locator('.android-library-grid li').count(), 1, '收藏筛选应保留')
+            await page.getByRole('button', { name: '全部', exact: true }).click()
+            await page.getByLabel('搜索本地作品').fill('作品乙')
+            assert.equal(await page.locator('.android-library-grid li').count(), 1, '片库搜索应保留')
+            await page.getByLabel('搜索本地作品').fill('')
+            await page.waitForFunction(() => [...document.querySelectorAll('.android-library-grid img')].every((image) => image.complete && image.naturalWidth > 0))
+          }
+          await page.screenshot({ path: path.join(output, `${entry.label}-${theme}-${width}.png`) })
         }
+        await page.locator('.android-top-search').click()
+        await page.getByLabel('作品关键词').fill('来源')
+        await page.getByRole('button', { name: '搜索来源' }).click()
+        await page.getByRole('button', { name: '立即观看' }).first().click()
+        await page.locator('.android-episode-grid button[aria-pressed=true]').waitFor()
+        assert.deepEqual((await page.locator('.android-episode-grid button').allTextContents()).slice(0, 2), ['第1集', '第2集'], '纯数字和 EP 集号应采用同一显示格式')
+        await page.waitForFunction(() => { const image = document.querySelector('.android-detail-cover'); return image?.complete && image.naturalWidth > 0 })
+        assert.equal(await page.locator('.android-episode-grid button[aria-pressed=true]').count(), 1, '选集应只标记一个当前条目')
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '详情区不得横向溢出')
+        await page.screenshot({ path: path.join(output, `detail-${theme}-${width}.png`) })
+        await page.locator('.android-detail').scrollIntoViewIfNeeded()
+        await page.screenshot({ path: path.join(output, `detail-episodes-${theme}-${width}.png`) })
       }
       await page.setViewportSize({ width: 390, height: 844 })
       for (const entry of pages) {
@@ -207,10 +247,46 @@ test('非首页分区与首页同一套视觉语言，且深/浅主题都不溢�
     // 强调色在两种主题下都必须取自主题变量，且与页面底色的对比度达标。
     const dark = report.find((row) => row.theme === 'dark' && row.page === 'search')
     const light = report.find((row) => row.theme === 'light' && row.page === 'search')
-    assert.equal(dark.kickerColor, 'rgb(243, 200, 107)', '深色主题的强调色应取主题变量')
-    assert.equal(light.kickerColor, 'rgb(150, 80, 31)', '浅色主题的强调色必须换成高对比的深琥珀')
-    assert.equal(contrast(light.kickerColor, '#f7f3e9') >= 4.5, true, '浅色主题 kicker 对比度不足')
-    assert.equal(contrast(dark.kickerColor, '#081428') >= 4.5, true, '深色主题 kicker 对比度不足')
+    assert.equal(dark.sourceActionColor, 'rgb(243, 200, 107)', '深色来源按钮的强调色应取主题变量')
+    assert.equal(light.sourceActionColor, 'rgb(150, 80, 31)', '浅色来源按钮的强调色必须换成高对比的深琥珀')
+    assert.equal(contrast(light.sourceActionColor, '#f7f3e9') >= 4.5, true, '浅色来源按钮对比度不足')
+    assert.equal(contrast(dark.sourceActionColor, '#081428') >= 4.5, true, '深色来源按钮对比度不足')
+    // 字体放大不能把设置名称挤成逐字竖排；同时覆盖最窄的手机宽度。
+    for (const theme of ['dark', 'light']) {
+      await page.emulateMedia({ colorScheme: theme })
+      for (const width of [320, 390]) {
+        for (const section of ['settings', 'history']) {
+          await page.reload()
+          await page.setViewportSize({ width, height: 844 })
+          await page.locator('.android-home').waitFor()
+          await openSection(page, pages.find((entry) => entry.label === section))
+          await page.evaluate(() => {
+            const elements = [...document.querySelectorAll('.android-app, .android-app *')]
+            const sizes = elements.map((element) => parseFloat(getComputedStyle(element).fontSize))
+            elements.forEach((element, index) => { element.style.fontSize = `${sizes[index] * 2}px` })
+          })
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${section} 的 ${width}px 双倍字体不应溢出`)
+          if (section === 'settings') {
+            await page.getByRole('group', { name: '我的功能' }).getByRole('button', { name: '缓存', exact: true }).click()
+            const label = page.locator('.android-setting-row strong').filter({ hasText: '媒体缓存' })
+            assert.ok(await label.evaluate((element) => element.parentElement.clientWidth >= parseFloat(getComputedStyle(element).fontSize) * 4), '媒体缓存名称应有完整一行的宽度')
+            assert.equal(await page.getByText('播放速度', { exact: true }).count(), 0, '设置页不应恢复播放速度入口')
+          } else {
+            assert.ok((await page.locator('.android-history-copy small').first().textContent()).includes('第2集'), '历史集数显示应与选集一致')
+            assert.ok(await page.locator('.android-history-copy').first().evaluate((element) => element.clientWidth >= parseFloat(getComputedStyle(element.querySelector('strong')).fontSize) * 5), '放大字体后历史标题不应被动作按钮挤到仅两个字宽')
+          }
+          await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+          const covered = await page.evaluate(() => {
+            const navTop = document.querySelector('.android-nav').getBoundingClientRect().top
+            return [...document.querySelectorAll('.android-page-section button')].filter((button) => { const rect = button.getBoundingClientRect(); return button.checkVisibility() && rect.height > 0 && rect.top < innerHeight && rect.bottom > navTop + 1 }).map(button => ({ text: button.textContent, bottom: button.getBoundingClientRect().bottom, navTop, scroll: scrollY, height: document.documentElement.scrollHeight }))
+          })
+          assert.equal(covered.length, 0, `${section}/${theme}/${width} 页面末尾的操作不得被底部导航遮住：${JSON.stringify(covered)}`)
+          await page.evaluate(() => window.scrollTo(0, 0))
+          if (section === 'history') await page.waitForFunction(() => [...document.querySelectorAll('.android-history-list img')].filter((image) => image.getBoundingClientRect().top < innerHeight).every((image) => image.complete && image.naturalWidth > 0))
+          await page.screenshot({ path: path.join(output, `${section}-${theme}-${width}-font2.png`) })
+        }
+      }
+    }
   } finally {
     await browser.close()
     await new Promise((resolve) => server.close(resolve))

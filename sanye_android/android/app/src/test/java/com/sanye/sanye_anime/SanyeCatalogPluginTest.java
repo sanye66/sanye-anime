@@ -6,6 +6,62 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class SanyeCatalogPluginTest {
+    private static String backup() {
+        return "{\"format\":\"sanye-personal-data\",\"version\":1,\"exportedAt\":1700000000000,"
+            + "\"savedMedia\":[{\"id\":8,\"title\":\"作品\",\"url\":\"https://example.org/p/1?q=2\","
+            + "\"coverUrl\":\"/assets/cover.jpg\",\"summary\":\"简介\",\"favorite\":true,\"updatedAt\":1700000000000}],"
+            + "\"watchHistory\":[{\"mediaUrl\":\"https://example.org/p/1?q=2\",\"title\":\"作品\","
+            + "\"episodeId\":\"e1\",\"episodeTitle\":\"第1集\",\"lineId\":\"\",\"coverUrl\":\"\","
+            + "\"positionSeconds\":42.5,\"durationSeconds\":120,\"completed\":false,\"updatedAt\":1700000000000}],"
+            + "\"settings\":{\"theme\":\"dark\",\"volume\":0.5,\"frameTarget\":\"60\"}}";
+    }
+
+    @Test
+    public void backupValidatesAllDataBeforeDatabaseAccess() {
+        PersonalDataBackup parsed = PersonalDataBackup.parse(backup());
+        org.junit.Assert.assertEquals(1, parsed.savedMedia.size());
+        org.junit.Assert.assertEquals(1, parsed.watchHistory.size());
+        org.junit.Assert.assertEquals(3, parsed.settings.size());
+        PersonalDataBackup empty = PersonalDataBackup.parse("{\"format\":\"sanye-personal-data\",\"version\":1,"
+            + "\"exportedAt\":0,\"savedMedia\":[],\"watchHistory\":[],\"settings\":{}}");
+        org.junit.Assert.assertEquals(0, empty.savedMedia.size());
+    }
+
+    private static void rejectsBackup(String data) {
+        org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> PersonalDataBackup.parse(data));
+    }
+
+    @Test
+    public void backupRejectsUnknownVersionsTypesUrlsAndSecrets() {
+        rejectsBackup(backup().replace("\"version\":1", "\"version\":3"));
+        rejectsBackup(backup().replace("\"version\":1", "\"version\":\"1\""));
+        rejectsBackup(backup().replace("https://example.org/p/1?q=2", "http://localhost/p/1"));
+        rejectsBackup(backup().replace("\"volume\":0.5", "\"apiKey\":\"secret\""));
+        rejectsBackup(backup().replace("\"frameTarget\":\"60\"", "\"frameTarget\":60.5"));
+        rejectsBackup(backup().replace("\"favorite\":true", "\"favorite\":1"));
+        rejectsBackup(backup().replace("\"positionSeconds\":42.5", "\"positionSeconds\":121"));
+        rejectsBackup(backup().replace("\"updatedAt\":1700000000000", "\"updatedAt\":-1"));
+        rejectsBackup(backup().replace("\"updatedAt\":1700000000000", "\"updatedAt\":9007199254740992"));
+        rejectsBackup(backup().replace("\"summary\":\"简介\"", "\"summary\":null"));
+        rejectsBackup(backup().replace("\"summary\":\"简介\"", "\"summary\":\"a\\nb\""));
+        rejectsBackup(backup().replace("\"coverUrl\":\"/assets/cover.jpg\"", "\"coverUrl\":\"/assets/../secret\""));
+        rejectsBackup(backup() + "{}");
+        rejectsBackup("x".repeat(PersonalDataBackup.MAX_BYTES + 1));
+    }
+
+    @Test
+    public void backupRejectsDuplicateIdentitiesAndOversizedCollections() {
+        com.google.gson.JsonObject data = com.google.gson.JsonParser.parseString(backup()).getAsJsonObject();
+        data.getAsJsonArray("savedMedia").add(data.getAsJsonArray("savedMedia").get(0).deepCopy());
+        rejectsBackup(data.toString());
+        data = com.google.gson.JsonParser.parseString(backup()).getAsJsonObject();
+        data.getAsJsonArray("watchHistory").add(data.getAsJsonArray("watchHistory").get(0).deepCopy());
+        rejectsBackup(data.toString());
+        data = com.google.gson.JsonParser.parseString(backup()).getAsJsonObject();
+        for (int i = 0; i < PersonalDataBackup.MAX_RECORDS; i++) data.getAsJsonArray("savedMedia").add(com.google.gson.JsonNull.INSTANCE);
+        rejectsBackup(data.toString());
+    }
+
     @Test
     public void acceptsOnlyPublicHttpsAddresses() {
         assertTrue(SanyeCatalogPlugin.validUrl("https://example.org/episode.mp4"));

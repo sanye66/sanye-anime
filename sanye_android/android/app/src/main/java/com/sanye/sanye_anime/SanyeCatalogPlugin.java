@@ -90,8 +90,9 @@ public class SanyeCatalogPlugin extends Plugin {
         try {
             db = database.getWritableDatabase();
             db.beginTransaction();
+            SourceIdentity source = callSource(call);
             long id;
-            try (Cursor existing = db.query("saved_media", new String[]{"id"}, "url = ?", new String[]{url}, null, null, null)) {
+            try (Cursor existing = db.query("saved_media", new String[]{"id"}, "url = ? AND source_key = ?", new String[]{url, source.key}, null, null, null)) {
                 if (existing.moveToFirst()) {
                     id = existing.getLong(0);
                     ContentValues update = new ContentValues();
@@ -105,6 +106,8 @@ public class SanyeCatalogPlugin extends Plugin {
                     ContentValues insert = new ContentValues();
                     insert.put("title", title);
                     insert.put("url", url);
+                    insert.put("source_key", source.key);
+                    insert.put("source_context", source.context);
                     insert.put("cover_url", coverUrl);
                     insert.put("summary", summary);
                     insert.put("favorite", Boolean.TRUE.equals(favorite) ? 1 : 0);
@@ -179,7 +182,18 @@ public class SanyeCatalogPlugin extends Plugin {
         try {
             db = database.getWritableDatabase();
             db.beginTransaction();
+            SourceIdentity source = callSource(call);
+            // 详情暂时缺图时保留上一轮记录的封面，不让进度写入擦掉已有图片。
+            if (coverUrl.isEmpty()) {
+                try (Cursor previous = db.query("watch_history", new String[]{"cover_url"},
+                        "source_key=? AND media_url=? AND episode_id=? AND line_id=?",
+                        new String[]{source.key, mediaUrl, episodeId, lineId}, null, null, null)) {
+                    if (previous.moveToFirst()) coverUrl = previous.getString(0);
+                }
+            }
             ContentValues values = new ContentValues();
+            values.put("source_key", source.key);
+            values.put("source_context", source.context);
             values.put("media_url", mediaUrl);
             values.put("title", title);
             values.put("episode_id", episodeId);
@@ -198,6 +212,7 @@ public class SanyeCatalogPlugin extends Plugin {
                 throw new IllegalStateException("历史写入失败");
             }
             item = historyItem(historyValues(mediaUrl, title, episodeId, episodeTitle, lineId, coverUrl, position, duration, completed, updatedAt));
+            putSource(item, source.key, source.context);
             db.setTransactionSuccessful();
         } catch (Exception exception) {
             Log.e(TAG, "观看进度保存失败：" + mediaUrl, exception);
@@ -285,6 +300,7 @@ public class SanyeCatalogPlugin extends Plugin {
                 ContentValues entry = new ContentValues();
                 entry.put("key", key);
                 entry.put("value", value.toString());
+                entry.put("updated_at", System.currentTimeMillis());
                 updates[index++] = entry;
             }
         } catch (JSONException exception) {
@@ -314,6 +330,270 @@ public class SanyeCatalogPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("settings", saved);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void exportPersonalData(PluginCall call) {
+        SQLiteDatabase db = null;
+        JSObject data = new JSObject();
+        try {
+            db = database.getReadableDatabase();
+            // 三张表必须来自同一快照，避免播放进度写入时生成混合时刻的备份。
+            db.beginTransaction();
+            try {
+            JSArray saved = new JSArray(), history = new JSArray();
+            try (Cursor rows = db.query("saved_media", null, null, null, null, null, "updated_at DESC, id DESC")) {
+                while (rows.moveToNext()) saved.put(toItem(rows));
+            }
+            try (Cursor rows = db.query("watch_history", null, null, null, null, null, "updated_at DESC")) {
+                while (rows.moveToNext()) history.put(toHistory(rows));
+            }
+            data.put("format", PersonalDataBackup.FORMAT);
+            data.put("version", 2);
+            data.put("exportedAt", System.currentTimeMillis());
+            data.put("savedMedia", saved);
+            data.put("watchHistory", history);
+            data.put("settings", readSettings(db));
+            // 导出也使用同一限制，确保本版本生成的备份能被本版本完整恢复。
+            PersonalDataBackup.parse(data.toString());
+            db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } catch (Exception exception) {
+            Log.e(TAG, "导出个人数据失败", exception);
+            call.reject("个人数据无法导出，请检查数据量与本地存储", "E_BACKUP_EXPORT", exception);
+            return;
+        }
+        JSObject result = new JSObject();
+        result.put("data", data);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void validatePersonalData(PluginCall call) {
+        try {
+            JSObject data = call.getObject("data");
+            PersonalDataBackup.parse(data == null ? null : data.toString());
+            call.resolve(new JSObject().put("valid", true));
+        } catch (Exception failure) {
+            call.reject("备份格式、版本或数据无效，原有数据未更改", "E_BACKUP_PARAM");
+        }
+    }
+
+    @PluginMethod
+    public void importPersonalData(PluginCall call) {
+        PersonalDataBackup backup;
+        try {
+            JSObject data = call.getObject("data");
+            backup = PersonalDataBackup.parse(data == null ? null : data.toString());
+        } catch (Exception exception) {
+            call.reject("备份格式、版本或数据无效，原有数据未更改", "E_BACKUP_PARAM");
+            return;
+        }
+        SQLiteDatabase db = null;
+        int savedCount = 0, historyCount = 0, settingsCount = 0;
+        JSObject savedIdMap = new JSObject();
+        JSArray restoredSavedIds = new JSArray(), restoredHistory = new JSArray();
+        try {
+            db = database.getWritableDatabase();
+            db.beginTransaction();
+            try {
+            for (com.google.gson.JsonElement element : backup.savedMedia) {
+                com.google.gson.JsonObject item = element.getAsJsonObject();
+                String url = PersonalDataBackup.string(item, "url");
+                SourceIdentity source = SourceIdentity.parse(item);
+                String[] savedIdentity = {url, source.key};
+                String savedSelection = "url = ? AND source_key = ?";
+                long updatedAt = PersonalDataBackup.integer(item, "updatedAt");
+                ContentValues values = new ContentValues();
+                values.put("url", url);
+                values.put("source_key", source.key);
+                values.put("source_context", source.context);
+                values.put("title", PersonalDataBackup.string(item, "title"));
+                values.put("cover_url", PersonalDataBackup.string(item, "coverUrl"));
+                values.put("summary", PersonalDataBackup.string(item, "summary"));
+                values.put("favorite", PersonalDataBackup.bool(item, "favorite") ? 1 : 0);
+                values.put("updated_at", updatedAt);
+                try (Cursor row = db.query("saved_media", new String[]{"updated_at", "favorite", "id"}, savedSelection, savedIdentity, null, null, null)) {
+                    if (row.moveToFirst()) {
+                        if (item.has("id")) savedIdMap.put(Long.toString(PersonalDataBackup.integer(item, "id")), row.getLong(2));
+                        // 旧备份不覆盖新作品资料，收藏取并集，不取消当前收藏。
+                        if (row.getLong(0) >= updatedAt) {
+                            if (row.getInt(1) == 0 && PersonalDataBackup.bool(item, "favorite")) {
+                                ContentValues favorite = new ContentValues();
+                                favorite.put("favorite", 1);
+                                savedCount += db.update("saved_media", favorite, savedSelection, savedIdentity);
+                            }
+                            continue;
+                        }
+                        if (row.getInt(1) != 0) values.put("favorite", 1);
+                        savedCount += db.update("saved_media", values, savedSelection, savedIdentity);
+                        restoredSavedIds.put(row.getLong(2));
+                    } else {
+                        long id = db.insertOrThrow("saved_media", null, values);
+                        if (item.has("id")) savedIdMap.put(Long.toString(PersonalDataBackup.integer(item, "id")), id);
+                        restoredSavedIds.put(id);
+                        savedCount++;
+                    }
+                }
+            }
+            for (com.google.gson.JsonElement element : backup.watchHistory) {
+                com.google.gson.JsonObject item = element.getAsJsonObject();
+                SourceIdentity source = SourceIdentity.parse(item);
+                String[] identity = {PersonalDataBackup.string(item, "mediaUrl"), PersonalDataBackup.string(item, "episodeId"), PersonalDataBackup.string(item, "lineId"), source.key};
+                long updatedAt = PersonalDataBackup.integer(item, "updatedAt");
+                String selection = "media_url = ? AND episode_id = ? AND line_id = ? AND source_key = ?";
+                boolean exists;
+                try (Cursor row = db.query("watch_history", new String[]{"updated_at"}, selection, identity, null, null, null)) {
+                    exists = row.moveToFirst();
+                    if (exists && row.getLong(0) >= updatedAt) continue;
+                }
+                ContentValues values = new ContentValues();
+                values.put("media_url", identity[0]);
+                values.put("source_key", source.key);
+                values.put("source_context", source.context);
+                values.put("episode_id", identity[1]);
+                values.put("line_id", identity[2]);
+                values.put("title", PersonalDataBackup.string(item, "title"));
+                values.put("episode_title", PersonalDataBackup.string(item, "episodeTitle"));
+                values.put("cover_url", PersonalDataBackup.string(item, "coverUrl"));
+                values.put("position_seconds", PersonalDataBackup.number(item, "positionSeconds"));
+                values.put("duration_seconds", PersonalDataBackup.number(item, "durationSeconds"));
+                values.put("completed", PersonalDataBackup.bool(item, "completed") ? 1 : 0);
+                values.put("updated_at", updatedAt);
+                if (exists) historyCount += db.update("watch_history", values, selection, identity);
+                else { db.insertOrThrow("watch_history", null, values); historyCount++; }
+                JSObject restored = new JSObject();
+                restored.put("mediaUrl", identity[0]);
+                restored.put("episodeId", identity[1]);
+                restored.put("lineId", identity[2]);
+                restored.put("sourceKey", source.key);
+                restoredHistory.put(restored);
+            }
+            for (java.util.Map.Entry<String, com.google.gson.JsonElement> entry : backup.settings.entrySet()) {
+                String key = entry.getKey();
+                Object parsed = new com.google.gson.Gson().fromJson(entry.getValue(), Object.class);
+                String value = "frameTarget".equals(key) && parsed instanceof Number
+                    ? Integer.toString(((Number) parsed).intValue()) : parsed.toString();
+                try (Cursor row = db.query("app_settings", new String[]{"value", "updated_at"}, "key = ?", new String[]{key}, null, null, null)) {
+                    if (row.moveToFirst()) {
+                        if (row.getLong(1) >= backup.exportedAt) continue;
+                        if (value.equals(row.getString(0))) {
+                            ContentValues timestamp = new ContentValues();
+                            timestamp.put("updated_at", backup.exportedAt);
+                            db.update("app_settings", timestamp, "key=?", new String[]{key});
+                            continue;
+                        }
+                    }
+                }
+                ContentValues values = new ContentValues();
+                values.put("key", key);
+                values.put("value", value);
+                values.put("updated_at", backup.exportedAt);
+                if (db.insertWithOnConflict("app_settings", null, values, SQLiteDatabase.CONFLICT_REPLACE) == -1)
+                    throw new IllegalStateException("设置导入失败");
+                settingsCount++;
+            }
+            JSObject recovery = call.getObject("recovery");
+            if (recovery != null) {
+                if (recovery.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > PersonalDataBackup.MAX_BYTES)
+                    throw new IllegalArgumentException("recovery journal too large");
+                ContentValues journal = new ContentValues();
+                journal.put("id", 1);
+                journal.put("payload", recovery.toString());
+                db.insertOrThrow("restore_journal", null, journal);
+            }
+            db.setTransactionSuccessful();
+            } finally {
+                db.endTransaction();
+            }
+        } catch (Exception exception) {
+            Log.e(TAG, "导入个人数据失败", exception);
+            call.reject("导入失败，原有数据未更改", "E_BACKUP_IMPORT", exception);
+            return;
+        }
+        JSObject result = new JSObject();
+        result.put("savedMedia", savedCount);
+        result.put("watchHistory", historyCount);
+        result.put("settings", settingsCount);
+        result.put("savedIdMap", savedIdMap);
+        result.put("restoredSavedIds", restoredSavedIds);
+        result.put("restoredHistory", restoredHistory);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getRestoreState(PluginCall call) {
+        try (Cursor row = database.getReadableDatabase().rawQuery("SELECT payload FROM restore_journal WHERE id=1", null)) {
+            JSObject result = new JSObject();
+            result.put("pending", row.moveToFirst() ? new JSONObject(row.getString(0)) : JSONObject.NULL);
+            call.resolve(result);
+        } catch (Exception failure) { call.reject("恢复日志读取失败", "E_BACKUP_JOURNAL", failure); }
+    }
+
+    @PluginMethod
+    public void completeRestore(PluginCall call) {
+        try {
+            String token = call.getString("token", "");
+            SQLiteDatabase db = database.getWritableDatabase();
+            db.beginTransaction();
+            try {
+                try (Cursor row = db.rawQuery("SELECT payload FROM restore_journal WHERE id=1", null)) {
+                    if (row.moveToFirst() && token.equals(new JSONObject(row.getString(0)).getString("token")))
+                        db.delete("restore_journal", "id=1", null);
+                }
+                db.setTransactionSuccessful();
+            } finally { db.endTransaction(); }
+            call.resolve();
+        } catch (Exception failure) { call.reject("恢复日志收口失败", "E_BACKUP_JOURNAL", failure); }
+    }
+
+    @PluginMethod
+    public void migrateSourceBindings(PluginCall call) {
+        try {
+            com.google.gson.JsonObject input = com.google.gson.JsonParser.parseString(call.getData().toString()).getAsJsonObject();
+            SQLiteDatabase db = database.getWritableDatabase();
+            int migrated = 0;
+            db.beginTransaction();
+            try {
+                for (String kind : new String[]{"saved", "history"}) {
+                    if (!input.has(kind)) continue;
+                    for (com.google.gson.JsonElement element : input.getAsJsonArray(kind)) {
+                        com.google.gson.JsonObject entry = element.getAsJsonObject();
+                        com.google.gson.JsonObject item = new com.google.gson.JsonObject();
+                        item.add("sourceContext", entry.get("context"));
+                        SourceIdentity source = SourceIdentity.parse(item);
+                        ContentValues values = new ContentValues();
+                        values.put("source_key", source.key);
+                        values.put("source_context", source.context);
+                        if ("saved".equals(kind)) {
+                            String id = Long.toString(PersonalDataBackup.integer(entry, "id"));
+                            migrated += db.updateWithOnConflict("saved_media", values, "id=? AND source_key=''", new String[]{id}, SQLiteDatabase.CONFLICT_IGNORE);
+                        } else {
+                            String[] identity = {PersonalDataBackup.string(entry, "mediaUrl"), PersonalDataBackup.string(entry, "episodeId"), PersonalDataBackup.string(entry, "lineId")};
+                            migrated += db.updateWithOnConflict("watch_history", values, "media_url=? AND episode_id=? AND line_id=? AND source_key=''", identity, SQLiteDatabase.CONFLICT_IGNORE);
+                        }
+                    }
+                }
+                db.setTransactionSuccessful();
+            } finally { db.endTransaction(); }
+            JSObject result = new JSObject();
+            result.put("migrated", migrated);
+            call.resolve(result);
+        } catch (Exception failure) { call.reject("来源快照迁移失败，原有记录未更改", "E_SOURCE_MIGRATION", failure); }
+    }
+
+    private static SourceIdentity callSource(PluginCall call) {
+        return SourceIdentity.parse(com.google.gson.JsonParser.parseString(call.getData().toString()).getAsJsonObject());
+    }
+
+    private static void putSource(JSObject item, String key, String context) {
+        item.put("sourceKey", key);
+        if (!context.isEmpty()) {
+            try { item.put("sourceContext", new JSONObject(context)); }
+            catch (JSONException failure) { throw new IllegalStateException("来源快照损坏", failure); }
+        }
     }
 
     @PluginMethod
@@ -436,6 +716,7 @@ public class SanyeCatalogPlugin extends Plugin {
 
     private static JSObject toHistory(Cursor row) {
         JSObject item = new JSObject();
+        putSource(item, row.getString(row.getColumnIndexOrThrow("source_key")), row.getString(row.getColumnIndexOrThrow("source_context")));
         item.put("mediaUrl", row.getString(row.getColumnIndexOrThrow("media_url")));
         item.put("title", row.getString(row.getColumnIndexOrThrow("title")));
         item.put("episodeId", row.getString(row.getColumnIndexOrThrow("episode_id")));
@@ -547,6 +828,7 @@ public class SanyeCatalogPlugin extends Plugin {
 
     private static JSObject toItem(Cursor row) {
         JSObject item = new JSObject();
+        putSource(item, row.getString(row.getColumnIndexOrThrow("source_key")), row.getString(row.getColumnIndexOrThrow("source_context")));
         item.put("id", row.getLong(row.getColumnIndexOrThrow("id")));
         item.put("title", row.getString(row.getColumnIndexOrThrow("title")));
         item.put("url", row.getString(row.getColumnIndexOrThrow("url")));
@@ -558,7 +840,7 @@ public class SanyeCatalogPlugin extends Plugin {
     }
 
     private static final class CatalogDatabase extends SQLiteOpenHelper {
-        private static final int DATABASE_VERSION = 7;
+        private static final int DATABASE_VERSION = 9;
 
         CatalogDatabase(android.content.Context context) {
             super(context, "sanye_catalog.db", null, DATABASE_VERSION);
@@ -571,6 +853,7 @@ public class SanyeCatalogPlugin extends Plugin {
             createSavedMediaIndex(db);
             createSavedMediaTitleIndex(db);
             createHistorySortIndex(db);
+            migrateIdentity(db);
         }
 
         @Override
@@ -594,6 +877,32 @@ public class SanyeCatalogPlugin extends Plugin {
             // v6：历史封面回填。封面字段是后来才加的，老记录一直是空串，用户看到的就是
             //「观看历史没有封面」。同一作品在片库里已有封面时按地址、再按标题补一次。
             if (oldVersion < 6) backfillHistoryCovers(db);
+            if (oldVersion < 8) migrateIdentity(db);
+            // 6.2 升级时按用户要求只清空既有观看历史；片库、收藏和设置保持原样。
+            if (oldVersion < 9) db.delete("watch_history", null, null);
+        }
+
+        private static void migrateIdentity(SQLiteDatabase db) {
+            if (!hasColumn(db, "saved_media", "source_key")) {
+                db.execSQL("ALTER TABLE saved_media RENAME TO saved_media_v7");
+                db.execSQL("CREATE TABLE saved_media (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, favorite INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, cover_url TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '', source_key TEXT NOT NULL DEFAULT '', source_context TEXT NOT NULL DEFAULT '', UNIQUE(url, source_key))");
+                db.execSQL("INSERT INTO saved_media(id,title,url,favorite,updated_at,cover_url,summary) SELECT id,title,url,favorite,updated_at,cover_url,summary FROM saved_media_v7");
+                db.execSQL("INSERT INTO sqlite_sequence(name,seq) SELECT 'saved_media',seq FROM sqlite_sequence WHERE name='saved_media_v7' AND NOT EXISTS(SELECT 1 FROM sqlite_sequence WHERE name='saved_media')");
+                db.execSQL("UPDATE sqlite_sequence SET seq=MAX(seq, COALESCE((SELECT seq FROM sqlite_sequence WHERE name='saved_media_v7'),0)) WHERE name='saved_media'");
+                db.execSQL("DROP TABLE saved_media_v7");
+            }
+            if (!hasColumn(db, "watch_history", "source_key")) {
+                db.execSQL("ALTER TABLE watch_history RENAME TO watch_history_v7");
+                db.execSQL("CREATE TABLE watch_history (media_url TEXT NOT NULL, title TEXT NOT NULL, episode_id TEXT NOT NULL, episode_title TEXT NOT NULL, line_id TEXT NOT NULL, position_seconds REAL NOT NULL, duration_seconds REAL NOT NULL, completed INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL, cover_url TEXT NOT NULL DEFAULT '', source_key TEXT NOT NULL DEFAULT '', source_context TEXT NOT NULL DEFAULT '', PRIMARY KEY(media_url, episode_id, line_id, source_key))");
+                db.execSQL("INSERT INTO watch_history(media_url,title,episode_id,episode_title,line_id,position_seconds,duration_seconds,completed,updated_at,cover_url) SELECT media_url,title,episode_id,episode_title,line_id,position_seconds,duration_seconds,completed,updated_at,cover_url FROM watch_history_v7");
+                db.execSQL("DROP TABLE watch_history_v7");
+            }
+            createSavedMediaIndex(db);
+            createSavedMediaTitleIndex(db);
+            createHistorySortIndex(db);
+            db.execSQL("CREATE INDEX IF NOT EXISTS watch_history_recent ON watch_history(updated_at DESC)");
+            db.execSQL("CREATE TABLE IF NOT EXISTS restore_journal(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)");
+            addColumnIfMissing(db, "app_settings", "updated_at", "INTEGER NOT NULL DEFAULT 0");
         }
 
         /**

@@ -29,7 +29,7 @@ try {
   if (host) {
     host.innerHTML = '<div class="android-mount-failure" role="alert">'
       + '<strong>界面加载失败</strong>'
-      + '<p>本地界面没有成功启动，请重试；若反复出现，请把这一步的控制台输出一并反馈。</p>'
+      + '<p>请重新打开。若仍无法使用，请反馈问题。</p>'
       + '<button type="button">重新加载</button>'
       + '</div>'
     host.querySelector('button')?.addEventListener('click', () => window.location.reload())
