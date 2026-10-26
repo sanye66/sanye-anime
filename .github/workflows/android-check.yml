@@ -2,34 +2,11 @@ name: android-check
 
 on:
   workflow_dispatch:
-  # 分支模型是「任务分支 → dev → test → release」直接推送，安卓门禁只在 PR 上跑等于没跑
-  # （dev/test/release 的推送都过不了这道门），所以与 ci.yml 一样加上推送触发。
+  # 候选核验要求当前提交同时具备 ci、安卓、桌面三条成功记录；
+  # 路径过滤会让文档或部署脚本提交缺少安卓记录，因此所有目标分支的提交都运行。
   push:
     branches: ["feature-*", "dev", "test", "release"]
-    paths:
-      - 'sanye_client/**'
-      - 'sanye_android/**'
-      - 'e2e/**'
-      - 'product/android-requirements.md'
-      - 'docs/android-development-plan.md'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      # 交付资源一致性门禁自身的改动也要跑这道门（只改脚本时否则不会触发）。
-      - 'sanye_deploy/verify-android-assets.mjs'
-      - 'sanye_deploy/verify-android-assets.test.mjs'
-      - '.github/workflows/android-check.yml'
   pull_request:
-    paths:
-      - 'sanye_client/**'
-      - 'sanye_android/**'
-      - 'e2e/**'
-      - 'product/android-requirements.md'
-      - 'docs/android-development-plan.md'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'sanye_deploy/verify-android-assets.mjs'
-      - 'sanye_deploy/verify-android-assets.test.mjs'
-      - '.github/workflows/android-check.yml'
 
 concurrency:
   group: android-check-${{ github.ref }}

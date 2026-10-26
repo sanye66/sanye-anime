@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.17 |
+| 文档版本 | v1.18 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
@@ -11,6 +11,8 @@
 更新记录：2026-10-26，v1.16，按 `feature-T-B-01` 的真实 Actions 失败项复核：`ci` 的依赖审计因 Electron、Vite、undici 的有修复版本告警与失效豁免失败，安卓专项因备份/离线下载页面测试沿用旧界面入口失败；两者已作源码修正并完成对应本地回归。网页安全回归的公开作业日志不可读，本轮给失败用例增加注解及日志产物入口，须以新一轮远端运行确认；桌面专项在旧提交已通过。各工作流的触发、门禁与候选放行仍以实际运行和当前提交号核对，不能以本地通过代替远端 CI 成功。
 
 更新记录：2026-10-26，v1.17，远端提交 `642b782` 的 `ci` 依赖扫描、前端、后端、文档和密钥作业通过，浏览器作业注解定位到订阅测试读取开发机忽略目录中的 MP4；现已改用自包含媒体桩并在本地 9 个脚本全通过。`android-check` 后续失败定位到前端体验测试沿用旧的搜索输入保留断言；本地按原媒体步骤 16 项通过。`desktop-check` 的同提交源代码作业成功；修正项须由下一轮远端三工作流确认，发布候选与部署链路仍另按人工触发和环境门禁执行。
+
+更新记录：2026-10-26，v1.18，发现 `check-ci.mjs` 要求当前提交同时拥有 `ci`、`android-check` 和 `desktop-check` 成功记录，而专项工作流原有路径过滤会让仅改测试或文档的提交缺少精确提交收据。现移除安卓和桌面专项的路径过滤，目标分支每次 push 和 PR 均运行三套检查；并发取消同分支旧运行。此变更增加运行次数，但使候选的精确提交门禁可自动满足。新提交的远端三工作流结果仍须回读，不能由工作流配置推定已成功。
 
 ## 本轮流水线基准（2026-10-13）
 
@@ -100,14 +102,14 @@ Trivy 保留无修复版本的命中（ignore-unfixed: false），报告结构�
 
 ### 2.7 android-check：安卓原生门禁
 
-- 工作流：[.github/workflows/android-check.yml](../.github/workflows/android-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_client/`、`sanye_android/`、`e2e/`、[安卓需求草案](../product/android-requirements.md)、[安卓开发计划](./android-development-plan.md)、`package.json`、`pnpm-lock.yaml` 或本工作流；并发：同分支取消旧任务。
+- 工作流：[.github/workflows/android-check.yml](../.github/workflows/android-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，不按文件路径过滤；并发：同分支取消旧任务。
 - 步骤：`pnpm install --frozen-lockfile` → `pnpm --filter @sanye/sanye_client build:android` → 安装 Chromium → `pnpm test:player-policy` → 15 个安卓端 e2e 文件 → `sanye_android` 内 `npm ci && npm run sync` → `./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`。
 - 门禁：单元测试、`lintDebug`（误报登记在 `sanye_android/android/app/lint.xml`）或原生构建任一失败即阻断；单元测试 XML 与 lint 报告无论成败都作为构建产物上传。安卓前端回归里有 2 项依赖 `sanye_desktop/runtime/seed.sql`（PC 随包目录与已有线路的比对），该目录被 `.gitignore` 忽略、干净检出上不存在，因此按守卫跳过：CI 为 53 通过 / 2 跳过 / 0 失败，本机准备好运行时后为 55 通过。失败时会把 TAP 的 `not ok` 行打成 `::error::` 注解并上传完整日志，公开仓库不登录也能定位。
 - 本地等价：`pnpm --filter @sanye/sanye_client build:android`；`cd sanye_android/android` 后 `./gradlew --offline :app:testDebugUnitTest :app:lintDebug`（本机需 `JAVA_HOME` 指向 JDK 21、`ANDROID_HOME` 指向已安装的 Android SDK）。
 
 ### 2.8 desktop-check：桌面打包门禁
 
-- 工作流：[.github/workflows/desktop-check.yml](../.github/workflows/desktop-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，且路径命中 `sanye_desktop/**`、`sanye_client/**`、`sanye_server/**`、`patches/**`、`package.json`、`pnpm-lock.yaml` 或本工作流；运行在 `windows-2025`，超时 30 分钟，同分支取消旧任务。
+- 工作流：[.github/workflows/desktop-check.yml](../.github/workflows/desktop-check.yml)。触发：push 到 `feature-*`、`dev`、`test`、`release` 或创建 PR，不按文件路径过滤；运行在 `windows-2025`，超时 30 分钟，同分支取消旧任务。
 - 步骤：安装固定 Maven 与 Chromium → `pnpm install --frozen-lockfile` → `pnpm test:desktop` → `pnpm typecheck` → `pnpm build` → `pnpm --filter @sanye/sanye_client build:desktop` → 打包三套桌面服务源码；后端 surefire 报告无论成败都上传。
 - 门禁：桌面回归、类型检查、构建或源码打包任一失败即阻断。`sanye_desktop/runtime/**`（约 548MB，含 PostgreSQL 模板与 Java 运行时）被 `.gitignore` 忽略，需要在本地执行 `pnpm desktop:prepare` 生成，所以 CI 上依赖该目录的用例按守卫跳过（`pnpm test:desktop` 在干净检出下为 65 通过 / 4 跳过 / 0 失败，本机准备好运行时后为 69 通过）。发行物本身的强制规则（免安装包 EXE 逐字节一致、不得改写 EXE、依赖闭包等）见[本地桌面运行与打包](./local-desktop.md)。
 
