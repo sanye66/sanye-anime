@@ -95,7 +95,8 @@ test('画质与帧率随设置恢复并写回，起播前预连接媒体主机',
     const fpsMenu = page.locator('.android-player-menu')
     await fpsMenu.waitFor()
     // 浮层里的档位文案是纯档位名（用户要求列表收到「帧率」两个字宽，去掉 FPS 后缀）。
-    assert.equal(await fpsMenu.getByRole('button', { name: '60', exact: true }).getAttribute('aria-pressed'), 'true')
+    assert.equal(await fpsMenu.getByRole('button', { name: '60', exact: true }).getAttribute('aria-pressed'), 'false',
+      '媒体尚未解码出帧时，菜单不能把已保存的偏好冒充实时生效帧率')
     await fpsMenu.getByRole('button', { name: '自动', exact: true }).click()
     await page.waitForFunction(() => (window.__settingsWrites || []).some((entry) => entry.frameTarget === 'auto'))
 

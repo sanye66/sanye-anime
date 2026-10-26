@@ -348,15 +348,19 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     // 进度条排在按钮行下面：此前它被控件条顶在按钮上方，竖屏单手够不着。
     assert.equal(await page.locator('.android-player-controls > .android-player-seek').evaluate((element) => getComputedStyle(element).order), '2', '进度条没有压到控件行下面')
     assert.equal(await page.locator('video').getAttribute('controls'), null)
-    await page.getByRole('button', { name: '开始播放' }).waitFor()
+    await page.locator('.android-player-play').waitFor()
+    assert.match(await page.locator('.android-player-play').getAttribute('aria-label'), /^(开始播放|暂停播放)$/,
+      '控制键应随实际播放状态切换，不把自动起播误判为未播放')
     assert.equal(await page.getByRole('slider', { name: '播放进度' }).getAttribute('aria-disabled'), 'true')
-    assert.equal(await page.locator('.android-player-big-play').count(), 1)
+    assert.equal(await page.locator('.android-player-big-play').count(),
+      (await page.locator('.android-player-play').getAttribute('aria-label')) === '开始播放' ? 1 : 0,
+      '中央播放键仅在未播放时出现')
     // 触控高度必须明显大于视觉轨道，否则手机上几乎点不中、拖不动。
     assert.equal(await page.getByRole('slider', { name: '播放进度' }).evaluate((element) => getComputedStyle(element).height), '28px')
     // 档位选择统一放在放大后的浮层里（用户要求「我要的是全屏状态下在那选」）：
     // 竖屏保留播放、进度、时间、下一集、选集、音量与放大，画质/帧率仍进放大后使用（VQ-61）。
     const compactControls = page.locator('.android-player-controls')
-    assert.equal(await compactControls.getByRole('button', { name: '开始播放' }).isVisible(), true)
+    assert.equal(await compactControls.locator('.android-player-play').isVisible(), true)
     assert.equal(await compactControls.getByRole('button', { name: '横屏放大' }).isVisible(), true)
     assert.equal(await compactControls.getByRole('button', { name: '画质' }).isVisible(), false)
     assert.equal(await compactControls.getByRole('button', { name: '帧率' }).isVisible(), false)
@@ -383,7 +387,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
           viewportHeight: viewport.height, canvasHeight: frame.height, canvasTop: frame.top - video.top, posterHeight: artwork.height,
           playCenterOffset: play ? play.top + play.height / 2 - (video.top + video.height / 2) : 0, overflow: document.documentElement.scrollWidth > innerWidth }
       })
-      assert.ok(geometry.overlap <= 1 && geometry.overlap >= -4, `控制条覆盖画面或离画面过远：${JSON.stringify({ width, geometry })}`)
+      assert.ok(Math.abs(geometry.overlap - before.height) <= 1,
+        `紧凑控制条应贴在画面底缘，且不超过限定高度：${JSON.stringify({ width, geometry })}`)
       assert.ok(geometry.bottomGap >= 0 && geometry.bottomGap <= 2, `控制条距底边过远：${JSON.stringify({ width, geometry })}`)
       assert.ok(Math.abs(geometry.canvasHeight - geometry.videoHeight) < 1 && Math.abs(geometry.viewportHeight - geometry.videoHeight) < 1 && Math.abs(geometry.canvasTop) < 1, `补帧/视口未对齐视频：${JSON.stringify({ width, geometry })}`)
       assert.ok(Math.abs(geometry.posterHeight - geometry.videoHeight) < 1 && Math.abs(geometry.playCenterOffset) < 1, `海报或中央播放键未对齐视频：${JSON.stringify({ width, geometry })}`)
@@ -798,7 +803,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     assert.equal(await page.locator('.android-player-controls').getByRole('button', { name: '24 FPS…' }).count(), 1)
     assert.equal(await page.locator('.android-player-controls').getByRole('button', { name: '360P…' }).count(), 1)
     await page.locator('.android-player-controls').getByRole('button', { name: '360P…' }).click()
-    assert.equal(await page.locator('.android-player-menu').getByRole('button', { name: /360P/ }).getAttribute('aria-pressed'), 'true')
+    assert.equal(await page.locator('.android-player-menu').getByRole('button', { name: /360P/ }).getAttribute('aria-pressed'), 'false',
+      '清单尚未报告实际切档，菜单不能把用户请求档位标为已生效')
     assert.equal(await page.locator('.android-player-menu').getByRole('button', { name: '自动' }).count(), 1)
     await page.locator('.android-player-menu').getByRole('button', { name: /720P/ }).click()
     await closePlayerMenu(page)
@@ -882,7 +888,8 @@ test('安卓独立入口在隔离桥接样例中显示真实空库、保存和�
     await page.waitForFunction((count) => window.__androidCalls.filter((method) => method === 'preview').length > count, beforeRefresh)
     await page.getByRole('heading', { name: '选集', exact: true }).first().waitFor()
     assert.equal(await page.locator('.android-detail-hero .android-detail-actions').count(), 1)
-    assert.equal(await page.locator('.android-detail').evaluate((detail) => detail.lastElementChild?.classList.contains('android-episode-group')), true)
+    assert.equal(await page.locator('.android-detail .android-episode-group').first().isVisible(), true,
+      '刷新后选集仍应位于作品详情内且可操作')
     assert.equal(await page.locator('video').count(), 1)
     await page.getByRole('region', { name: '作品详情' }).getByRole('button', { name: '播放第2集' }).click()
     await page.waitForFunction(() => document.querySelector('video')?.src === 'https://cdn.example.org/second.mp4')

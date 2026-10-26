@@ -1359,7 +1359,8 @@ function clearChromeTimer() {
 }
 function scheduleChromeHide() {
   clearChromeTimer()
-  if (!playing.value || playerError.value || chromeMenu.value) return
+  // 竖屏控制条由点按显隐；仅全屏播放时自动收起，避免换集和静音入口自行消失。
+  if (!stageFullscreen.value || !playing.value || playerError.value || chromeMenu.value) return
   chromeTimer = window.setTimeout(() => { chromeVisible.value = false }, 3200)
 }
 function showChrome() {

@@ -787,10 +787,14 @@ button { font-weight: 600; }
 .android-player-stage:is(:fullscreen, .android-player-stage--expanded) .android-player-viewport { height: 100%; aspect-ratio: auto; }
 /* 竖屏只覆盖画面底缘的基础操作，全屏后再展开完整控件。 */
 .android-player-stage.android-player-stage--compact .android-player-controls {
-  position: absolute; inset: auto 0 0; padding: 12px 4px 0; gap: 0;
+  position: absolute; inset: auto 0 0; padding: 6px 4px 0; gap: 0;
   background: linear-gradient(transparent, rgba(0,0,0,.75));
 }
 .android-player-stage.android-player-stage--compact .android-player-controls-row .android-player-tool:not(:last-child) { display: none; }
+/* 竖屏仍须能换集和静音；画质与帧率保持在放大后的完整菜单。 */
+.android-player-stage.android-player-stage--compact .android-player-controls-row .android-player-icon[aria-label="音量"],
+.android-player-stage.android-player-stage--compact .android-player-controls-row .android-player-tool--text[aria-haspopup="dialog"],
+.android-player-stage.android-player-stage--compact .android-player-controls-row .android-player-tool--text[aria-label^="下一集"] { display: inline-flex; }
 .android-player-stage.android-player-stage--compact .android-player-controls-row {
   display: flex; flex-wrap: nowrap; gap: 2px;
 }
