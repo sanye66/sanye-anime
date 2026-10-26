@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.6 |
+| 文档版本 | v1.7 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
-| 更新时间 | 2026-10-13 |
+| 更新时间 | 2026-10-26 |
+
+更新记录：2026-10-26，v1.7，网页订阅 E2E 移除对 `sanye_deploy/.local/` 媒体文件的依赖，改用自包含媒体桩验证来源编号、选集和切换；真实视频解码仍由独立实播专项验收。安卓前端体验用例按已确定的“重新进入搜索清空输入、从当前订阅搜索记忆取回”交互校正。`pnpm e2e:ci` 当前运行 9 个自包含脚本；下文历史核对的 4 个专项是当时快照。门禁结果须同时看 GitHub 当前提交的远端执行，不能把开发机偶然存在的夹具当成干净检出可用。
 
 更新记录：2026-10-10，v1.5，CI 门禁新增「安卓交付资源一致性」：`sanye_deploy/verify-android-assets.mjs` 逐文件比对包内 `sanye_android/android/app/src/main/assets/public` 与 `sanye_client/dist-android` 的名字与 SHA-256（忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`），不一致即阻断，`android-check.yml` 在 `npm run sync` 之后执行 `pnpm test:verify-android-assets` 与 `pnpm verify:android-assets`。起因：本地打包漏跑 `cap sync` 时包内页面资源会静默停在旧构建（本轮交付 v68 的第一次打包就是这样，包内 `index-C3meCUND.js` 对当前构建 `index-DhS4HkVu.js`），而包内 `assets/public` 被 `.gitignore` 忽略，git 状态里看不出来。
 
