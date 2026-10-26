@@ -2,11 +2,19 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v3.15 |
+| 文档版本 | v3.16 |
 | 文档状态 | 基线，P0 任务清单已拆分并持续记录实现与验收证据；CI 与依赖安全门禁已完成代码验证，外部发布事项保持待环境 |
 | 关联任务 | PRE-TODO-007（拆分开发任务并估时） |
 | 关联文档 | [开发计划](./development-plan.md)、[详细技术设计](./technical-design.md)、[MVP 冻结清单](../product/mvp-freeze.md)、[开发待办事项](./development-todo.md) |
-| 更新时间 | 2026-10-09 |
+| 更新时间 | 2026-10-13 |
+
+## 本轮单组织完善（2026-10-13）
+
+在保留游客模式与既有未提交工作基础上，完善可靠事件积压处理、内部身份头与诊断防护、开发端口隔离、候选 CI/工具链与漏洞门禁，并补齐公开协作文档。具体源码、测试和阻塞以[当前审计](./current-status-audit.md)、[差距登记](./gap-register.md)和[评审收据](./document-review.md)为准。
+
+本轮没有固定发布提交、推送注册表、部署或执行真实回滚，因此 T-R-06/T-R-07 的目标环境出口不因本地优化而关闭。真机、身份源、供应商、内容与法律授权等保持待环境；多租户不是维护者选择的当前目标。
+
+更新记录：2026-10-13，v3.16，登记跨模块完善与验证范围，历史完成任务保持原环境和日期。
 
 更新记录：2026-10-09，v3.15，安卓 VQ-61「样式与自然度、播放体验」收口（只改代码与文档，未重新打包）：按上一轮安卓前端样式与播放体验审计的结论逐条修复。样式与自然度四类：其一，兜底页令牌失效（唯一被量测确认的样式缺陷）——`--page-*` 只定义在 `.android-app` 上，挂载失败兜底页（写在 `.android-app` 之外）拿到的是未解析的 `var()`，实测卡面 `background rgba(0, 0, 0, 0)`、`border-width 0px`，整页只剩文字；现把主题令牌提到 `:root`（并补 `prefers-color-scheme: light` 覆盖与 `color-scheme`），兜底页与画布底色不再依赖应用根节点，门禁新增「卡面不得透明、边框不得 0px、浅色与深色卡面必须不同」。其二，图标系统混用——顶栏 `⌕／☀／☾／→` 与播放器 `▶／❚❚／🔊／🔇／⛶／⤢` 都是自带字形的符号字符，不同码位落到不同系统字体（emoji 字体还会接管），字重与基线在同一行里并不一致；现统一为 13 枚线性 SVG（`ICONS` + `.android-icon`，与底部导航同一套描边），主题切换与画质/静音等状态改用 `data-icon` 表达，门禁断言 HUD 与主题按钮的 `data-icon`。其三，颜色与字号令牌化——品牌色 `#eaf2c4`／`#283a55`／`#e7edf5`／`#172438` 收敛为 `--brand-*`（38 处引用），主题面与文字色走 `--app-*`（49 处引用），字号 64 处改走 8 个 `--font-*`、行高 7 处改走 `--leading-*`，替换逐项取原值（计算样式零变化）。量测口径（`sanye_deploy/.local/android-style-metrics.cjs` + `count-hardcoded-colors.cjs`）：「未出现在任何令牌声明里的 hex」由 84 种降到 81 种，仍有 27 处一次性字号（标题 `rem`／`clamp`／单点像素）与 12 处一次性行高留作字面量，未强行收敛；另补一条 `prefers-reduced-motion: reduce` 的统一收口（此前整表只有按钮一条规则，控制条与货架的过渡在系统「减少动态效果」下照旧播放）。其四，竖屏丢功能——`.android-player-tool--more` 整组在竖屏隐藏，连「下一集／选集／音量」都不可用（换集必须先横屏），现只有画质与帧率（`--advanced`）留在放大态，竖屏保留下一集、选集与音量；全量审计随后抓到这处改动自身的副作用——系统字体放大 ×2 时「下一集／选集」文字宽 66px，被 44px 固定方块加 `overflow: hidden` 裁掉一半，现给带文字的工具加 `--text`（宽度跟内容走、仍以工具尺寸为下限），并让紧凑条允许换行（加宽后最右「放大」在 ×2 下实测 353..395 已出屏，两行工具条比裁字或横向溢出都好）；这两处都改完后该场景问题种类 0。播放体验十类：其一，放大态信息不可见（最严重）——放大/全屏时舞台是 `position: fixed; inset: 0; z-index: 30`，舞台外的错误块与线路提示完全看不见，用户只看到黑屏且没有任何重试入口；现新增舞台内 `.android-player-alert`（错误／来源错误／缓冲／换线／后台恢复／线路提示六类合并为一条，带「切换线路／重试当前线路／继续播放」按钮），放大态不再渲染舞台外同类提示。其二，首帧之后卡顿无兜底——stall 看门狗的四个分支都带 `hasFirstFrame` 直接返回，首帧之后定格只能等 hls 的 `fragLoadingTimeOut`×重试（最坏 20s×4）才拿到 fatal；现 `waiting／stalled` 起 12 秒看门狗（每次 `timeupdate` 清表），超时按线路失败处理（走既有换线／随包接管），期间给「网络较慢，正在缓冲…」；非致命 `bufferStalledError／fragLoadError／fragLoadTimeOut` 也给出同一提示。其三，进度被覆盖与跨线路不续播——`persistProgress` 增加「秒级覆盖保护」（同一集已有 >60 秒进度且当前落后 60 秒以上时不写），`restorePosition` 精确匹配失败后取同集任意线路最靠前的进度、本地查不到记录时补一次 `reloadHistory(false)` 再落位。其四，取消拖动不回位——`beginSeek` 记下 `seekOriginSeconds`，`cancelSeek` 写回拖动前的位置并恢复增强档位预览（此前只改 UI 状态，画面停在被拖到的位置且随后会被当成真实进度保存）。其五，随包线路重试无效——`retryCurrentLine` 此前用 `episode.sourceUrl || episode.id`，而随包线路的 id 是 `bundled:<作品>:<线路>`，发给原生会被 `allowedDetail` 按「非公网主机」拒绝，用户点了没反应；现对没有来源页地址的随包线路直接用原直链重建会话。其六，HLS 移动端参数——补 `capLevelToPlayerSize: true`（清晰度不超过舞台实际像素）、`maxBufferSize: 40MB`（默认 60MB 与 64MB 分片缓存叠加时峰值内存偏高）、`startLevel: -1`，自动档位下降时提示「网络较慢，已自动降到 XP」。其七，音量不落盘——新增 `settings.volume`（0~1，原生 `validSetting`／`readSettings` 支持，键值表无需迁移），拖动 400ms 合并写入，启动时恢复，此前每次启动都跳回 100%。其八，监听器与计时器泄漏——`volumechange` 改为具名 handler 并在 `disposePlayer` 摘除（此前每次换集多挂一份），`onBeforeUnmount` 收掉 12 个在途计时器。其九，桥接调用缺 JS 侧期限——搜索两处与预览补 15 秒 `withNativeTimeout`，`previewPending` 的悬空记录随之清理。其十，缓存无清理入口——`clearMediaCache` 在桥接里声明了却从未被调用，现「我的 → 存储 → 清理媒体缓存」同时清原生缓存目录与内存分片表。证据：`pnpm typecheck`、`pnpm --filter @sanye/sanye_client build:android`、安卓浏览器门禁 15 个文件 55 项 55 通过 0 跳过 0 失败（新增 `e2e/android-playback-resilience.test.cjs` 8 项：放大态错误可见且可重试、首帧后卡顿提示、后台恢复提示、拖动取消回位、音量落盘、清理缓存、跨线路续播与覆盖保护、随包重试与 HLS 参数；`android-ui.test.cjs` 与 `android-theme-parity.test.cjs` 同步改断言）、原生 JVM 单测 `gradlew --offline :app:testDebugUnitTest`（31 项 30 通过／1 跳过／0 失败，`SanyeCatalogPluginTest` 新增音量档位 0／0.35／1 合法与 1.5／-0.1／NaN／字符串非法断言）。边界：本轮无视觉模型可用，样式结论来自计算样式与像素量测（全量审计 234 个场景问题种类 0、12 个页面×外观截图与 `report.json` 存于 `sanye_deploy/.local/android-style-review/` 供人工复核），截图未经人工看图确认；真机触控、系统字体放大与真实来源站点仍未实测。
 

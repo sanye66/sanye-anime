@@ -2,10 +2,77 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.24 |
+| 文档版本 | v0.36 |
 | 文档状态 | 设计基线，与 [详细技术设计](./technical-design.md) 对应；实现时以此为准并回填字段变更 |
 | 适用范围 | `sanye_server` 业务接口、SSE 流式事件、管理平台协作接口 |
-| 更新时间 | 2026-10-09 |
+| 更新时间 | 2026-10-23 |
+
+更新记录：2026-10-23，v0.36，网页订阅搜索、预览和解析贯通原始 `sourceIndex`，同域名多规则须使用用户选中的规则；未提供编号且域名对应多条规则时拒绝猜测。RSS 资源搜索保留原有行为。本轮只更新源码与契约，未打新包；验收范围见[评审记录](./document-review.md)。
+
+## 网关信任边界补充（2026-10-13）
+
+网关清除外部请求中的 `X-User-Id`、`X-Internal-Token` 与 `X-Caller-Name`；用户身份仅由有效 JWT 注入，客户端不能以内部调用头获得权限。游客业务继续沿用设备标识，不改变既有数据归属。诊断白名单不再覆盖整个 `/actuator/` 与 `/api/v1/monitor/` 前缀，只保留精确健康及前端错误上报入口；管理采集端口默认回环监听，网络隔离要求见[安全设计](./security-design.md)。
+
+更新记录：2026-10-13，v0.35，补齐请求头及诊断边界，不改变既有业务字段与游客归属；依据网关实现、回归及[评审记录](./document-review.md)。
+
+更新记录：2026-10-12，v0.34，安卓原生播放留窗与性能观测契约，不改变服务端 HTTP。
+
+- `SanyeMedia3.capabilities` 新增可选 `inPlaceSwitch:true`；旧桥接未声明时仍按关闭后重开处理。
+- `open` 新增 `replaceId?:string`、`autoNext?:boolean`。替换只接受仍存在且未关闭的当前窗口匹配 id，不创建过期窗口；替换成功后事件使用新 `id`，旧监听结果不能影响新会话。`autoNext` 独立于本次起播 `autoPlay`，由持久播放偏好传入。
+- 留窗事件为 `{reason:'transition',action:<已提供选项id>|'next'|'previous'|'retry'|'switch',closed:false,handoff:true}`。故障携带 `error/errorCode`，前端归类为播放失败而非成功换线；未知动作不留窗。`transitionFailed({id})` 匹配旧移交会话后终止等待并关闭，前端不能解析目标时调用；不支持此接口的旧桥接回退 `close({id})`。
+- `playbackState` 新增可选 `videoWidth/videoHeight/videoFps/videoBitrate/droppedFrames/decoder/seekLatencyMs/bufferedMs`。单位为像素、片源帧/秒、比特/秒、帧数、毫秒；格式未知不填写。`seekLatencyMs` 是定位到首个视频帧元数据回调耗时，不是实际屏幕呈现。诊断导出 v3，只保留最新有效白名单快照并在清理时删除；不持久保存原生媒体地址。
+
+更新记录：2026-10-12，v0.33，安卓 `SanyeMedia3.open` 增加可选 `lightTheme:boolean` 与 `choices:[{id,label,group?,selected}]`；最多 500 个选项，id 唯一非空且最多 1024 字符，标签和组名非空且最多 160 字符。不传媒体 URL 给选择面板，选择由原生事件 `{reason:'choice',action:<id>,closed:true}` 返回，前端只接受当前会话提供的选项 id。当前选项不重复关闭播放，取消不变更身份；选择后仍进入原有安全来源解析，不把显示标签作为来源身份。`playbackState` 新增可选 `volume`，0–1 有限数，最终音量随个人设置保存。其余订阅和服务端接口不变。
+
+更新记录：2026-10-12，v0.32，补充安卓来源原生归属、恢复日志、画中画与脱敏诊断。下方 v0.29–v0.31 描述保留历史语境；“仅 WebView 规则快照”和“画中画固定 false”由本节替代，不修改服务端 HTTP。
+
+### 安卓可靠性新增契约（2026-10-12）
+
+- `SanyeSource.subscriptionCapabilities({content})` 返回 `{sources:[{sourceIndex,name,search,playback,repository,pagination,reason}]}`。`subscriptionRepository({content,sourceIndex,page})` 返回 `{hits,warnings,sourceIndex,page,hasMore,nextPage?,truncated}`；响应必须与请求订阅/来源/页码一致。可选 `arguments.repositoryConfig` 为 `{version:1,url,subjectFormatId:'a'|'indexed',selectorSubjectFormatA?:{selectLists},selectorSubjectFormatIndexed?:{selectLinks,selectNames},selectNextPage?}`；分页必须同时声明 `{page}` 与下一页 CSS，真实下一页地址须与模板匹配。只接受所属公网 HTTPS 主机，不执行脚本，未声明返回能力不可用。
+- `SanyeDownload` 条目新增 `position/duration/mimeType`；`play({id})` 返回 `{id,path,title,position,duration,mimeType}`，新增 `recordProgress({id,position,duration})` 单位秒，仅写下载 UUID 的独立进度。下载队列 v2 保存强 ETag、完成文件摘要与位置；旧 v1 自动迁移。网络续传及安全边界见[开发计划](./android-development-plan.md)，不支持 HLS/DASH/DRM 离线。
+
+- `SanyeCatalog.save/recordProgress` 接受可选 `sourceContext:{content,sourceIndex?}`，读取与写入返回 `sourceKey/sourceContext`；原生身份及唯一约束见[数据库设计](./database-design.md)。`migrateSourceBindings({saved:[{id,context}],history:[{mediaUrl,episodeId,lineId,context}]})` 只迁移默认归属并返回 `{migrated}`。旧安装包 `UNIMPLEMENTED` 兼容读取旧快照，其他失败必须显式重试。
+- 个人备份为 `sanye-personal-data` v2，仍接受 v1。`importPersonalData({data,recovery?:{token,subscriptions}})` 原子提交资料和恢复日志；`getRestoreState()` 返回 `{pending}`，`completeRestore({token})` 仅完成匹配令牌的日志。前端 `retryPendingRestore()` 幂等合并订阅后清除日志，不切换当前订阅。
+- `SanyeMedia3.capabilities()` 增加 `appVersion/appBuild/androidSdk/manufacturer/model/engine`，`pictureInPicture` 按实际系统能力返回。`playbackState` 增加 `errorCode/pictureInPicture`。诊断导出 v2 只允许白名单字段，字符串移除控制字符并截 120 字符，数字要求有效非负整数，错误码仅允许 1–80 个大写字母、数字或下划线。不能导出原生返回对象的任意字段、完整播放地址、规则正文或搜索词。
+
+更新记录：2026-10-12，v0.31，新增安卓 `SanyeMedia3` 原生主播放契约，不改服务端 HTTP、个人数据库版本或订阅规则契约。
+
+### 安卓原生主播放契约（2026-10-12）
+
+`SanyeMedia3.capabilities()` 返回 `{supported,native,hls,mp4,pictureInPicture}`，当前画中画为 `false`；`open({id,url,mimeType,title,episode,position,rate,volume,autoPlay,hasNext,hasPrevious,firstFrameTimeoutMs})` 返回 `{accepted:true}` 表示窗口请求已接收，不代表首帧或成功播放。媒体仅公网 HTTPS MP4/HLS 或下载插件索引确认的完整私有文件。首帧预算为有既有线路可接管时 20000 毫秒、其他情况 30000 毫秒；实际播放后的卡顿预算 12000 毫秒，暂停/后台不计超时。`close({id})` 只关闭匹配的当前会话，过期标识不得关闭新视频。内部会话令牌防止旧窗口或重建窗口接管新媒体，播放界面非导出。
+
+`playbackState` 为 `{id,position,duration,playing,buffering,firstFrame,ended,closed,rate,reason?,action?,error?,firstFrameMs?,watchedSeconds?,stallSeconds?}`，位置/时长单位秒、首帧毫秒。动作 `next/previous/episodes/retry/switch` 交回当前来源解析；关闭/出错/后台状态和旧事件按会话处理。周期进度及最终位置按捕获的作品/集/线路队列写入，原生结果不会改变当前订阅。来源观测只在真实首帧或有效失败样本后记录；首帧前取消不计成功。本机下载播放保留原始 `file:` 地址供原生校验，WebView 兼容地址仅给旧播放路径，不入公网个人历史。
+
+接口入口为 `sanye_client/src/platform/android/nativePlayback.ts`、`SanyeMedia3Plugin.java` 和 `SanyeMediaPlayerActivity.java`；状态事件不是服务端接口，也不代表真机验收通过。
+
+更新记录：2026-10-12，v0.30，补充安卓个人备份预检/合并、系统文件选择、系统播放会话及离线下载桥接契约；不修改服务端 HTTP API 或数据库版本。
+
+### 安卓备份、下载与系统播放新增契约（2026-10-12）
+
+- `SanyeCatalog.exportPersonalData()` 返回 `{data}`，格式 `sanye-personal-data` v1，包含 `exportedAt/savedMedia/watchHistory/settings`；`validatePersonalData({data})` 只预检，`importPersonalData({data})` 事务合并，返回计数 `savedMedia/watchHistory/settings`、`savedIdMap`、`restoredSavedIds`、`restoredHistory`。来源快照只对实际恢复记录重映射，不覆盖较新本机规则。
+- `SanyeBackupFiles.save({content,name})` 与 `pick()` 使用系统选择器，返回 `{cancelled}`，选择成功另含 `content`；严格 UTF-8、10 MiB 限制，流关闭成功后才报告保存成功。外层 `sanye-android-backup` v1 含 `personalData/subscriptions/sourceBindings`，预览后确认恢复，不持久化视频文件。
+- `SanyePlayer.getSystemPlaybackCapabilities()` 返回 `{supported}`；`updateSystemPlayback({id,title,episode,position,duration,playing,explicitPlay,buffering,ended,rate,initialize})` 与 `requestSystemPlaybackFocus({id})` 返回 `{accepted}`；`releaseSystemPlayback({id})` 只释放匹配会话。`systemPlaybackAction` 事件为 `{id,action:'play'|'pause'|'seek',position?}`，旧会话事件忽略。能力不可用安全降级；焦点拒绝不能冒充播放成功。
+- `SanyeDownload.list()/resume()/enqueue({url,title})/cancel({id})/retry({id})/remove({id,confirmed})` 返回 `{items,usedBytes,maxStorageBytes,maxFileBytes}`；条目为 `{id,title,state,bytes,total,error,createdAt}`，状态 `queued/downloading/completed/failed/cancelled`。`play({id})` 仅接受完整、仍存在的插件私有文件，返回 `{path,title}`，由前端转换为 Capacitor 本地播放地址，不再走公网来源解析。错误以 `E_DOWNLOAD` 拒绝。只支持 HTTPS MP4，全部安全与容量限制见[安卓开发计划](./android-development-plan.md) v1.04；恢复不是断点续传。
+
+更新记录：2026-10-12，v0.29，安卓订阅搜索命中、详情、选集及解析返回 `sourceIndex`（原始 `exportedMediaSourceDataList.mediaSources` 数组位置，过滤规则不改变编号）。`subscriptionPreview({content,sourceUrl,sourceIndex?})` 与 `subscriptionResolve({content,sourceUrl,sourceIndex?})` 按编号选择受支持网页规则，同时验证地址仍归属于该规则主机；编号不得绕过原有公网地址和 TLS 边界。显式编号必须是有效整数且命中受支持规则，否则通过既有 `E_SUBSCRIPTION_SOURCE` 拒绝；未提供编号只在唯一主机匹配时兼容，多个匹配明确拒绝，不自动选择首项。相同网址、不同来源编号的搜索命中分别保留。`sourceContext` 为安卓前端附加上下文，不是原生存储字段；规则快照在 WebView 本机存储，关联保存作品 id 或历史键，原生历史 upsert 语义不变。普通内置来源接口不接受订阅规则执行，旧桥接是否加载新编号契约须由新包和真机验收确认。
+
+更新记录：2026-10-12，v0.28，安卓 `SanyeSource.search` 与 `subscriptionSearch` 增加可选 `searchGroup: string`、`background: boolean`。同组新关键词取消旧任务，前台可抢占后台，取消拒绝码为 `E_SEARCH_CANCELLED`；同关键词不同订阅可并存，但客户端仍按完整规则隔离结果。新增 `cancelSearch({searchGroup})`，非空组取消该组任务，返回 `{}`。订阅前台总预算 10 秒、后台 8 秒，从入队前起算；取消后不再发送旧进度，底层连接关闭，既有安全限制不变。前端使用 `android-interactive-search` 与 `android-repository` 分组，旧桥接不提供事件时保留最终返回兼容。本机套接字取消与调度单元测试见文档评审记录，真机和外站延迟未验证。
+
+更新记录：2026-10-12，v0.27，安卓订阅搜索增加可选 `requestId`，通过 `searchProgress` 通知累计快照 `{ requestId, hits, warnings, completed, total }`，最终 Promise 仍返回完整快照，不支持事件的旧桥接保持最终返回兼容。命中项可含 `responseMs`，仅代表该来源搜索响应时长，不能作为播放质量或作品评分；网页命中封面从同作品卡片的图片属性解析。来源处理仍限定静态声明式规则，不新增脚本执行、内网访问或图片代理。验证入口为安卓订阅原生单元测试与浏览器隔离桥接回归，真机待环境。
+
+更新记录：2026-10-10，v0.25，新增订阅 JSON 读取契约：网页 `GET /api/v1/search/subscription?url=<编码地址>` 使用现有 `ApiResponse`，数据为 `{ content: string }`；安卓 `SanyeSource.fetchSubscription({ url })` 同样返回 `{ content }`。仅接受公网 HTTPS、443 端口，不含凭据与片段，拒绝内网/保留 IP、跳转，校验后固定 IP 建连并验证 TLS 主机；正文最多 2MB，传输总期限 8 秒，客户端另有 15 秒兜底。只读取 JSON，不执行来源脚本，不扩大既有搜索/详情白名单。客户端验证 `exportedMediaSourceDataList.mediaSources`，最多 100 来源、20 订阅，本机保存完整配置及当前订阅地址。网页选择器与 BT 引擎均尚未接入，不把配置切换描述成播放线路切换。
+
+## 订阅搜索与播放（2026-10-10，v0.26）
+
+当前网页接口可选传入原始 `sourceIndex`：`search` 的请求为 `{content,keyword,size?,sourceIndex?}`，`preview` 为 `{content,sourceUrl,title?,sourceIndex?}`，`resolve` 为 `{content,sourceUrl,sourceIndex?}`。客户端对可播放订阅始终传当前选中的编号；服务端仅使用对应规则并校验来源主机与公网 HTTPS。编号从 `exportedMediaSourceDataList.mediaSources` 原数组计算，过滤或停用规则不重排。未提供编号的旧请求只在来源归属无歧义时继续解析；同主机多规则会返回明确错误。`search` 的 `sourceIndex=-1` 只检索 RSS 资源，不借用同一订阅内其他网页规则；结果只提供资源入口，不能用于 `preview` 或 `resolve`。
+
+更新记录：2026-10-10，v0.26，在 v0.25 的安全传输基础上接入声明式网页规则与 RSS 搜索。v0.25 中“尚未接入”的描述为历史状态，不再代表当前源码。网页新增 `POST /api/v1/search/subscription/search`（`{content, keyword, size?}`）、`preview`（`{content, sourceUrl, title?}`）、`resolve`（`{content, sourceUrl}`），均使用 `ApiResponse`。搜索返回外部候选数组，RSS 的 `type=resource`；预览返回 `{title, sourceUrl, tags, type, episodes, warnings}`，选集包含 `sourcePageUrl`，未解析的 `playbackUrl` 为空；解析返回 `{url, mimeType, warnings}`。不得把选集页面作为视频地址。
+
+安卓对应 `SanyeSource.subscriptionSearch({content, keyword})` 返回 `{hits,warnings}`、`subscriptionPreview({content,sourceUrl})` 返回 `SourcePreview`、`subscriptionResolve({content,sourceUrl})` 返回 `{playbackUrl,mimeType,warnings}`。按作品/选集地址保存规则上下文，切换订阅隔离缓存与过期回调，不改变正在播放的视频。
+
+支持 `web-selector v2` 的 `a/indexed` 与 `index-grouped/no-channel`，以及 `rss v1` 资源搜索；只提取静态 HTTPS 媒体，不执行来源脚本或用户正则。不实现 BT 内置下载/流式解码；动态播放器、验证码、特定请求头与视频跨域仍为支持边界。来源正文复用固定 IP TLS、公网地址校验、2MB、8 秒、禁止跳转。服务端一次最多处理 24 个来源，安卓最多 100 个；两端限制并非所有规则完整兼容。
+
+验证入口：`SubscriptionPlaybackServiceTest`、`SubscriptionSourceEngineTest`、`e2e/subscription-playback.test.cjs` 与安卓订阅专项。确定性解析、模拟接口/桥接及本地构建不能证明第三方站点当前可用或安卓真机播放；未部署。
 
 ## 安卓本地桥接契约（2026-10-09）
 

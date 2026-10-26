@@ -2,11 +2,22 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.14 |
+| 文档版本 | v1.15 |
 | 文档状态 | 基线（流水线唯一基准） |
 | 唯一基准 | 是（CI 工作流、门禁、构建产物） |
 | 关联文档 | [质量门禁](./quality-gates.md)、[发布管理](./release-management.md)、[环境配置](./environment-config.md)、[版本基线](./version-baseline.md) |
-| 更新时间 | 2026-10-10 |
+| 更新时间 | 2026-10-13 |
+
+## 本轮流水线基准（2026-10-13）
+
+日常 CI 与候选构建固定使用 Microsoft JDK 21.0.11，本机工具链保持 21.0.12。候选工具只接受这两个已登记补丁与 Node.js 26.5.0，材料记录实际编译器；不放宽到任意 Java 21。下文 2026-09-10 和 2026-10-10 的候选工具链阻塞记载属于历史。
+
+主要 Action 固定提交摘要，CI 限定只读权限及任务超时。候选核验当前提交和分支的最新工作流结果、重跑次数与有效时间，分页查询不完整时失败；完整候选必须同时具备普通 CI、安卓及桌面的当前提交成功收据；路径过滤导致未触发时，须手动补跑对应专项，不能以未触发替代验收。浏览器回归清单以 [run-ci.mjs](../e2e/run-ci.mjs) 为准，当前包含搜索、订阅及会话竞态；仍是受控接口回归。
+
+Trivy 保留无修复版本的命中（ignore-unfixed: false），报告结构错误必须失败。日常豁免限定评审版本与期限，候选发布前执行两套漏洞检查的 --strict 模式，高危和严重风险禁止豁免。候选流水线另生成 CycloneDX 物料清单并保留报告；此配置不证明远端物料清单已经生成或全部发行物的许可审核完成。
+
+更新记录：2026-10-13，v1.15，修正候选编译补丁、门禁证据及供应链材料，扩展回归并固定工作流权限与摘要；本地命令结果见[当前审计](./current-status-audit.md)与[评审记录](./document-review.md)，远端未执行。
+
 
 ## 当前核对（2026-09-10）
 
@@ -50,7 +61,7 @@
 
 ### 2.2 backend：后端编译与测试
 
-- 环境：ubuntu-latest，Microsoft JDK 21.0.11（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。本机 JDK 为 21.0.12。Microsoft 发行版索引当前只提供到 21.0.11，把工作流写成 `21.0.12` 会让 `actions/setup-java` 在准备阶段直接失败（注解原文：`No matching version found for SemVer '21.0.12'`，可用版本列表为 25.0.3、21.0.11、21.0.10…），因此 CI 固定 21.0.11；2026-10-10 修正了三处回退到 `21.0.12` 的漂移（[CI 38012739529](https://github.com/sanye66/sanye-anime/actions/runs/38012739529)、[android-check 38012739524](https://github.com/sanye66/sanye-anime/actions/runs/38012739524)），候选发布工作流仍按发布门禁要求 21.0.12，属登记在案的 `blocked-external`。远端实际执行结果以作业日志为准。
+- 环境：ubuntu-latest，Microsoft JDK 21.0.11（actions/setup-java@v6），Maven 3.9.16 由 [固定安装脚本](../sanye_deploy/setup-ci-maven.sh) 下载并校验 SHA-512；JVM 默认时区固定为 UTC。本机 JDK 为 21.0.12。Microsoft 发行版索引当前只提供到 21.0.11，把工作流写成 `21.0.12` 会让 `actions/setup-java` 在准备阶段直接失败（注解原文：`No matching version found for SemVer '21.0.12'`，可用版本列表为 25.0.3、21.0.11、21.0.10…），因此 CI 固定 21.0.11；2026-10-10 修正了三处回退到 `21.0.12` 的漂移（[CI 38012739529](https://github.com/sanye66/sanye-anime/actions/runs/38012739529)、[android-check 38012739524](https://github.com/sanye66/sanye-anime/actions/runs/38012739524)），候选发布工作流现已与 CI 使用相同的 21.0.11，具体白名单与证据范围以上方本轮基准为准。远端实际执行结果以作业日志为准。
 - 步骤：
   - `mvn -B -f sanye_server/pom.xml test`：全模块编译 + 单测 + JaCoCo 覆盖率门禁（6 模块阈值，见 testing-strategy）。
   - `mvn -B -f sanye_admin_server/pom.xml test`：RuoYi 管理后端编译与测试，包含管理代理端点方法级权限契约。
@@ -59,15 +70,15 @@
 ### 2.3 browser-security：浏览器安全回归
 
 - 环境：ubuntu-latest、Node.js 26.5.0（非 LTS）、pnpm 10.15.0、Chromium。
-- 步骤：冻结锁文件安装依赖，构建 `sanye_client`，启动本地 Vite preview，再执行季度排序、外部搜索候选、电影播放线路和清晰度选择四个自包含 Playwright 脚本。
+- 步骤：冻结锁文件安装依赖，构建 `sanye_client`，启动本地 Vite preview，再执行季度、外部搜索、电影线路、清晰度、订阅和会话竞态等自包含回归，完整清单由 `run-ci.mjs` 管理。
 - 命令：`pnpm e2e:ci`。
 - 门禁：任一断言失败、预览服务启动失败或脚本异常退出即阻断。
 
 ### 2.4 dependency-scan：依赖漏洞扫描
 
-- `pnpm audit:deps`（[sanye_deploy/audit-dependencies.mjs](../sanye_deploy/audit-dependencies.mjs)）：解析 `pnpm audit --json`，**只为可升级修复的高危/严重告警阻断**；上游没有修复版本（`patched_versions` 为 `<0.0.0`）的条目必须登记在 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 才放行，登记项写明 advisory、包名、引入路径、原因与 `reviewBy` 复核期限——期限一过、或审计结果里已不存在该登记项，作业都会失败；有修复版本却仍被登记的高危告警不享受豁免。判定逻辑与下面 Trivy 的 `ignore-unfixed: true` 语义对齐，两边对「上游无修复」的处置不再一个忽略、一个阻断。
-- 复核入口：`pnpm audit:deps`（现场执行）、`pnpm audit:deps --report <审计 JSON>`（离线复核已落盘的报告）、`pnpm test:audit-deps`（[门禁判定逻辑的 13 项单元测试](../sanye_deploy/audit-dependencies.test.mjs)）。
-- Trivy Action v0.36.0 使用 Trivy v0.74.0 执行文件系统漏洞扫描：先以 JDK 21 跳过测试构建两套后端并安装到本地 Maven 仓库，复用 Maven 缓存以避免远端仓库限流；只扫漏洞、只按 HIGH/CRITICAL 取数、并带 `ignore-unfixed: true`。扫描结果写成 `trivy-report.json` 后交 `pnpm audit:trivy` 判定，作业自身的 `exit-code` 恒为 0——判定与阻断都由门禁脚本负责，避免 Action 与登记式豁免两套结论打架。密钥扫描由独立 Gitleaks 作业负责。
+- `pnpm audit:deps`（[sanye_deploy/audit-dependencies.mjs](../sanye_deploy/audit-dependencies.mjs)）：解析 `pnpm audit --json`，**只为可升级修复的高危/严重告警阻断**；上游没有修复版本（`patched_versions` 为 `<0.0.0`）的条目必须登记在 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 才放行，登记项写明 advisory、包名、引入路径、原因与 `reviewBy` 复核期限——期限一过、或审计结果里已不存在该登记项，作业都会失败；有修复版本却仍被登记的高危告警不享受豁免。Trivy 保留无修复版本的命中，由脚本核验登记，不在扫描阶段忽略风险。
+- 复核入口：`pnpm audit:deps`（现场执行）、`pnpm audit:deps --report <审计 JSON>`（离线复核已落盘的报告）、`pnpm test:audit-deps`（[门禁判定逻辑回归](../sanye_deploy/audit-dependencies.test.mjs)）。
+- Trivy Action v0.36.0 使用 Trivy v0.74.0 执行文件系统漏洞扫描：先以 JDK 21 跳过测试构建两套后端并安装到本地 Maven 仓库，复用 Maven 缓存以避免远端仓库限流；只扫漏洞、只按 HIGH/CRITICAL 取数、并带 `ignore-unfixed: false`。扫描结果写成 `trivy-report.json` 后交 `pnpm audit:trivy` 判定，作业自身的 `exit-code` 恒为 0——判定与阻断都由门禁脚本负责，避免 Action 与登记式豁免两套结论打架。密钥扫描由独立 Gitleaks 作业负责。
 - `pnpm audit:trivy`（[sanye_deploy/audit-trivy.mjs](../sanye_deploy/audit-trivy.mjs)）：把报告里的命中按「漏洞 ID ＋ 包名 ＋ 已安装版本」去重（同一个 CVE 会在各模块 `pom.xml` 与 fat jar 里重复出现），再逐条判定：可升级修复的高危/严重命中阻断；上游只在更高主版本修复、当前兼容线没有回补版本的命中，必须与 `pnpm audit:deps` 一样登记在 [sanye_deploy/audit-exemptions.json](../sanye_deploy/audit-exemptions.json) 才放行（`source` 为 `trivy`，advisory 用 CVE 编号，两个门禁各看各的来源）；豁免过期或登记项在本次扫描里不再出现同样判失败。
 - 复核入口：`pnpm audit:trivy --report <Trivy JSON>`（离线复核已落盘的报告）、`pnpm test:audit-trivy`（[门禁判定逻辑的 12 项单元测试](../sanye_deploy/audit-trivy.test.mjs)）。失败时门禁结论会整段打成 `::error::` 注解并随 `trivy-report.json` 一起上传，公开仓库不登录也能读到命中项。
 - 结果纳入 PR 检查。

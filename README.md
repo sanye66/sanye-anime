@@ -6,18 +6,26 @@
 
 [项目现状](docs/current-status-audit.md) · [开发任务](docs/development-tasks.md) · [环境配置](docs/environment-config.md) · [开发协作](docs/development-plan.md) · [问题反馈](https://github.com/sanye66/sanye-anime/issues)
 
+[参与贡献](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [行为准则](CODE_OF_CONDUCT.md) · [变更记录](CHANGELOG.md)
+
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.4 |
+| 文档版本 | v0.5 |
 | 文档状态 | 基线 |
 | 关联文档 | [版本基线](docs/version-baseline.md)、[开发任务清单](docs/development-tasks.md) |
-| 更新时间 | 2026-09-21 |
+| 更新时间 | 2026-10-13 |
 
 sanye_anime 是一个面向 PC Web 的动漫发现产品，核心能力是 AI 动漫助手。
 
 项目按技术框架划分为三个核心工程：`sanye_server`（Spring）、`sanye_client`（Vue）和 `sanye_admin`（RuoYi）。产品上分为 `sanye_anime` 客户端、`official` 官网和 RuoYi 管理平台；`official` 不是独立技术工程，公开页面属于 `sanye_client` 的页面和路由范围。
 
-## 当前核对（2026-09-10）
+## 当前核对（2026-10-13）
+
+当前工作区已加入安卓原生播放、订阅、备份和下载等实现，并继续完善安全与交付门禁；这些修改不代表已形成稳定发行版本。按维护者确认，企业级完善保持单组织部署和现有游客模式。最新本地检查及未解决事项以[当前审计](docs/current-status-audit.md)和[差距登记](docs/gap-register.md)为准。
+
+更新记录：2026-10-13，v0.5，增加贡献、安全报告、行为准则和未发布变更入口，校正当前多端实现与验收边界；文档检查见[评审记录](docs/document-review.md)。
+
+### 历史核对（2026-09-10）
 
 当前代码与可用性以[当前审计](docs/current-status-audit.md)为准：T-R-01 至 T-R-04 已有本地/隔离验收，T-R-05 生产配置待环境，T-R-06 进行中，T-R-07 待环境。当前基础回归通过不等于完整软件已在目标环境可用。
 

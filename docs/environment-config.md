@@ -2,11 +2,19 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v2.16 |
+| 文档版本 | v2.17 |
 | 文档状态 | 基线（环境变量与中间件连接唯一基准） |
 | 唯一基准 | 是（环境变量、连接配置） |
 | 关联文档 | [数据库设计](./database-design.md)、[安全设计](./security-design.md)、[部署说明](../sanye_deploy/README.md)、[CI/CD](./ci-cd.md) |
-| 更新时间 | 2026-09-16 |
+| 更新时间 | 2026-10-13 |
+
+## 本轮安全配置（2026-10-13）
+
+本地 Compose 的全部宿主机映射绑定 127.0.0.1，保留原有端口和数据卷；这仅限制开发入口，不代表中间件具备生产认证或高可用。PostgreSQL 健康检查使用容器用户名、口令和库通过 TCP 执行 SELECT 1，不以 pg_isready 替代认证就绪。
+
+网关管理端口默认绑定回环地址，MANAGEMENT_ADDRESS 仅用于已确认的受控采集网络；不能为了监控直接向公网开放。管理端 SANYE_ADMIN_SWAGGER_ENABLED 与 SANYE_ADMIN_DRUID_ENABLED 默认 false；显式启用后，非 local 环境分别要求 tool:swagger:list 与 monitor:druid:list 权限（管理员通配权限可用）。local 配置仅允许显式开启的 Swagger 匿名调试，Druid 始终校验权限。
+
+更新记录：2026-10-13，v2.17，登记开发端口隔离、认证探活和诊断配置；配置解析及权限测试见[当前审计](./current-status-audit.md)，未重启既有中间件。
 
 更新记录：2026-09-16，v2.16，外部搜索默认模板改用 `www.yhdmtv.cc`，减少裸域到规范域的一次跳转；显式环境变量仍优先，受限重定向校验保留。实测与验证边界见[桌面运行记录](./local-desktop.md)。
 

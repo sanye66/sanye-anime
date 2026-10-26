@@ -2,13 +2,17 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.11 |
+| 文档版本 | v1.12 |
 | 文档状态 | 基线（数据唯一基准） |
 | 唯一基准 | 是（表、字段、约束、索引、迁移） |
 | 关联文档 | [接口契约](./api-contract.md)、[环境配置](./environment-config.md)、[安全设计](./security-design.md)、[监控方案](./monitoring-design.md) |
-| 更新时间 | 2026-10-09 |
+| 更新时间 | 2026-10-12 |
 
 ## 安卓设备端本地片库（2026-10-09）
+
+更新记录：2026-10-12，v1.12，当前设备库升级为 v8；下方 v1–v7 为历史迁移记录。v8 为保存和历史增加 `source_key TEXT NOT NULL DEFAULT ''`、`source_context TEXT NOT NULL DEFAULT ''`，唯一键分别变为 `(url, source_key)`、`(media_url, episode_id, line_id, source_key)`。身份由原生校验完整规则后计算 `SHA-256(content + "\0" + sourceIndex)`，未指定序号用空串，无规则为默认归属。规则正文与资料同事务写入，不依赖当前订阅猜测旧归属。
+
+迁移事务重建表并保留旧 id、资料、自增序列与设置；旧快照只按精确作品 id 或历史三元键提升，迁移失败回滚。`app_settings` 增加 `updated_at INTEGER NOT NULL DEFAULT 0`，备份合并不覆盖较新设置；`restore_journal(id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)` 与导入资料同事务记录未完成订阅收口，匹配恢复令牌后才清除。旧库迁移不可用老版覆盖安装回滚，须保留个人备份并通过当前备份恢复。主机真实 SQLite 测试为 `node --test e2e/android-source-identity-sqlite.test.cjs`，真机覆盖升级仍待环境。
 
 `sanye_android` 的私有 SQLite 库为 `sanye_catalog.db`，当前版本 7。v1 的 `saved_media` 字段：`id INTEGER PRIMARY KEY AUTOINCREMENT`、`title TEXT NOT NULL`、`url TEXT NOT NULL UNIQUE`、`favorite INTEGER NOT NULL DEFAULT 0`、`updated_at INTEGER NOT NULL`（毫秒时间戳）。按 `updated_at DESC, id DESC` 读取；重复保存同一 URL 更新标题和时间，不清除收藏。
 

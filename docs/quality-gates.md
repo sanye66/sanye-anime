@@ -2,11 +2,11 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v1.5 |
+| 文档版本 | v1.6 |
 | 文档状态 | 基线（质量门禁唯一基准） |
 | 唯一基准 | 是（提交/合并/发布门禁清单） |
 | 关联文档 | [开发计划](./development-plan.md)、[测试策略](./testing-strategy.md)、[CI/CD](./ci-cd.md)、[发布管理](./release-management.md)、[AGENTS.md](../AGENTS.md) |
-| 更新时间 | 2026-10-10 |
+| 更新时间 | 2026-10-13 |
 
 更新记录：2026-10-10，v1.5，CI 门禁新增「安卓交付资源一致性」：`sanye_deploy/verify-android-assets.mjs` 逐文件比对包内 `sanye_android/android/app/src/main/assets/public` 与 `sanye_client/dist-android` 的名字与 SHA-256（忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`），不一致即阻断，`android-check.yml` 在 `npm run sync` 之后执行 `pnpm test:verify-android-assets` 与 `pnpm verify:android-assets`。起因：本地打包漏跑 `cap sync` 时包内页面资源会静默停在旧构建（本轮交付 v68 的第一次打包就是这样，包内 `index-C3meCUND.js` 对当前构建 `index-DhS4HkVu.js`），而包内 `assets/public` 被 `.gitignore` 忽略，git 状态里看不出来。
 
@@ -14,7 +14,15 @@
 
 更新记录：2026-09-16，v1.3，增加 D-027 播放质量专项门禁：执行 `node --test e2e/player-quality.test.cjs` 与 `node --test e2e/realtime-interpolation.test.cjs`，分别检查运动像素、增强实际输出与成本、目标帧率及回退、播放器操作与资源释放。受控 GPU 吞吐量不替代真实高刷屏、长片和跨显卡验收，证据见[播放器报告](./media-player-test-report.md)。
 
-## 当前核对（2026-09-10）
+## 当前核对（2026-10-13）
+
+日常漏洞检查可按已评审版本和有效期限登记风险；公开发行前另执行 `node sanye_deploy/audit-dependencies.mjs --strict` 和 `node sanye_deploy/audit-trivy.mjs --report <完整报告> --strict`，未修复的高危或严重风险不因登记而放行。错误或缺字段的报告必须失败；不存在的真实扫描报告在回归中标记跳过，不能算实际扫描通过。
+
+候选源码、编译工具链和运行镜像仍需分别绑定。前端专项 CI、安卓和桌面源码门禁不替代真实服务、设备、正式签名、恢复和发布验收。本轮具体检查收据见[当前审计](./current-status-audit.md)。
+
+更新记录：2026-10-13，v1.6，补齐报告完整性和严格发行风险门禁，保留日常受控验证与外部验收边界；依据审计脚本、回归与[评审记录](./document-review.md)。
+
+### 历史核对（2026-09-10）
 
 门禁按[本次审计](./current-status-audit.md)区分代码检查、受控业务验收和发布验收。`pnpm e2e:ci` 仅运行 4 个自包含专项，不等于 `pnpm e2e:all` 或真实供应商验收；流水线失败只有结合远端必需检查/分支保护，才能证明阻止合并。
 

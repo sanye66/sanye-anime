@@ -1,5 +1,119 @@
 # sanye_anime 全量文档评审记录
 
+更新记录：2026-10-26，v6.33，继续核对播放链路：Android 原生/内嵌、订阅隔离、备用线路、系统控制等 53 项回归通过；其中旧测试把两集写成同一来源页地址而被正确去重，修正样例后复验通过。PC 当前默认订阅与另一真实来源仍可出画、持续推进和定位恢复；`pnpm e2e:ci` 的 9 个脚本通过。网页无选中播放规则时的 `sourceIndex=-1` 只检索 RSS 资源，避免借用未选择的网页规则；搜索模块定向 Maven 与网页订阅回归通过。Animeko 发行版本更新到 v6.4.0；官方资产下载速度过低，未完成同设备安装比较，不据发行说明宣称体验持平。本轮继续不打新包、不交付、不主动打开可见窗口。
+
+更新记录：2026-10-26，v6.32，登记播放静默停滞恢复：PC 在播放时间不前进时有限重连并展示出口，安卓首帧后无 `waiting` 事件也能触发 12 秒看门狗；暂停、定位与后台不误判。PC 客户端构建、类型检查、桌面停滞与 8 项播放流程回归通过；安卓前端构建、26 项播放/预热/定位回归通过；PC 真实默认订阅 15 秒推进与另一公开来源 30 秒推进及定位后 10 秒推进通过。GitHub 发行页当前显示 Animeko v6.4.0（2026-10-24 发布），原 v6.3.0 已不是最新；同设备并排运行、实体手机和新发行物仍未验收，依用户要求不打新包、不交付。
+
+更新记录：2026-10-23，v6.31，登记网页订阅原始来源编号契约 v0.36：同域名多规则搜索、预览与解析固定在当前编号，未指定编号的歧义预览拒绝猜测；RSS 资源入口保留。`pnpm typecheck`、搜索模块及依赖的 Maven 测试、网页订阅 5 项回归和安卓系统播放等 37 项定向回归通过。另修正系统媒体状态同步报错时误暂停 WebView 的代码路径；明确拒绝播放仍暂停。本轮未打新包、未打开可见窗口，实体手机及全部来源长期可用性仍待环境。
+
+更新记录：2026-10-15，v6.30，登记历史封面、详情简介、搜索记录和竖屏播放器控件修复。工程 v0.92、计划 v1.19；72 项定向回归、130 项原生测试 129 通过/1 跳过、lint 0 错误。封面原生读取与缓存复测通过，外部媒体 CDN 波动保留为环境差距。
+
+更新记录：2026-10-14，v6.29，登记桌面 v74（6.0/51）交付；工程 v0.91、计划 v1.18 更新，前端/体验 v1.6 的源码优化随包交付。APK 内 27 资源及桌面哈希、版本/Debug 签名、原生 127 通过/1 跳过和模拟器实际安装观看通过；lint 0 错误、8 警告。正式签名和实体手机验收仍待环境。
+
+更新记录：2026-10-14，v6.28，登记首条预热优先、延后相邻集、HLS 初始画质与续播取消首片修复、字节转换和取消幂等。工程 v0.90、计划 v1.17、前端/体验 v1.6；63 项定向回归、类型/构建/资源检查通过，模拟器真实首帧与 30 秒推进通过。来源一次搜索失败、CDN 不稳定和实体手机未验收保留；本轮桌面旧包未更新。
+
+更新记录：2026-10-14，v6.27，登记网页连接复用/压缩、原生清单预热/共享、直接起播及取消保护。工程 v0.89、计划 v1.16、前端/体验 v1.5；53 项脚本回归、原生 127 通过/1 跳过，最终桌面测试包实际安装和 30 秒实播通过。冷点击与 CDN 延迟仍保留未完成。
+
+更新记录：2026-10-14，v6.26，登记默认 19 节点复测、18 节点清理与旧配置/刷新/备份回归，33 项定向检查及模拟器管理页通过；工程 v0.88、计划 v1.15、需求 v0.62、前端/体验专项 v1.4。仅 wedm 本轮持续观看通过，原内置来源保持，用户自建节点未全量验收。本轮没有桌面新包。
+
+更新记录：2026-10-14，v6.25，登记搜索到观看/持续播放/进度触控专项：31 项定向回归，81 几何状态；模拟器当前来源耗时及外部樱花流畅度失败单独记录。工程记录 v0.87、计划 v1.14、前端及体验专项 v1.3；没有新桌面发行物。
+
+更新记录：2026-10-14，v6.24，登记安卓画质菜单去重及搜索版本管理。安卓需求 v0.61、工程记录 v0.86、计划 v1.13、前端及体验专项 v1.2 同步。35 项回归、类型及构建、模拟器真实搜索过滤与内嵌播放通过；本轮未递增安装版本，桌面 v73 为此前发行物，不将新源码冒充旧 APK 内容。
+
+更新记录：2026-10-14，v6.23，登记 v73 远程内嵌恢复、音频焦点、分片、单站选择及封面修复。安卓需求更新至 v0.60，前端和体验专项均更新至 v1.1；44 项定向回归通过，原生 126 通过/1 跳过，模拟器六部内嵌实播与外站失败分别记录，不宣称所有企业级差距已关闭。详细交付收据见[安卓工程](../sanye_android/README.md) v0.85。
+
+更新记录：2026-10-14，v6.22，登记播放深查及 v72：已在模拟器安装并真实运行 Media3，六部首页首帧和第 2 集进度通过；不将模拟器禁音验证等同实体手机音视频验收。请求头、重定向、编码及安全回归、外部来源失败和交付摘要见[安卓工程](../sanye_android/README.md) v0.84。
+
+更新记录：2026-10-14，v6.21，登记安卓 v71（5.7/48）桌面交付；原生 114 通过、1 跳过，27 个 APK 页面资源逐哈希一致，桌面副本与构建包一致，Debug v2 签名通过。交付摘要和未验收范围见[安卓工程记录](../sanye_android/README.md) v0.83；ADB 无设备。
+
+更新记录：2026-10-13，v6.20，登记安卓 v70 桌面交付，完整收据见[安卓工程](../sanye_android/README.md) v0.82 与[安卓计划](./android-development-plan.md) v1.09。版本递增至 47/5.6；初轮 SDK 路径缺失已通过临时环境配置修正，最终构建和 107 项原生通过/1 跳过、32 项脚本通过、27 个 APK 资源一致性及 Debug 签名检查已完成。无设备，未做安装或真实播放；保留已有工作和桌面旧包。
+
+## 本轮优化收据（2026-10-13，v6.19）
+
+追加专项：新增[前端质量对标](./frontend-quality-gap.md)和[用户体验对标](./user-experience-gap.md)，将工程质量、用户流程、严格完成条件和未完成任务分开维护；本轮 Web 主内容新增键盘跳转入口，`pnpm typecheck` 与客户端生产构建通过。客户端构建仍有既有 HLS 大分块警告；读屏、TalkBack、真机、真实来源和对标项目并排测评未完成。
+
+本轮按维护者确认的单组织与游客模式实施，起始分支 `feature-T-B-01`、HEAD `e065ac608a16641b02a746f2323e15efbd2d0ba9`；工作区已有大量未提交安卓、客户端和订阅改动，全部保留。未切分支、暂存、提交、推送、发布或改动已有业务数据。HEAD 不代表本轮全部源码。
+
+- 后端：外盒同轮逐条确认并连续领取最多 100 条，失败立即停止，避免批量预领取使租约过期；网关移除外部用户/内部调用身份头，精确收口诊断白名单，管理端口默认回环。管理端诊断默认关闭，非本地 Swagger/Druid 分别校验权限，即使匿名注解误配置也不会覆盖诊断规则。
+- 部署与监控：开发 Compose 全部宿主机映射绑定回环、保留原端口和数据卷，PostgreSQL 探活认证执行查询；监控补齐反馈/任务，网关改为实际管理端口 8090，JVM 告警按实例分组，外盒告警使用真实指标。容器实际运行与通知未验证。
+- 交付：固定 Action 摘要、最小权限与作业超时；编译器仅允许已登记 21.0.11/21.0.12，记录实际版本；完整候选同时要求当前提交普通/安卓/桌面成功门禁，未触发须手动补跑，不根据最后一条提交的路径跳过。报告分页、最新重跑和过期结果均有防护。候选配置生成 CycloneDX 物料清单，推送前执行严格风险检查，远端尚未运行。
+- 安全与协作：拒绝错误扫描结构，豁免限定版本和严重度；严格发行模式不接受高危/严重风险豁免。MinIO 升至 8.0.7 并同步恢复材料标识。新增贡献、安全政策、行为准则及未发布变更入口，更新安全、接口、配置、版本、质量、任务和差距事实源；私密接收渠道尚未验证。
+
+| 检查 | 结果与证据范围 |
+| --- | --- |
+| `pnpm typecheck`、`pnpm build` | 退出码均为 0；日志 `sanye_deploy/.local/enterprise-typecheck-20261013.log`、`enterprise-build-20261013.log`，保留既有大分块警告 |
+| `mvn -q -f sanye_server/pom.xml test` | 当前 62 份 Surefire 报告，323 项中 320 通过、3 个现场来源测试跳过，失败/错误 0；日志 `enterprise-backend-20261013.log`；未把历史 IT 算入 |
+| `mvn -q -f sanye_admin_server/pom.xml test` | 当前 8 份 Surefire 报告，31 项全部通过，失败/错误/跳过 0；日志 `enterprise-admin-20261013.log`，包含真实过滤链权限测试 |
+| 安全审计、候选发布、回归运行器与恢复脚本联合 `node --test` | 64 项中 62 通过、2 个实际报告复核跳过，失败 0；日志 `enterprise-script-tests-20261013-final.log`；未提供落盘报告时明确跳过，实时 pnpm 审计另行执行 |
+| `node --test sanye_deploy/compose-security.test.mjs` | 3 项通过，失败/跳过 0；调用真实 `docker compose config` 校验回环绑定、自定义端口和认证查询；不需要引擎，也不证明容器探活实际成功 |
+| `node e2e/run-ci.mjs` | 初轮因清晰度测试检查旧 HLS 参数失败；改为检查现有 `fragLoadPolicy` 的实际重试、期限与缓冲上限，并补继续观看夹具，最终 8 个脚本通过；日志 `enterprise-e2e-20261013.log` 与 `enterprise-e2e-20261013-final.log`；接口与媒体为隔离夹具 |
+| `pnpm test:desktop` | 69 项通过，失败/跳过 0；日志 `enterprise-desktop-tests-20261013.log`；未创建、安装或发布桌面包 |
+| 实时 pnpm 审计 | MinIO 补丁升级后 6 条告警，高危 1、中等 5；常规有效登记门禁通过，`--strict` 退出码 1，正确阻断 `http-cache-semantics` 构建期风险，不认定为安全就绪 |
+| 实际 Trivy 扫描 | 工具 0.74.0 从官方发行物下载并核对 SHA-256；镜像库连接失败，改用官方 GHCR 后下载超时，没有完整报告，不能声称最新后端漏洞或物料清单验收通过；日志位于 `enterprise-security-20261013/` |
+| 文档与差异 | `pnpm docs:check` 2074 项通过、0 失败，日志 `enterprise-docs-20261013.log`；`git -c core.safecrlf=false diff --check` 退出码 0；已登记新增文档地图，保留全部历史收据 |
+
+未完成项统一登记于[差距登记](./gap-register.md)。Docker Linux 引擎不可连接，ADB 无设备；真机、目标环境恢复/容量/告警、真实 CAS/AI、签名、版权与法律审查、远端规则/发布仍未验收。大型界面拆分、无障碍、跨设备同步与更多离线能力需要后续针对性工作，不把本轮门禁改进写成全部企业级问题已解决。
+
+更新记录：2026-10-13，v6.19，完成本轮源码、配置、文档与验证收据；最小恢复方法为按本轮明确修改块回退，保留已有未提交变更、数据卷和业务数据，无数据库迁移。
+
+最终验收收据（2026-10-12，v1.23）：当前脏工作区完成整合，17 个安卓体验/原生桥接/解析缓存/诊断/封面/选集/订阅/检索/主题/恢复文件联合 `node --test --test-concurrency=2` 最终 66 项通过、0 失败、0 跳过。保留“我的”不出现自动播放开关的既有约定，自动连播放在作品详情“更多”；主题检查针对实际占位图片加载和呈现比例，不再查已移除的渐变占位节点。诊断新增视频快照不隐藏事件列表。已查看 `.runtime/android-front-experience/episodes-390.png`；截图来自隔离桥接，错误文字来自测试主动禁用媒体，不是真机或第三方实播证据。
+
+最终 `pnpm typecheck`、根 `pnpm build` 和安卓 `build:android` 通过，仍存在既有大分块警告。`npm run sync` 后 JDK 21 `gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease --console=plain` 成功；XML 共 108 项，107 通过、1 个既有现场来源样例跳过、0 失败，两种 lint 均 0 错误/8 警告。轨道覆盖清理、媒体会话更新、长按中断恢复已完成源码和编译复核；真实 Media3 参数 JVM 测试因 Android TextUtils 未模拟不能运行，未引入额外模拟依赖，不宣称覆盖这项运行时验收。原生工程及 debug/release 两个候选 APK 的 27 个页面资源逐文件 SHA-256 均与最终安卓构建一致。版本仍 46/5.5，release 为未签名候选；未提交、推送、安装、复制桌面或发布。`adb devices` 为空，原生控件与轨道切换、长时弱网、发热、掉帧、刷新率匹配、音画同步和实际速度提升仍待环境。文档检查 `pnpm docs:check` 1998 项通过、0 失败。
+
+更新记录：2026-10-12，v1.23，连续观看与性能体验专项：同步[安卓需求](../product/android-requirements.md) v0.59、[开发计划](./android-development-plan.md) v1.08 与[接口契约](./api-contract.md) v0.34。实现留窗切集/换线、可取消连播、锁定与临时倍速、解析复用、缓冲/轨道策略及脱敏视频观测。首次联合回归 44 项中 43 通过，连播开关受全局 label 样式覆盖导致设置行布局失败；改为标准设置行及关联 label/input，保留原布局断言。新增留窗故障仍记失败与目标解析失败显式收口回归。最终收据在本节补记；真机、实际性能提升和正式发行仍待环境。
+
+最终验收收据（2026-10-12，v1.22）：12 个安卓前端体验、检索、订阅、仓库、选集、封面、原生桥接与播放恢复文件联合 `node --test --test-concurrency=2`，41 项通过、0 失败、0 跳过；含新增检索记忆 2 项、当前页选源/搜索保留/分段选集/首页续播完整流程及原生选项白名单回归。图片断言等待实际进入视口后的懒加载，不再把 DOM 出现当作图片已完成；覆盖 320/390/430 宽、明暗外观和弹层关闭，已查看本轮来源面板与详情截图。`pnpm typecheck`、根 `pnpm build`、安卓 `build:android` 通过。JDK 21 `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease` 最终通过，原生 105 项中 104 通过、1 个既有现场来源样例跳过、0 失败；一次搜索调度测试在 finally 清理任务时触发取消断言，改为清理前检查同词任务未取消，保留抢占行为断言。静态检查 0 错误、8 警告；触摸检查仅对 GestureDetector 已确认单击调用 `performClick` 的转发监听器限定说明，不放宽其他无障碍检查。原生工程与两种 APK 的 27 个页面资源逐文件 SHA-256 与当前前端一致；发布候选仍未签名，无发行授权、不修改版本号。`adb devices` 为空，原生手势、主题渲染、选集弹窗、窗口切换及实际来源延迟仍待手机验证。文档检查 `pnpm docs:check` 1992 项通过、0 失败；没有提交、推送、安装或发布。
+
+更新记录：2026-10-12，v1.22，安卓前端体验专项，同步[需求](../product/android-requirements.md) v0.58、[开发计划](./android-development-plan.md) v1.07 和[接口契约](./api-contract.md) v0.33。当前页选源、检索保留与本机记忆、首页续播隔离、当前线路/30 集分段、主次动作、原生控制器/选集回传及主题已落地。浏览器新增完整流程覆盖 320/390/430 宽与来源底部面板；截图在 `.runtime/android-front-experience/`，已看图修正失败时仍占据大块待播位置的问题。旧 UI 测试按新产品行为调整为进入“更多”再保存/刷新、只展开当前线路；不是删除身份、排序或保存断言。最终测试及构建收据待下方登记，真机手势、原生截图、实际网络延迟和安装仍未验证。
+
+追加复核（2026-10-12，v1.21）：界面、搜索重试、播放恢复、系统播放和工具联合 33 项中 32 通过，续播隔离测试因未声明新增离线状态夹具失败；补充夹具后该文件 4 项通过，不修改实际身份守卫。最后调整目录为最多两路渐进读取，单源失败不阻断其余目录，原生播放/目录契约/分页联合 10 项通过；重新构建并同步，两个候选 APK 的 27 个资源再次一致。`pnpm docs:check` 当前 1988 项通过、0 失败。静态检查警告和无真机边界保持原收据，不把重试前失败隐藏为全量一次通过。
+
+最终整合收据（2026-10-12，v1.21）：13 个安卓来源、目录、备份、下载、原生桥接、封面及诊断回归文件联合执行 `node --test --test-concurrency=2`，40 项通过、0 失败、0 跳过。原生 `:app:testDebugUnitTest` 共 105 项，104 通过、1 个既有现场来源夹具跳过、0 失败；目录非法地址抛出明确校验错误，媒体安全测试使用真实 MP4 头夹具，不放宽文件安全边界。`pnpm typecheck`、根 `pnpm build`、安卓 `build:android` 通过。`npm run sync` 后原生工程及重新构建 debug/release 两个 APK 的 27 个页面资源逐文件 SHA-256 与当前构建一致。`assembleDebug/assembleRelease/lintDebug/lintRelease` 通过，发布 R8 与资源压缩执行；两种静态检查均 0 错误、8 警告。正式签名校验 `:app:verifyReleaseSigning` 因缺材料按设计失败，release 为未签名候选，不作发行包。`adb devices` 为空，真机小窗、触控、解码、杀进程下载恢复和跨版本覆盖安装未验证；动态来源、HLS 离线、服务化运营及正式发行仍有差距。已查看目录分页 390 宽浏览器截图，属于隔离桥接，不是手机原生界面。文档检查收据见最终本机命令，未提交、推送、安装或部署。
+
+更新记录：2026-10-12，v1.21，登记安卓可靠性升级：同步[需求](../product/android-requirements.md) v0.57、[开发计划](./android-development-plan.md) v1.06、[接口契约](./api-contract.md) v0.32、[数据库设计](./database-design.md) v1.12。真实 SQLite 身份迁移与回滚 2 项、来源绑定迁移兼容与真实错误传播 2 项通过；诊断含脱敏 5 项、历史竞态 1 项通过，原生会话/诊断/续播、备份及订阅联合 15 项通过。`pnpm typecheck` 和安卓 `build:android` 通过；正常参数原生 Java 编译通过，未启用临时 `BuildConfig` 开关。后续下载与目录整合、全量原生构建和文档检查收据待回填；不把这些局部结果写成整体升级完成。真机、正式签名、远端持续集成均未验收。
+
+最终构建收据（2026-10-12，v1.20）：完成等待预算与轨道选择修正后，再执行 JDK 21 `gradlew.bat :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug --console=plain`，`BUILD SUCCESSFUL`；发布构建的 R8 混淆、资源压缩通过，当前发布产物为 `app-release-unsigned.apk`，没有正式签名。原生测试仍为 91 通过/1 跳过/0 失败，lint 为 0 错误/8 警告；Media3 与下载最后专项联合 9 项通过、0 失败、0 跳过。`npm run sync` 后 `pnpm verify:android-assets` 27 个页面资源逐文件 SHA-256 一致；另使用只读 ZIP 校验对调试和发布 APK 内 `assets/public` 的相同 27 个文件逐一计算 SHA-256，均与最终 `dist-android` 一致。`apksigner verify --verbose` 验证本地调试 APK 的 v2 签名通过，不能替代正式发布签名或设备安装证据。`pnpm docs:check` 通过 1978 项、0 失败；未在设备或模拟器执行原生视觉与播放验收，未复制桌面、提交推送或发布。
+
+本轮验收收据（2026-10-12，v1.20）：`pnpm typecheck`、`pnpm build` 与最终 `pnpm --filter @sanye/sanye_client build:android` 通过。联合回归 `node --test --test-concurrency=2 e2e/android-native-playback.test.cjs e2e/android-subscription-source.test.cjs e2e/android-playback-resilience.test.cjs e2e/android-downloads.test.cjs e2e/android-download-playback.test.cjs e2e/android-repository-source.test.cjs e2e/android-search-retry.test.cjs e2e/android-ui-polish.test.cjs` 28 项通过、0 失败、0 跳过；随后新增错误回传和等待预算断言、加强本地文件重试位置覆盖，最终 `node --test e2e/android-native-playback.test.cjs` 4 项通过。下载返回值增加 `nativeUrl` 后同步回归契约，保留 WebView 地址；原生启用时断言无网页视频元素及播放调用，原集/线路续播、下一集、旧事件隔离、完成下载和本地重试均通过隔离桥接验证。JDK 21 原生单测 XML 共 92 项，91 通过、1 个既有现场来源样例跳过、0 失败；其中 Media3 22 项全部通过，覆盖公网/私有文件边界、字幕、真实指标、20/30 秒首帧及 12 秒帧停滞预算、暂停/后台/定位与清晰度标签。真机拖动、轨道切换、媒体按键、焦点、耳机断开、首帧性能和原生界面视觉尚未观察，`adb devices` 为空且没有已配置模拟器；浏览器视觉回归只证明前端兼容页面，不能替代原生界面验收。原生构建与页面资源最终收据另行补记，未改安装版本、复制桌面、安装设备或发布。
+
+更新记录：2026-10-12，安卓 Media3 迁移专项 v1.20：同步[安卓需求](../product/android-requirements.md) v0.56、[开发计划](./android-development-plan.md) v1.05 与[接口契约](./api-contract.md) v0.31。保留已完成订阅隔离及来源身份，原生主播放接收已解析 MP4/HLS 和完成下载文件，独立控制与音轨字幕、系统会话及焦点管理；前端按原集/线路续播、保存进度并处理选集和同集回退。原生存在时不创建网页视频元素，来源解析和解码各自使用当前接口。增强/补帧仍属 WebView 兼容能力，不冒充原生效果；本轮不实现后台持续播放/PiP 或 HLS/BT 下载。检查收据后补，原生视觉/解码/系统操作依赖设备，不提交推送或发布。
+
+本轮验收收据（2026-10-12，v1.19）：`pnpm typecheck`、`pnpm build`、`pnpm --filter @sanye/sanye_client build:android` 通过；修复备份校验使用 `Object.hasOwn` 与当前构建库目标不兼容的问题，改用既有运行时兼容写法。联合执行 `node --test --test-concurrency=2 e2e/android-experience.test.cjs e2e/android-cover-cache.test.cjs e2e/android-personal-backup.test.cjs e2e/android-backup-ui.test.cjs e2e/android-system-playback.test.cjs e2e/android-downloads.test.cjs e2e/android-download-playback.test.cjs e2e/android-playback-tools.test.cjs e2e/android-repository-source.test.cjs e2e/android-subscription-source.test.cjs e2e/android-ui-polish.test.cjs e2e/android-playback-resilience.test.cjs e2e/android-search-retry.test.cjs`，51 项通过、0 失败、0 跳过。字幕偏移回归验证 Chromium 禁用轨道时无法读取旧 cues，清理先转 hidden 再删除，避免偏移累加旧字幕。`npm run sync` 与 `pnpm verify:android-assets` 通过，前端与原生工程 27 个资源逐文件 SHA-256 一致；JDK 21 下 `gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug` 成功，XML 共 70 项中 69 通过、1 跳过、0 失败，静态检查 0 错误/8 警告，跳过不视为通过。已查看 `sanye_deploy/.local/android-download-playback/local-playback-390.png`、`.runtime/android-backup-ui.png`，前者媒体请求由测试主动中止，错误画面不代表文件已解码；已有样式回归覆盖深浅主题和字体放大。`pnpm docs:check` 通过 1973 项、0 失败。`adb devices` 无设备：系统选择器、真实文件/云盘、媒体按键/抢焦点、后台服务/通知、重启恢复下载、离线解码和字幕选择均待环境。仅生成本地调试构建供检查，未改安装版本、未复制桌面或安装手机、未发布；远端 CI 未运行。
+
+更新记录：2026-10-12，安卓能力收口专项 v1.19：同步[安卓需求](../product/android-requirements.md) v0.55、[开发计划](./android-development-plan.md) v1.04 与[接口契约](./api-contract.md) v0.30。接通系统备份、真实 MP4 下载/本地播放、音频焦点/系统会话、折叠倍速/字幕/定时暂停与真实来源质量观测；沿用既有配色、字体和竖屏控制条，低频能力折叠，不恢复重复提示。集成回归发现负编号不能作为本地下载身份，已按下载返回地址隔离，保留随包作品与跨订阅续播。完整目录及原生引擎、后台持续播放/PiP、内嵌音轨、HLS/BT 下载、账号同步、投屏弹幕和追番提醒仍未交付；设备与正式签名验收单独保留，不声称全量差距已消除。最终命令收据另行补记，不提交推送或发布。
+
+补充验收（2026-10-12，v1.18）：`node --test --test-concurrency=1 e2e/android-playback-resilience.test.cjs e2e/android-search-retry.test.cjs` 16 项通过、0 失败、0 跳过；`pnpm docs:check` 通过 1967 项、0 失败。既有错误恢复、后台恢复、续播、拖动及搜索重试未因提示精简失效。
+
+本轮验收收据（2026-10-12，v1.18）：`pnpm typecheck`、`pnpm build` 及最终安卓 `build:android` 通过；仓库、订阅来源及网页/安卓订阅管理联合回归 5 项通过，安卓样式回归 1 项通过，覆盖 320/360/390 宽度、深浅主题、字体放大两倍、可见操作不被底栏遮挡。去除小标签后，对比度断言改为实际来源切换按钮，已选订阅断言使用 `aria-pressed`，不恢复重复文案。封面回归暴露历史存在保存作品但缺封面时返回空地址，已补随包占位；底栏检查排除折叠详情内不可见按钮，保留可见按钮几何断言。已查看 `sanye_deploy/.local/android-repository-source/repository-390.png` 和 `sanye_deploy/.local/android-ui-polish/settings-dark-390.png`；后者订阅读取失败来自隔离桥接，不是线上来源结论。仅浏览器和构建证据，未打新 APK，未真机验收或发布。
+
+更新记录：2026-10-12，安卓提示精简专项 v1.18：同步[安卓需求](../product/android-requirements.md) v0.54 和[开发计划](./android-development-plan.md) v1.03。沿用当前配色、字体和布局层级，不引入视觉模板；删除标题前小标签、正常来源说明、搜索重复提示、逐结果流程文字、卡片技术状态和缺简介占位。安卓订阅名称和选择状态不重复标注，地址与规则仍可展开查看；网页模式保留原说明。来源作用域、安全验证、播放链路和评分排序不改变，加载、错误、空态、重试、删除确认继续保留。验证收据另行补记；未打包发布或执行真机验收。
+
+本轮验收收据（2026-10-12，v1.17）：`pnpm typecheck`、`pnpm build`、安卓 `build:android` 通过；`node --test --test-concurrency=1 e2e/android-repository-source.test.cjs e2e/android-subscription-source.test.cjs e2e/android-search-retry.test.cjs e2e/android-playback-resilience.test.cjs` 最终 19 项通过、0 失败、0 跳过。新增断言覆盖订阅库不显示其他本机作品、同正文不同地址仍重新搜索且空库不填充、切换退出旧播放器、切回本机保存作品与原来源续播不受影响。已查看本机 `sanye_deploy/.local/android-repository-source/repository-390.png` 及 `current-subscription-empty-390.png`，证据来自隔离桥接浏览器，不是第三方实播或真机安装；标题标记随当前来源变化。`pnpm docs:check` 通过 1962 项、0 失败；未同步或生成新 APK，手机既有包不会自动加载此变更。
+
+更新记录：2026-10-12，安卓当前订阅隔离专项 v1.17：同步[安卓需求](../product/android-requirements.md) v0.53 与[开发计划](./android-development-plan.md) v1.02。修复订阅仓库仍渲染全部本机作品、同正文不同地址不触发切换、旧请求在切回时被复用的问题。作用域及切换代次隔离搜索、候选与详情，旧播放器退出；本机数据不删除，订阅空结果不回填默认目录。执行证据在本轮收据补记；手机和第三方来源待环境，不声称已安装版本生效，不提交推送或打包发布。
+
+最终复核（2026-10-12，v1.16）：安卓 17 个相关文件以 `node --test --test-concurrency=4` 执行，50 项通过、0 失败、0 跳过；订阅管理安卓专项另 1 项通过。修正结果列表结构选择器、固定底栏下真实指针居中定位，并让回退夹具采用符合现有作品身份守卫的同名作品，不放宽跨作品播放保护。`pnpm typecheck`、`pnpm build`、安卓 `build:android` 通过；`npm run sync` 后 `pnpm verify:android-assets` 的 27 个页面资源逐文件 SHA-256 一致，校验对象为原生工程目录，不是旧 APK 或已安装手机。真实公网订阅只读核对：`css1.json` 返回 18 个 `web-selector` 来源、`bt1.json` 返回 2 个 `rss` 来源，证明配置类型不同，不证明各来源可实播。`adb devices` 未发现连接设备；未生成或安装新 APK，未提交推送或部署。文档检查 `pnpm docs:check` 通过 1957 项、0 失败。
+
+更新记录：2026-10-12，安卓真实来源与产品状态专项 v1.16：同步[安卓需求](../product/android-requirements.md) v0.52、[安卓开发计划](./android-development-plan.md) v1.01、[接口契约](./api-contract.md) v0.29。调查发现裸 URL 单值上下文会跨订阅串用、同主机多规则默认首项；现以规则快照及原始来源编号传到预览、选集和解析，并隔离保存作品/历史及跨来源进度。原生同地址多规则、过滤不重编号、歧义/非法编号及安全归属单元测试通过；55 项中 54 通过、1 个在线夹具跳过、0 失败，静态检查 0 错误、7 个既有警告。浏览器新冲突场景实际断言甲规则 1 → 乙规则 1 的解析地址不同、甲保存作品及重启续播继续使用甲规则 1、全链路不走内置桥接；来源筛选、320/390/430 窄屏及订阅无排期空态同时覆盖。与历史竞态、仓库隔离、播放恢复联合回归 18 项通过。来源作用域和结果元信息为安卓专属，保留现有主题；已查看本机 `sanye_deploy/.local/android-subscription-identity/search-320.png` 与仓库截图，均为隔离数据，不是线上片单。修复历史续播离页播放器覆盖层；旧结构选择器改为实际结果列表，未降低交互断言。已通过 `pnpm typecheck`、`pnpm build`、安卓 `build:android`；进一步验收收据在下方追加。真机解码、第三方线路实播、旧记录未保留规则的无损还原与正式发行仍未证明，不能称为所有前端已完成企业级验收。
+
+本轮复核收据（2026-10-12，v1.15）：`pnpm typecheck`、`pnpm build` 与安卓 `build:android` 通过；播放器、仓库、订阅来源、重试、主题和布局联合回归 11 项通过；播放恢复回归 14 项通过（含嵌套用例）；最后移除安卓冗余折叠入口后，订阅管理（网页与安卓）、主题及布局回归 8 项通过。`npm run sync` 已同步原生工程页面，`pnpm verify:android-assets` 复核原生工程页面资源，不代表旧 APK 已更新；本轮没有执行 `assembleDebug` 或手机安装。文档检查 `pnpm docs:check` 通过 1952 项、失败 0 项。
+
+更新记录：2026-10-12，安卓搜索与竖屏专项 v1.15：同步[安卓需求](../product/android-requirements.md) v0.51、[安卓开发计划](./android-development-plan.md) v1.00、[接口契约](./api-contract.md) v0.28。前台优先队列、旧关键词取消、订阅连接中断关闭与全局槽释放已实现；原生 `gradlew --offline :app:testDebugUnitTest :app:lintDebug` 成功，54 用例中 53 通过、1 个既有在线夹具跳过、0 失败，静态检查 0 错误、7 个既有警告。订阅直选与自动更新、竖屏下置控制条及视频画布几何分别由订阅管理、播放器浏览器测试验证。截图为本机临时目录 `sanye-android-portrait-{360,390,430}.png`；测试中的设置失败提示来自隔离桥接故障夹具，不是新增线上故障。文案检查移除动态内容固定字数上限，保留重复说明、布局溢出和主题验收；修复“我的订阅”标题跳级。浏览器与原生单元证据不等于真机验收，旧 APK 未加载新前端；未打包发布、未提交推送或部署。
+
+更新记录：2026-10-12，安卓仓库与加载专项 v1.14：登记[安卓需求](../product/android-requirements.md) v0.50、[安卓开发计划](./android-development-plan.md) v0.99、[接口契约](./api-contract.md) v0.27。仓库和首页跟随当前订阅显示真实搜索候选，按实测搜索响应与已读取选集排序、同名去重、最多 40 部；切换订阅清理旧候选，迟到结果不覆盖新来源。当前格式没有目录接口，实际片数由来源返回决定，不以测试样例冒充线上片单。封面补同卡片懒加载地址提取、首屏优先、有限主机预连接、失败占位，复用 WebView HTTP 缓存和随包封面，未新增持久图片缓存。竖屏控件去重复安全区并保持单行，菜单脱离布局。当前工作区本地证据：`pnpm typecheck`、`pnpm build`、`pnpm --filter @sanye/sanye_client build:android` 通过；`node --test e2e/android-repository-source.test.cjs e2e/android-subscription-source.test.cjs e2e/android-search-retry.test.cjs e2e/android-ui.test.cjs e2e/android-ui-polish.test.cjs` 6 项通过；`gradlew --offline :app:testDebugUnitTest :app:lintDebug` 通过，订阅引擎 9 项无失败。已查看 `sanye_deploy/.local/android-repository-source/repository-390.png`（隔离桥接、故意失败封面的测试截图，不是真实来源片单）。参考开源实现只用于职责设计，未复制源代码。真实外站封面耗时、真机 WebView 缓存与触控、第三方视频实播保持待环境；未重打 APK、未提交推送或部署，不能称为所有前端已完成企业级验收。
+
+更新记录：2026-10-10，安卓交付专项 v1.13：登记[安卓原生工程](../sanye_android/README.md) v0.81 与[安卓开发计划](./android-development-plan.md) v0.98，交付桌面 v69 测试包，安装版本 5.5、内部版本 46。页面资源与实际 APK 逐文件校验、桌面哈希与 Android Debug v2 签名验证通过；30 项浏览器回归和 Gradle 构建/单元测试/静态检查通过。新增订阅编码兼容性修复已复检；真机、第三方来源长期可用性和正式签名仍为待环境，未部署网页或服务端、未提交推送。
+
+更新记录：2026-10-10，订阅专项 v1.1：登记[接口契约](./api-contract.md) v0.26、[功能规格](../product/feature-specification.md) v0.34、[安卓需求](../product/android-requirements.md) v0.49。接入声明式搜索/选集/静态媒体解析与 RSS 资源入口；不执行脚本，未实现 BT 内置下载引擎。验证入口为 `SubscriptionPlaybackServiceTest`、`SubscriptionSourceEngineTest`、`e2e/subscription-playback.test.cjs`、订阅管理及安卓播放回归。真实外站可用性、真机、部署和发行物保持待环境。
+
+更新记录：2026-10-10，订阅专项 v1.0：同步[接口契约](./api-contract.md) v0.25、[安卓需求](../product/android-requirements.md) v0.48 和[功能规格](../product/feature-specification.md) v0.33；实现公网 JSON 传输与本机订阅管理，来源引擎仍未适配。验收入口为 `SubscriptionFetchPolicyTest`、`e2e/subscription-manager.test.cjs`、类型检查与两种前端构建；安全检查覆盖内网/保留地址、重定向、响应大小与超时，不以浏览器模拟证明真机或外站播放。
+
+更新记录：2026-10-10，全端升级专项 v1.0：登记[功能规格](../product/feature-specification.md) v0.32 与[安卓开发计划](./android-development-plan.md) v0.97，覆盖网页客户端全页面简约化、安卓字体放大、真实集数展示及随包来源候选保留。外部参考链接与来源适配状态分开记录；源码/浏览器/响应头证据不得推导真机、完整解码或发布验收。保留前轮全部未提交修复，不更改数据库和发行物。
+
+更新记录：2026-10-10，安卓专项 v1.12：登记 `frontend-design` 已安装且本轮按该技能重新实施前端视觉升级；同步[安卓需求](../product/android-requirements.md) v0.47 与[安卓开发计划](./android-development-plan.md) v0.96。简约化以页面内容层次和海报为主，保留既有播放逻辑及真实空态/错误态；当前范围不含外部内容源新增或 APK 发布，真实 Android 验收仍为待环境。
+
+更新记录：2026-10-10，安卓专项 v1.11（承接 v1.10，未发布 APK）：登记 [安卓开发计划](./android-development-plan.md) v0.95 的 Animeko 播放体验参考改造。保留当前 WebView/HLS 架构和用户界面修改；限定同集线路回退、播放代次隔离的异步续播、分缓冲状态的单在途定位及相邻集预热。源码和浏览器回归与真实 Android 验收分开记录，数据库主键及发布基线未变更。
+
 更新记录：2026-10-10，安卓专项 v1.10（交付 v68，`versionCode 45`／`versionName 5.4`；承接 v1.09）：按用户「进行修复，并绕过本地 head 提交推送，放最新安卓的版本到桌面，应该不是 v45」收口三件事。其一，**发现并修掉交付链的静默缺陷**：本地打包此前只跑 `build:android` + gradle、漏 `cap sync`，包内 `sanye_android/android/app/src/main/assets/public` 停在 2026-09-30 18:03 的同步；第一次打出的 v68（11,451,490 字节）包内 `index.html` 引用 `index-C3meCUND.js`／`index-BZRm-DRh.css`，而当时前端构建是 `index-DhS4HkVu.js`／`index-DQDnXRIr.css`——「构建成功、包是旧页面」，且 `.gitignore` 忽略该目录使 git 状态完全看不出来。修正后交付链固定为 `generate-catalog.cjs` → `build:android` → `cd sanye_android && npm run sync` → `gradlew`，重新打包得到 11,464,143 字节、SHA-256 `818255BFA370BE6D4854D93E5C4CD76CC1410921FF60424D9C643856B354A3FE`（与构建产物 `app-debug.apk` 逐字节一致）的 v68 并投递桌面；中间产物归档两份：`…-v68-未同步资源废弃版.apk`（11,451,490 字节，包内旧资源）与 `…-v68-来源快照变体废弃版.apk`（11,464,143 字节，见其四）。其二，把这条比对做成门禁：新增 [sanye_deploy/verify-android-assets.mjs](../sanye_deploy/verify-android-assets.mjs)（逐文件比对包内资源与 `sanye_client/dist-android` 的文件名与 SHA-256，忽略 Capacitor 生成的 `cordova.js`／`cordova_plugins.js`）＋[8 项单元测试](../sanye_deploy/verify-android-assets.test.mjs)（一致、漏同步、旧构建残留、忽略项、嵌套目录、目录缺失、默认路径、真实仓库自检），接入 `.github/workflows/android-check.yml` 的 `校验包内页面资源与前端构建一致` 步骤，并登记进[质量门禁](./quality-gates.md)、[CI/CD](./ci-cd.md) 与[工作流说明](../.github/workflows/README.md)。其三，**回读远端并补上前一轮的未验证项**：提交 `a23d944` 在 `feature-T-B-01`／`dev`／`test`／`release` 四个分支上，`ci` 六项必需检查（文档一致性、前端类型与构建、后端编译与测试、浏览器安全回归、依赖漏洞扫描、密钥扫描）与 `android-check`／`desktop-check` 全部成功（ci #30 38017708131、#31 38017985929、#32 38018285625、#33 38018588007），`dev`（109810c→）、`test`（ffdd42e→）、`release`（f1d82b3→）均已快进同步到同一提交，v1.09 里「远端复跑结果尚未回读」到此闭环。证据：`pnpm verify:android-assets`（修复前 27/29、8 项差异；修复后 27/27、逐文件一致）、`pnpm test:verify-android-assets`（8 通过）、`gradlew --offline :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`（BUILD SUCCESSFUL）、`apksigner verify --verbose`（退出码 0，v2 方案通过，签名者 1 个）、`aapt dump badging`（`versionCode 45`／`versionName 5.4`／`sdkVersion 29`／`targetSdkVersion 36`／`application-label:'三叶动漫'`）、GitHub Actions API 回读四分支作业结论。其四，**门禁抓到一次数据驱动的真实退化**：交付链第一步 `generate-catalog.cjs` 本轮把《你的名字》的随包候选来源由 4 条收窄成 1 条（只剩 `yinghuadongman.org.cn/p/52685/`），据此打出的包让 3 项安卓 e2e 场景失败——`android-bundled-fallback` 的「外站来源过慢」与「外站线路加载失败」两项静默回退场景、`android-ui` 的「切换备用来源」按钮点不动；本地按工作流原命令复现为 55 项 52 通过 3 失败，CI `android-check` #14（run 38019831269）同样卡在 `安卓前端回归（隔离桥接）`，失败注解正是这三项。候选来源只剩一条时应用确实没有备用来源可切，属真实功能退化而非断言过时，因此回退该数据改动、保留既有快照（4 条候选来源），回退后同一条命令 55 项 55 通过 0 失败，并重新打包覆盖交付 v68。留下两条待办：生成器不应把既有候选来源收窄到 1 条；安卓 e2e 目前把随包来源写成常量，宜改成从 `catalogSnapshot.ts` 推导。未验证范围：真机覆盖安装与启动画面观感（需设备与用户验收）；远端复跑方面，`ci` 六项必需检查在 df77cea 上通过并据此同步了 dev/test/release，但 `android-check` 在 df77cea 上失败，由本次回退提交修复后重新同步；`release-candidate` 仍按发布门禁保留 JDK 21.0.12，登记为 `blocked-external`。
 
 
@@ -211,11 +325,12 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v6.17 |
+| 文档版本 | v6.33 |
 | 文档状态 | 基线 |
 | 关联文档 | [开发任务清单](./development-tasks.md)、[开发待办事项](./development-todo.md) |
-| 更新时间 | 2026-09-28 |
+| 更新时间 | 2026-10-26 |
 | 评审范围 | 仓库全部 Markdown 文档（根文档、`product/`、`docs/`、`AiCoding/`）与交互原型 |
+更新记录：2026-10-12，v6.18，登记安卓专项 v1.23 的连续观看与性能优化；保留历史收据，当前构建/隔离桥接与真机/正式发行分别描述。
 更新记录：2026-09-28，v6.17，评审安卓搜索卡片去详情与统一立即观看入口、播放器置顶及不打包的用户授权边界；浏览器源检查与设备加载状态分开记录。同步[安卓开发计划](./android-development-plan.md)与[开发任务清单](./development-tasks.md)。
 更新记录：2026-09-28，v6.16，评审安卓横屏全屏中的视频及画质/帧率一体化区域和小尺寸选集控件；保留真机方向锁定与触控验收缺口。同步[安卓开发计划](./android-development-plan.md)与[开发任务清单](./development-tasks.md)。
 更新记录：2026-09-28，v6.15，评审安卓显示名称“三叶动漫”与原生应用标识边界，保留真机显示和覆盖安装待验收状态；同步[安卓开发计划](./android-development-plan.md)与[开发任务清单](./development-tasks.md)。
