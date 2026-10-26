@@ -15,6 +15,7 @@ jobs:
   candidate:
     if: github.ref == 'refs/heads/test'
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: sanye_test
     permissions:
       contents: read
@@ -33,9 +34,8 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: microsoft
-          # 候选发布按 docs/ci-cd.md 的决策保持 21.0.12 严格门禁：Microsoft 发行版索引暂无
-          # 21.0.12，这里会以 setup-java 失败告终，属登记在案的 blocked-external（供应源待环境）。
-          java-version: '21.0.12'
+          # 云端编译与普通 CI 使用相同补丁；本机工具链仍为 21.0.12。
+          java-version: '21.0.11'
       - name: Require successful CI for the candidate commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -55,6 +55,35 @@ jobs:
           RELEASE_COMMIT: ${{ github.sha }}
           RELEASE_REGISTRY: ghcr.io/${{ github.repository_owner }}
         run: node sanye_deploy/release/prepare.mjs prepare "$RUNNER_TEMP/sanye_candidate"
+      - name: 生成候选漏洞报告
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          version: v0.74.0
+          format: json
+          output: ${{ runner.temp }}/sanye_candidate/trivy-report.json
+          exit-code: "0"
+          ignore-unfixed: false
+          scanners: vuln
+          severity: HIGH,CRITICAL
+      - name: 生成候选 CycloneDX 物料清单
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          skip-setup-trivy: true
+          format: cyclonedx
+          output: ${{ runner.temp }}/sanye_candidate/sbom.cdx.json
+          exit-code: "0"
+          scanners: vuln
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+      - name: 严格发行全栈漏洞门禁
+        run: |
+          status=0
+          node sanye_deploy/audit-dependencies.mjs --strict || status=1
+          node sanye_deploy/audit-trivy.mjs --report "$RUNNER_TEMP/sanye_candidate/trivy-report.json" --conclusion "$RUNNER_TEMP/sanye_candidate/trivy-conclusion.txt" --strict || status=1
+          exit "$status"
       - name: Authenticate registry
         env:
           REGISTRY_TOKEN: ${{ github.token }}
@@ -69,6 +98,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/sanye_candidate/*.json
+            ${{ runner.temp }}/sanye_candidate/trivy-conclusion.txt
       - name: Clear registry session
         if: always()
         run: docker logout ghcr.io

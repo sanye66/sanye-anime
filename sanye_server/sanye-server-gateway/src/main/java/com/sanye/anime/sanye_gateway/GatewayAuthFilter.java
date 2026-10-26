@@ -29,7 +29,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
     public static final String DEVICE_ID_HEADER = "X-Device-Id";
     public static final String USER_ID_HEADER = "X-User-Id";
     private static final List<String> PUBLIC_PREFIXES = List.of(
-            "/api/v1/public/", "/covers/", "/admin-profile/", "/actuator/", "/api/v1/monitor/");
+            "/api/v1/public/", "/covers/", "/admin-profile/");
     private static final String PUBLIC_PING = "/api/v1/system/ping";
 
     private final JwtService jwtService;
@@ -45,7 +45,11 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest().mutate()
                 // X-User-Id is a gateway-owned identity header. Never trust a value supplied by a client.
-                .headers(headers -> headers.remove(USER_ID_HEADER))
+                .headers(headers -> {
+                    headers.remove(USER_ID_HEADER);
+                    headers.remove("X-Internal-Token");
+                    headers.remove("X-Caller-Name");
+                })
                 .build();
         ServerWebExchange sanitizedExchange = exchange.mutate().request(request).build();
         // CORS 预检直接放行
@@ -88,7 +92,8 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         if (path == null || path.isBlank()) {
             return false;
         }
-        if (path.equals(PUBLIC_PING)) {
+        if (path.equals(PUBLIC_PING) || path.equals("/actuator/health")
+                || path.equals("/api/v1/monitor/frontend-errors")) {
             return true;
         }
         return PUBLIC_PREFIXES.stream().anyMatch(path::startsWith);

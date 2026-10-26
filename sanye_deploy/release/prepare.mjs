@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 
 export const services = ['gateway', 'auth', 'anime', 'search', 'ai_chat', 'favorite', 'file', 'feedback', 'job', 'admin_server', 'client', 'admin'];
 export const sha256 = value => createHash('sha256').update(value).digest('hex');
+export function releaseToolchain(node, javac) {
+  if (node !== 'v26.5.0' || !['javac 21.0.11', 'javac 21.0.12'].includes(javac)) throw new Error('Release requires Node.js 26.5.0 and javac 21.0.11 (CI) or 21.0.12 (local)');
+  return { node, javac };
+}
 const run = (exe, args, cwd) => execFileSync(exe, args, { cwd, encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 export function pinnedImage(value) {
   if (typeof value !== 'string' || !/^[a-z0-9][a-z0-9./:_-]*@sha256:[a-f0-9]{64}$/.test(value)) throw new Error('Image must use a registry digest');
@@ -39,10 +43,10 @@ export function prepare({ root, output, commit, javaImage, webImage, registry })
   mkdirSync(output, { recursive: true });
   const releaseDir = join(root, 'sanye_deploy/release');
   const javac = run('javac', ['-version'], root);
-  if (javac !== 'javac 21.0.12' || process.version !== 'v26.5.0') throw new Error('Release requires Node.js 26.5.0 and javac 21.0.12');
+  const toolchain = releaseToolchain(process.version, javac);
   const tracked = run('git', ['ls-files', '--', 'sanye_server', 'sanye_admin_server'], root).split('\n');
   const fingerprints = paths => paths.map(path => ({ path, sha256: sha256(readFileSync(join(root, path))) }));
-  const manifest = { version: 1, ...source, platform: 'linux/amd64', toolchain: { node: process.version, javac },
+  const manifest = { version: 1, ...source, platform: 'linux/amd64', toolchain,
     lockSha256: sha256(readFileSync(join(root, 'pnpm-lock.yaml'))),
     maven: fingerprints(tracked.filter(path => path.endsWith('/pom.xml'))),
     migrations: fingerprints(tracked.filter(path => path.includes('/db/migration/') && path.endsWith('.sql'))), services: {} };

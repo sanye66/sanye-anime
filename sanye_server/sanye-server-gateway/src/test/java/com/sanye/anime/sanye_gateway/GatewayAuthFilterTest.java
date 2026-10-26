@@ -40,6 +40,9 @@ class GatewayAuthFilterTest {
         assertTrue(GatewayAuthFilter.isPublic("/admin-profile/profile/upload/cover.jpg"));
         assertTrue(GatewayAuthFilter.isPublic("/actuator/health"));
         assertTrue(GatewayAuthFilter.isPublic("/api/v1/monitor/frontend-errors"));
+        assertFalse(GatewayAuthFilter.isPublic("/api/v1/monitor/private"));
+        assertFalse(GatewayAuthFilter.isPublic("/actuator/env"));
+        assertFalse(GatewayAuthFilter.isPublic("/actuator/prometheus"));
         assertFalse(GatewayAuthFilter.isPublic("/api/v1/files/1"));
         assertFalse(GatewayAuthFilter.isPublic("/api/v1/home"));
         assertFalse(GatewayAuthFilter.isPublic("/api/v1/ai/quota"));
@@ -79,12 +82,15 @@ class GatewayAuthFilterTest {
     void validBearerInjectsUserIdAndPasses() {
         String token = jwtService.issue(7, "sanye-user");
         MockServerWebExchange exchange = MockServerWebExchange.from(
-                MockServerHttpRequest.get("/api/v1/home").header("Authorization", "Bearer " + token));
+                MockServerHttpRequest.get("/api/v1/home").header("Authorization", "Bearer " + token)
+                        .header(GatewayAuthFilter.USER_ID_HEADER, "999")
+                        .header("X-Internal-Token", "forged-internal-token"));
         AtomicBoolean chained = new AtomicBoolean(false);
 
         StepVerifier.create(filter.filter(exchange, ex -> {
             chained.set(true);
             assertTrue("7".equals(ex.getRequest().getHeaders().getFirst(GatewayAuthFilter.USER_ID_HEADER)));
+            assertEquals(null, ex.getRequest().getHeaders().getFirst("X-Internal-Token"));
             return Mono.empty();
         })).verifyComplete();
 
@@ -117,5 +123,37 @@ class GatewayAuthFilterTest {
         StepVerifier.create(filter.filter(exchange, ex -> Mono.empty())).verifyComplete();
 
         assertEquals(HttpStatus.UNAUTHORIZED, exchange.getResponse().getStatusCode());
+    }
+
+    @Test
+    void externalInternalTokenAndUserIdentityAreRemovedOnEveryBranch() {
+        for (String path : java.util.List.of("/api/v1/public/home", "/api/v1/home", "/api/v1/admin/login")) {
+            MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get(path)
+                    .header(GatewayAuthFilter.DEVICE_ID_HEADER, "device-1")
+                    .header(GatewayAuthFilter.USER_ID_HEADER, "999")
+                    .header("X-Caller-Name", "forged-service")
+                    .header("X-Internal-Token", "forged-internal-token"));
+            AtomicBoolean chained = new AtomicBoolean(false);
+            StepVerifier.create(filter.filter(exchange, ex -> {
+                chained.set(true);
+                assertEquals(null, ex.getRequest().getHeaders().getFirst(GatewayAuthFilter.USER_ID_HEADER));
+                assertEquals(null, ex.getRequest().getHeaders().getFirst("X-Internal-Token"));
+                assertEquals(null, ex.getRequest().getHeaders().getFirst("X-Caller-Name"));
+                return Mono.empty();
+            })).verifyComplete();
+            assertTrue(chained.get());
+        }
+    }
+
+    @Test
+    void managementListenerDefaultsToLoopbackAndAllowsExplicitNetworkBinding() throws Exception {
+        var environment = new org.springframework.mock.env.MockEnvironment();
+        for (var source : new org.springframework.boot.env.YamlPropertySourceLoader().load("gateway",
+                new org.springframework.core.io.ClassPathResource("application.yml"))) {
+            environment.getPropertySources().addLast(source);
+        }
+        assertEquals("127.0.0.1", environment.getProperty("management.server.address"));
+        environment.setProperty("MANAGEMENT_ADDRESS", "0.0.0.0");
+        assertEquals("0.0.0.0", environment.getProperty("management.server.address"));
     }
 }

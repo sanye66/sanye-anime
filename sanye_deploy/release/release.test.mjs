@@ -4,8 +4,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { compose, pinnedImage, sourceIdentity, inventory, services } from './prepare.mjs';
-import { requireCi } from './check-ci.mjs';
+import { compose, pinnedImage, sourceIdentity, inventory, services, releaseToolchain } from './prepare.mjs';
+import { requireCi, requireCandidateCi, workflowRuns } from './check-ci.mjs';
 import { checkInstance, checkRegistration } from './verify.mjs';
 import { bindConfig, validateConfig } from './bind-config.mjs';
 import { checkProtection, requiredChecks } from './check-remote.mjs';
@@ -34,11 +34,48 @@ test('input inventory detects changed build bytes', t => {
   writeFileSync(join(root, 'app.jar'), 'second'); assert.notDeepEqual(inventory(root), first);
 });
 test('new failed or pending CI cannot reuse old successful run', () => {
-  const good = { id: 1, head_sha: commit, head_branch: 'test', event: 'push', status: 'completed', conclusion: 'success' };
+  const good = { id: 1, head_sha: commit, head_branch: 'test', event: 'push', status: 'completed', conclusion: 'success', updated_at: new Date().toISOString() };
   assert.equal(requireCi([good], commit, 'test'), 1);
   for (const newer of [{ conclusion: 'failure' }, { status: 'in_progress' }, { conclusion: 'cancelled' }]) assert.throws(() => requireCi([good, { ...good, id: 2, ...newer }], commit, 'test'), /must succeed/);
   assert.throws(() => requireCi([good], 'c'.repeat(40), 'test'), /must succeed/);
   assert.throws(() => requireCi([good], commit, 'release'), /must succeed/);
+});
+test('release compiler accepts only the exact CI and local patches and records actual versions', () => {
+  for (const javac of ['javac 21.0.11', 'javac 21.0.12']) assert.deepEqual(releaseToolchain('v26.5.0', javac), { node: 'v26.5.0', javac });
+  for (const javac of ['javac 21', 'javac 21.0.10', 'javac 21.0.13', 'javac 22.0.1', 'javac 21.0.11-ea']) assert.throws(() => releaseToolchain('v26.5.0', javac), /Release requires/);
+  assert.throws(() => releaseToolchain('v26.5.1', 'javac 21.0.11'), /Release requires/);
+});
+test('candidate evidence rejects expired, invalid, missing and newer rerun results', () => {
+  const now = Date.parse('2026-10-13T12:00:00Z');
+  const good = { id: 1, run_attempt: 1, head_sha: commit, head_branch: 'test', event: 'push', status: 'completed', conclusion: 'success', updated_at: '2026-10-13T10:00:00Z' };
+  assert.equal(requireCi([good], commit, 'test', { now }), 1);
+  for (const updated_at of [undefined, 'invalid', '2026-10-01T10:00:00Z', '2026-10-14T10:00:00Z']) assert.throws(() => requireCi([{ ...good, updated_at }], commit, 'test', { now }), /expired/);
+  assert.throws(() => requireCi([good, { ...good, run_attempt: 2, conclusion: 'failure' }], commit, 'test', { now }), /must succeed/);
+  assert.throws(() => requireCi([], commit, 'test', { now, workflow: 'android-check.yml' }), /android-check.yml.*missing/);
+  assert.throws(() => requireCi([{ ...good, event: 'pull_request' }], commit, 'test', { now }), /missing/);
+  assert.equal(requireCi([{ ...good, event: 'workflow_dispatch' }], commit, 'test', { now, events: ['push', 'workflow_dispatch'] }), 1);
+});
+test('a complete candidate cannot bypass a missing, failed or stale platform gate', () => {
+  const now = Date.parse('2026-10-13T12:00:00Z');
+  const good = { id: 1, head_sha: commit, head_branch: 'test', event: 'push', status: 'completed', conclusion: 'success', updated_at: '2026-10-13T10:00:00Z' };
+  const evidence = { 'ci.yml': [good], 'android-check.yml': [{ ...good, event: 'workflow_dispatch' }], 'desktop-check.yml': [good] };
+  assert.equal(Object.keys(requireCandidateCi(evidence, commit, 'test', { now })).length, 3);
+  for (const workflow of ['android-check.yml', 'desktop-check.yml']) {
+    for (const runs of [[], [{ ...good, conclusion: 'failure' }], [{ ...good, head_sha: 'b'.repeat(40) }], [{ ...good, updated_at: '2026-10-01T10:00:00Z' }]]) {
+      assert.throws(() => requireCandidateCi({ ...evidence, [workflow]: runs }, commit, 'test', { now }));
+    }
+  }
+});
+
+test('CI lookup paginates exact commit and keeps workflow errors readable', async () => {
+  const requested = [];
+  const runs = await workflowRuns('example/project', 'desktop-check.yml', commit, 'synthetic-token', async url => {
+    requested.push(url);
+    return { ok: true, json: async () => ({ workflow_runs: url.searchParams.get('page') === '1' ? Array.from({ length: 100 }, (_, id) => ({ id })) : [{ id: 101 }] }) };
+  });
+  assert.equal(runs.length, 101); assert.equal(requested.length, 2);
+  assert.equal(requested[1].searchParams.get('head_sha'), commit);
+  await assert.rejects(workflowRuns('example/project', 'android-check.yml', commit, 'synthetic-token', async () => ({ ok: false, status: 403 })), /android-check.yml.*HTTP 403/);
 });
 test('compose requires all digests and keeps data project stable for rollback', () => {
   const manifest = { commit, services: Object.fromEntries(services.map(n => [`sanye_${n}`, { image: imageRef }])) };

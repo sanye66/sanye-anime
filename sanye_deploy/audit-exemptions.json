@@ -31,6 +31,8 @@
     {
       "source": "trivy",
       "advisory": "CVE-2026-47884",
+      "installedVersions": ["6.2.19"],
+      "reviewedFixedVersions": ["7.0.9"],
       "package": "org.springframework:spring-webmvc",
       "severity": "critical",
       "reason": "上游只在 Spring Framework 7.0.9 修复（Trivy 报的 Fixed Version），6.2.x 线已到 6.2.19 仍无回补版本；升级要连带 Spring Boot 3.5 → 4.x（Jakarta EE 11、Spring Security 7）的迁移，属于独立任务，本次登记为待迁移项。",
@@ -44,6 +46,8 @@
     {
       "source": "trivy",
       "advisory": "CVE-2026-47890",
+      "installedVersions": ["6.2.19"],
+      "reviewedFixedVersions": ["7.0.9"],
       "package": "org.springframework:spring-webflux",
       "severity": "critical",
       "reason": "与 CVE-2026-47884 同批的 Spring Framework 6.2.19 命中（SSE 流式响应），同样只在 7.x 线修复，6.2.x 无回补版本；随 Spring Boot 4 迁移一并处理。",
@@ -56,6 +60,8 @@
     {
       "source": "trivy",
       "advisory": "CVE-2026-47890",
+      "installedVersions": ["6.2.19"],
+      "reviewedFixedVersions": ["7.0.9"],
       "package": "org.springframework:spring-webmvc",
       "severity": "critical",
       "reason": "同一个 CVE 在 `spring-webmvc` 上也命中（登记按「漏洞 ID + 包名」配对，同批 CVE 需按包分别登记），修复版本同样只在 7.x 线；随 Spring Boot 4 迁移一并处理。",
@@ -69,6 +75,8 @@
     {
       "source": "trivy",
       "advisory": "CVE-2026-47892",
+      "installedVersions": ["6.2.19"],
+      "reviewedFixedVersions": ["7.0.9"],
       "package": "org.springframework:spring-webflux",
       "severity": "critical",
       "reason": "Spring Framework 6.2.19 在 `spring-webflux` 上的第三条同批命中，Maven Central 上 6.2.x 线止于 6.2.19、修复只出现在 7.0.9；随 Spring Boot 4 迁移一并处理。",

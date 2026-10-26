@@ -4,6 +4,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.core.env.Environment;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -13,11 +16,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.web.filter.CorsFilter;
 import com.sanye.admin.framework.config.properties.PermitAllUrlProperties;
 import com.sanye.admin.framework.security.filter.JwtAuthenticationTokenFilter;
 import com.sanye.admin.framework.security.handle.AuthenticationEntryPointImpl;
 import com.sanye.admin.framework.security.handle.LogoutSuccessHandlerImpl;
+import com.sanye.admin.common.core.domain.model.LoginUser;
+import com.sanye.admin.common.utils.SecurityUtils;
 
 /**
  * spring security配置
@@ -62,6 +68,9 @@ public class SecurityConfig
     @Autowired
     private PermitAllUrlProperties permitAllUrl;
 
+    @Autowired
+    private Environment environment;
+
 	/**
 	 * 身份验证实现
 	 */
@@ -102,12 +111,21 @@ public class SecurityConfig
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             // 注解标记允许匿名访问的url
             .authorizeHttpRequests((requests) -> {
+                if (environment.matchesProfiles("local"))
+                {
+                    requests.requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**").permitAll();
+                }
+                else
+                {
+                    requests.requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**")
+                        .access(diagnosticsPermission("tool:swagger:list"));
+                }
+                requests.requestMatchers("/druid/**").access(diagnosticsPermission("monitor:druid:list"));
                 permitAllUrl.getUrls().forEach(url -> requests.requestMatchers(url).permitAll());
                 // 对于登录login 注册register 验证码captchaImage 允许匿名访问
                 requests.requestMatchers("/login", "/register", "/captchaImage").permitAll()
                     // 静态资源，可匿名访问
                     .requestMatchers(HttpMethod.GET, "/", "/*.html", "/**.html", "/**.css", "/**.js", "/profile/**").permitAll()
-                    .requestMatchers("/swagger-ui.html", "/v3/api-docs/**", "/swagger-ui/**", "/druid/**").permitAll()
                     // 除上面外的所有请求全部需要鉴权认证
                     .anyRequest().authenticated();
             })
@@ -119,6 +137,14 @@ public class SecurityConfig
             .addFilterBefore(corsFilter != null ? corsFilter : NOOP_CORS_FILTER, JwtAuthenticationTokenFilter.class)
             .addFilterBefore(corsFilter != null ? corsFilter : NOOP_CORS_FILTER, LogoutFilter.class)
             .build();
+    }
+
+    private AuthorizationManager<RequestAuthorizationContext> diagnosticsPermission(String permission)
+    {
+        return (authentication, context) -> new AuthorizationDecision(
+            authentication.get().getPrincipal() instanceof LoginUser loginUser
+                && loginUser.getPermissions() != null
+                && SecurityUtils.hasPermi(loginUser.getPermissions(), permission));
     }
 
     /**

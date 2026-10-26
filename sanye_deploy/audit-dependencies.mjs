@@ -6,6 +6,7 @@
 // 用法：
 //   node sanye_deploy/audit-dependencies.mjs                # 现场执行 pnpm audit --json
 //   node sanye_deploy/audit-dependencies.mjs --report x.json # 复用已保存的审计 JSON（离线复核）
+//   node sanye_deploy/audit-dependencies.mjs --strict        # 发行时不允许高危/严重风险豁免
 // 退出码：0 通过；1 存在阻断项、豁免过期或豁免失效；2 审计本身无法执行或无法解析。
 
 import { readFileSync } from 'node:fs'
@@ -29,18 +30,36 @@ export function parseAudit(raw) {
   const text = String(raw).replace(/^\uFEFF/, '').trim()
   if (!text) throw new Error('审计输出为空，无法解析')
   const parsed = JSON.parse(text)
-  if (!parsed || typeof parsed !== 'object') throw new Error('审计输出不是对象')
+  validateAudit(parsed)
   return parsed
+}
+
+function validateAudit(audit) {
+  if (!audit || !audit.advisories || typeof audit.advisories !== 'object' || Array.isArray(audit.advisories)) {
+    throw new Error('审计输出缺少 advisories 对象，不能认定扫描完成')
+  }
+  for (const advisory of Object.values(audit.advisories)) {
+    if (!advisory || !advisory.module_name || !(advisory.github_advisory_id || advisory.id)
+        || !['critical', 'high', 'moderate', 'low', 'info'].includes(advisory.severity)
+        || typeof advisory.patched_versions !== 'string') throw new Error('审计告警记录不完整，不能跳过未知风险')
+  }
 }
 
 /** 读取豁免登记；缺少文件时返回空登记（门禁仍然生效，只是没有任何豁免）。 */
 export function loadExemptions(file = path.join(here, 'audit-exemptions.json')) {
   const raw = readFileSync(file, 'utf8').replace(/^\uFEFF/, '')
   const parsed = JSON.parse(raw)
-  const exemptions = Array.isArray(parsed.exemptions) ? parsed.exemptions : []
+  if (!Array.isArray(parsed.exemptions)) throw new Error('豁免登记缺少 exemptions 数组')
+  const exemptions = parsed.exemptions
+  const keys = new Set()
   for (const entry of exemptions) {
     if (!entry || typeof entry.advisory !== 'string' || !entry.advisory) throw new Error('豁免登记缺少 advisory 字段')
     if (typeof entry.package !== 'string' || !entry.package) throw new Error(`豁免 ${entry.advisory} 缺少 package 字段`)
+    if (!entry.reason?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.reviewBy ?? '')
+        || !Number.isFinite(Date.parse(entry.reviewBy))) throw new Error(`豁免 ${entry.advisory} 缺少有效原因或复核期限`)
+    const key = `${entry.source ?? 'pnpm'}|${entry.advisory}|${entry.package}`
+    if (keys.has(key)) throw new Error(`豁免登记重复：${entry.advisory} ${entry.package}`)
+    keys.add(key)
   }
   return exemptions
 }
@@ -63,7 +82,8 @@ function dayStart(value) {
  * 判定审计结果。
  * 放行条件：告警严重度低于门禁阈值，或该告警「上游无修复版本」且已在豁免登记里、包名一致、未过复核期限。
  */
-export function analyzeAudit(audit, exemptions, { today = new Date() } = {}) {
+export function analyzeAudit(audit, exemptions, { today = new Date(), strict = false } = {}) {
+  validateAudit(audit)
   const advisories = Object.values(audit?.advisories ?? {})
   // 登记文件与 Trivy 门禁共用：这里只认 pnpm 来源（缺省即 pnpm）的登记项。
   const scoped = exemptions.filter((entry) => !entry.source || entry.source === 'pnpm')
@@ -102,6 +122,8 @@ export function analyzeAudit(audit, exemptions, { today = new Date() } = {}) {
         expired.push({ ...record, reviewBy: entry.reviewBy ?? '', reason: '豁免登记缺少可解析的 reviewBy' })
       } else if (reviewBy < dayStart(today)) {
         expired.push({ ...record, reviewBy: entry.reviewBy, reason: '豁免已过复核期限，需重新评估' })
+      } else if (strict && isBlockingSeverity) {
+        blocking.push({ ...record, reason: '严格发行门禁禁止带高危或严重漏洞风险发布，登记不替代修复' })
       } else {
         exempted.push({ ...record, reviewBy: entry.reviewBy, reason: entry.reason ?? '' })
       }
@@ -154,7 +176,7 @@ export function formatReport(result, { today = new Date() } = {}) {
   for (const item of result.belowGateFixable) lines.push(`    - [${item.severity}] ${item.package} ${item.advisory} → ${item.patched}`)
   lines.push(`复核日期：${dayIso(today)}`)
   const passed = result.blocking.length === 0 && result.expired.length === 0 && result.stale.length === 0
-  lines.push(passed ? '依赖漏洞门禁通过：没有可升级修复的高危/严重告警。' : '依赖漏洞门禁失败：见上方阻断项／豁免过期／失效豁免。')
+  lines.push(passed ? `依赖漏洞门禁通过：高危/严重阻断项为 0，仍有 ${result.exempted.length} 条已登记风险；不代表不存在漏洞。` : '依赖漏洞门禁失败：见上方阻断项／豁免过期／失效豁免。')
   return { text: lines.join('\n'), passed }
 }
 
@@ -188,7 +210,7 @@ function main() {
   try {
     const raw = reportPath ? readFileSync(path.resolve(reportPath), 'utf8') : runAudit()
     const audit = parseAudit(raw)
-    const result = analyzeAudit(audit, loadExemptions())
+    const result = analyzeAudit(audit, loadExemptions(), { strict: argv.includes('--strict') })
     const report = formatReport(result)
     console.log(report.text)
     process.exit(report.passed ? 0 : 1)

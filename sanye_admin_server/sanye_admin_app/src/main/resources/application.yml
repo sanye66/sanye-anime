@@ -145,9 +145,10 @@ pagehelper:
 # Springdoc配置
 springdoc:
   api-docs:
+    enabled: ${SANYE_ADMIN_SWAGGER_ENABLED:false}
     path: /v3/api-docs
   swagger-ui:
-    enabled: true
+    enabled: ${SANYE_ADMIN_SWAGGER_ENABLED:false}
     path: /swagger-ui.html
     tags-sorter: alpha
   group-configs:

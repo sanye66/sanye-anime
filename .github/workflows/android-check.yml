@@ -62,6 +62,18 @@ jobs:
         run: pnpm --filter @sanye/sanye_e2e exec playwright install --with-deps chromium
       - name: 播放策略纯逻辑回归
         run: pnpm test:player-policy
+      - name: 内容源候选与异步播放纯逻辑回归
+        run: node --test sanye_android/sourceCandidates.test.cjs e2e/android-history-race.test.cjs e2e/android-playback-warmup.test.cjs e2e/android-source-identity-sqlite.test.cjs e2e/android-source-binding-migration.test.cjs
+      - name: 订阅管理交互回归
+        env:
+          SANYE_SUBSCRIPTION_PLATFORM: android
+        run: node --test e2e/subscription-manager.test.cjs
+      - name: 订阅仓库真实切换与封面回归
+        run: node --test e2e/android-repository-source.test.cjs e2e/android-subscription-source.test.cjs e2e/android-repository-contract.test.cjs
+      - name: 安卓备份、离线下载、系统播放与观测回归
+        run: node --test --test-concurrency=2 e2e/android-cover-cache.test.cjs e2e/android-experience.test.cjs e2e/android-personal-backup.test.cjs e2e/android-backup-ui.test.cjs e2e/android-system-playback.test.cjs e2e/android-downloads.test.cjs e2e/android-download-playback.test.cjs e2e/android-playback-tools.test.cjs
+      - name: 安卓 Media3 会话与来源续播回归
+        run: node --test e2e/android-native-playback.test.cjs e2e/android-front-experience.test.cjs e2e/android-search-memory.test.cjs e2e/android-resolve-cache.test.cjs
       - name: 安卓前端回归（隔离桥接）
         # 失败时把 TAP 的 not ok 行打成 ::error:: 注解：公开仓库不登录也能通过
         # check-runs/{id}/annotations 读到失败用例名，否则只剩 "exit code 1"。
@@ -97,7 +109,7 @@ jobs:
         # exit 126 结束；先补权限再按本地一致的方式执行。
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+          ./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest :app:lintDebug :app:lintRelease
       - name: 保留测试与检查报告
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

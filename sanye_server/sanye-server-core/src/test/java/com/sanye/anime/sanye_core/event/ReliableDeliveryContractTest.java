@@ -18,8 +18,8 @@ class ReliableDeliveryContractTest {
         for (String result : List.of("ack", "nack", "returned", "exception")) {
             var repository = mock(OutboxRepository.class);
             var rabbit = mock(RabbitTemplate.class);
-            when(repository.claim(100)).thenReturn(List.of(new OutboxRepository.OutboxRecord(
-                    "broker-event", "anime.status.changed", "1", 1, "{}", Instant.EPOCH, 4)));
+            when(repository.claim(1)).thenReturn(List.of(new OutboxRepository.OutboxRecord(
+                    "broker-event", "anime.status.changed", "1", 1, "{}", Instant.EPOCH, 4)), List.of());
             doAnswer(call -> {
                 if (result.equals("exception")) throw new IllegalStateException("disconnected");
                 CorrelationData correlation = call.getArgument(3);
@@ -42,12 +42,62 @@ class ReliableDeliveryContractTest {
     void mustNotMarkSentBeforeBrokerConfirmation() {
         OutboxRepository repository = mock(OutboxRepository.class);
         RabbitTemplate rabbit = mock(RabbitTemplate.class);
-        when(repository.claim(100)).thenReturn(List.of(new OutboxRepository.OutboxRecord(
+        when(repository.claim(1)).thenReturn(List.of(new OutboxRepository.OutboxRecord(
                 "unconfirmed-event", "anime.status.changed", "1", 1,
                 "{\"animeId\":1}", Instant.EPOCH, 0)));
         new RabbitOutboxPublisher(repository, rabbit, new ObjectMapper()).publishPending();
         // No broker confirmation has been delivered by this transport.
         verify(repository, never()).markSent("unconfirmed-event");
+        verify(repository, times(1)).claim(1);
+    }
+
+    @Test
+    void drainsBacklogByClaimingOnlyAfterPreviousConfirmation() {
+        OutboxRepository repository = mock(OutboxRepository.class);
+        RabbitTemplate rabbit = mock(RabbitTemplate.class);
+        when(repository.claim(1)).thenReturn(
+                List.of(new OutboxRepository.OutboxRecord("first", "anime.status.changed", "1", 1, "{}", Instant.EPOCH, 0)),
+                List.of(new OutboxRepository.OutboxRecord("second", "anime.status.changed", "1", 2, "{}", Instant.EPOCH, 0)),
+                List.of());
+        doAnswer(call -> {
+            CorrelationData correlation = call.getArgument(3);
+            correlation.getFuture().complete(new CorrelationData.Confirm(true, null));
+            return null;
+        }).when(rabbit).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+
+        new RabbitOutboxPublisher(repository, rabbit, new ObjectMapper()).publishPending();
+
+        var order = inOrder(repository, rabbit);
+        order.verify(repository).claim(1);
+        order.verify(rabbit).setMandatory(true);
+        order.verify(rabbit).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+        order.verify(repository).markSent("first");
+        order.verify(repository).claim(1);
+        order.verify(rabbit).setMandatory(true);
+        order.verify(rabbit).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+        order.verify(repository).markSent("second");
+        order.verify(repository).claim(1);
+    }
+
+    @Test
+    void boundsDrainAndStopsImmediatelyAfterPublishFailure() {
+        for (boolean ack : List.of(true, false)) {
+            OutboxRepository repository = mock(OutboxRepository.class);
+            RabbitTemplate rabbit = mock(RabbitTemplate.class);
+            when(repository.claim(1)).thenReturn(List.of(new OutboxRepository.OutboxRecord(
+                    "event", "anime.status.changed", "1", 1, "{}", Instant.EPOCH, 0)));
+            doAnswer(call -> {
+                CorrelationData correlation = call.getArgument(3);
+                correlation.getFuture().complete(new CorrelationData.Confirm(ack, null));
+                return null;
+            }).when(rabbit).send(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
+
+            new RabbitOutboxPublisher(repository, rabbit, new ObjectMapper()).publishPending();
+
+            verify(repository, times(ack ? 100 : 1)).claim(1);
+            verify(repository, times(ack ? 100 : 0)).markSent("event");
+            verify(repository, times(ack ? 0 : 1)).markFailed("event", 1, false);
+        }
     }
 
     @Test

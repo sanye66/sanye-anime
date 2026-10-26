@@ -46,7 +46,7 @@ groups:
   - name: sanye-business
     rules:
       - alert: SanyeHomeErrorRateHigh
-        expr: rate(sanye_home_error_total[5m]) / clamp_min(rate(sanye_home_request_total[5m]), 1) > 0.05
+        expr: (rate(sanye_home_error_total[5m]) / rate(sanye_home_request_total[5m]) > 0.05) and (rate(sanye_home_request_total[5m]) > 0)
         for: 5m
         labels:
           severity: warning
@@ -74,16 +74,32 @@ groups:
         annotations:
           summary: "搜索接口 P95 超过 500ms"
 
-  - name: sanye-infrastructure
+  - name: sanye-events
     rules:
-      - alert: SanyeJvmHeapHigh
-        expr: sum(jvm_memory_used_bytes{area="heap"}) / sum(jvm_memory_max_bytes{area="heap"}) > 0.85
+      - alert: SanyeOutboxPendingAgeHigh
+        expr: sanye_event_outbox_pending_age_seconds > 300
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "JVM 堆内存超过 85%"
+          summary: "Outbox 待发布事件最早等待超过 5 分钟（{{ $labels.instance }}）"
+      - alert: SanyeOutboxDeadRecords
+        expr: sanye_event_outbox_records{state="DEAD"} > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox 存在发布失败终止事件（{{ $labels.instance }}）"
+
+  - name: sanye-infrastructure
+    rules:
+      - alert: SanyeJvmHeapHigh
+        expr: sum by (job, instance) (jvm_memory_used_bytes{area="heap"}) / sum by (job, instance) (jvm_memory_max_bytes{area="heap"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM 堆内存超过 85%（{{ $labels.instance }}）"
       # 以下指标待对应能力接入后启用：
       # - SanyeQuotaExhaustedSpike: sanye_quota_exhausted_total
       # - SanyeLoginFailureRate: sanye_login_total{result="failure"}
-      # - SanyeOutboxPending: sanye_outbox_pending_total > 100

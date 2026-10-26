@@ -31,6 +31,8 @@ const trivyExemption = {
   package: 'org.springframework:spring-webmvc',
   severity: 'critical',
   reason: '上游只在 7.x 修复',
+  installedVersions: ['6.2.19'],
+  reviewedFixedVersions: ['7.0.9'],
   reviewBy: '2027-01-10',
 }
 const today = new Date('2026-10-10T09:00:00Z')
@@ -38,6 +40,21 @@ const future = '2027-01-10'
 
 test('解析 Trivy 报告时容错 PowerShell 写入的 BOM', () => {
   assert.deepEqual(parseTrivy('\uFEFF{"Results":[]}'), { Results: [] })
+})
+
+test('不完整或错误的扫描输出不能变成零漏洞报告', () => {
+  for (const value of [{}, [], { error: '扫描失败' }, { Results: {} }, { Results: [{ Target: 'pom.xml', Vulnerabilities: {} }] }]) {
+    assert.throws(() => parseTrivy(JSON.stringify(value)))
+  }
+  assert.throws(() => analyzeTrivy(reportOf({ 'pom.xml': [vulnerability({ Severity: undefined })] }), [], { today }))
+})
+
+test('新安装版本或新修复版本不能继续使用旧豁免', () => {
+  for (const item of [vulnerability({ InstalledVersion: '6.2.20' }), vulnerability({ FixedVersion: '6.2.20, 7.0.9' }), vulnerability({ Severity: 'HIGH' })]) {
+    const result = analyzeTrivy(reportOf({ 'pom.xml': [item] }), [trivyExemption], { today })
+    assert.equal(result.blocking.length, 1)
+    assert.equal(result.exempted.length, 0)
+  }
 })
 
 test('空报告直接通过', () => {
@@ -72,6 +89,14 @@ test('已登记且未过期的 trivy 豁免放行', () => {
   assert.equal(result.exempted.length, 1)
   assert.equal(result.exempted[0].reviewBy, future)
   assert.equal(formatTrivyReport(result, { today }).passed, true)
+})
+
+test('严格发行门禁阻断已登记的高危和严重风险', () => {
+  const result = analyzeTrivy(reportOf({ 'pom.xml': [vulnerability()] }), [trivyExemption], { today, strict: true })
+  assert.equal(result.blocking.length, 1)
+  assert.equal(result.exempted.length, 0)
+  assert.equal(result.stale.length, 0)
+  assert.equal(formatTrivyReport(result, { today }).passed, false)
 })
 
 test('豁免过期时阻断', () => {
@@ -122,9 +147,9 @@ test('低于门禁阈值的命中只提示不阻断', () => {
   assert.equal(formatTrivyReport(result, { today }).passed, true)
 })
 
-test('真实报告存在时复核登记是否仍然对齐', () => {
+test('真实报告存在时复核登记是否仍然对齐', t => {
   const reportPath = path.join(process.cwd(), 'trivy-report.json')
-  if (!existsSync(reportPath)) return
+  if (!existsSync(reportPath)) { t.skip('未提供真实 Trivy 扫描报告，不能把夹具测试当作实际扫描'); return }
   const result = analyzeTrivy(parseTrivy(readFileSync(reportPath, 'utf8')), loadExemptions(), { today })
   assert.equal(result.blocking.length, 0, `存在未登记的阻断命中：${result.blocking.map((item) => `${item.package} ${item.advisory}`).join('、')}`)
   assert.equal(result.expired.length, 0)

@@ -32,6 +32,20 @@ test('解析审计输出时容错 PowerShell 写入的 BOM', () => {
   assert.deepEqual(parsed, { advisories: {} })
 })
 
+test('不完整或错误的审计输出不能变成零漏洞报告', () => {
+  for (const value of [{}, [], { error: '审计失败' }, { advisories: [] }]) assert.throws(() => parseAudit(JSON.stringify(value)))
+  assert.throws(() => analyzeAudit(auditOf(advisory({ severity: 'unknown' })), [], { today }))
+})
+
+test('严格发行门禁阻断未修复的已登记高危风险', () => {
+  const item = advisory({ patched_versions: '<0.0.0' })
+  const entry = { advisory: item.github_advisory_id, package: item.module_name, reason: '测试登记', reviewBy: future }
+  const result = analyzeAudit(auditOf(item), [entry], { today, strict: true })
+  assert.equal(result.blocking.length, 1)
+  assert.equal(result.exempted.length, 0)
+  assert.equal(result.stale.length, 0)
+})
+
 test('只有低于门禁阈值的告警时通过', () => {
   const result = analyzeAudit(auditOf(advisory({ severity: 'moderate' })), [], { today })
   assert.equal(result.blocking.length, 0)
@@ -117,11 +131,11 @@ test('读取真实豁免登记文件并校验必填字段', async () => {
   assert.throws(() => loadExemptions(broken), /缺少 advisory/)
 })
 
-test('当前登记能覆盖审计报告里上游无修复的高危/严重告警', async () => {
+test('当前登记能覆盖审计报告里上游无修复的高危/严重告警', async t => {
   // 真实报告存在时（本机或 CI 落盘）用它复核登记是否仍然对齐；不存在则跳过。
   const { existsSync, readFileSync } = await import('node:fs')
   const reportPath = path.join(process.cwd(), 'audit-report.json')
-  if (!existsSync(reportPath)) return
+  if (!existsSync(reportPath)) { t.skip('未提供实际 pnpm 审计报告，夹具测试不替代实时审计'); return }
   const result = analyzeAudit(parseAudit(readFileSync(reportPath, 'utf8')), loadExemptions(), { today })
   assert.equal(result.blocking.length, 0, `存在未登记的阻断告警：${result.blocking.map((item) => `${item.package} ${item.advisory}`).join('、')}`)
   assert.equal(result.expired.length, 0)

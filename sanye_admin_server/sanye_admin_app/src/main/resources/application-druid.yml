@@ -42,7 +42,7 @@ spring:
             webStatFilter: 
                 enabled: true
             statViewServlet:
-                enabled: false
+                enabled: ${SANYE_ADMIN_DRUID_ENABLED:false}
                 # 设置白名单，不填则允许所有访问
                 allow:
                 url-pattern: /druid/*

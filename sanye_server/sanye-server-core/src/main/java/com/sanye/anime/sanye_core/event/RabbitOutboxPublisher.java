@@ -21,7 +21,12 @@ public class RabbitOutboxPublisher {
     public RabbitOutboxPublisher(OutboxRepository repository, RabbitTemplate rabbit, ObjectMapper mapper) { this.repository=repository; this.rabbit=rabbit; this.mapper=mapper; }
     @Scheduled(fixedDelayString="${sanye.event.outbox.poll-ms:1000}")
     public void publishPending() {
-        for (var row: repository.claim(100)) {
+        for (int published = 0; published < 100; published++) {
+            var pending = repository.claim(1);
+            if (pending.isEmpty()) {
+                return;
+            }
+            var row = pending.getFirst();
             try {
                 var envelope = mapper.createObjectNode()
                         .put("eventId", row.eventId())
@@ -51,6 +56,7 @@ public class RabbitOutboxPublisher {
                 repository.markFailed(row.eventId(), attempts, attempts >= 5);
                 log.warn("Event publish failed eventId={} attempts={} exhausted={} errorType={}", row.eventId(), attempts, attempts >= 5, e.getClass().getSimpleName());
                 if (e instanceof InterruptedException) { Thread.currentThread().interrupt(); return; }
+                return;
             }
         }
     }

@@ -9,7 +9,8 @@ scrape_configs:
   - job_name: sanye-gateway
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["host.docker.internal:8091"]
+      # 网关使用独立管理端口；容器采集前须在受控网络显式设置 MANAGEMENT_ADDRESS。
+      - targets: ["host.docker.internal:8090"]
         labels:
           app: sanye-gateway
   - job_name: sanye-auth
@@ -48,6 +49,18 @@ scrape_configs:
       - targets: ["host.docker.internal:8086"]
         labels:
           app: sanye-file
+  - job_name: sanye-feedback
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8087"]
+        labels:
+          app: sanye-feedback
+  - job_name: sanye-job
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8088"]
+        labels:
+          app: sanye-job
   # 基础设施导出器（部署环境就绪后启用）：
   # - job_name: postgres
   #   static_configs:

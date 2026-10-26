@@ -85,6 +85,7 @@ sanye:
 
 management:
   server:
+    address: ${MANAGEMENT_ADDRESS:127.0.0.1}
     port: ${MANAGEMENT_PORT:8090}
   endpoints:
     web:

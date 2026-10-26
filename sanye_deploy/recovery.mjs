@@ -285,7 +285,7 @@ export async function backup(config, directory) {
   const manifest = { version: 2, startedAt: new Date().toISOString(), consistency: 'quiesced', databases: [], buckets: [], files: [], tools: {
     dump: await run(config.postgres.tools.dump, ['--version']),
     restore: await run(config.postgres.tools.restore, ['--version']),
-    minio: 'minio-js 8.0.6',
+    minio: 'minio-js 8.0.7',
   } }
   for (const d of config.databases) {
     const before = await fingerprint(sql, 'source', d.source)

@@ -7,11 +7,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
       POSTGRES_DB: ${POSTGRES_DB:-sanye_anime}
     ports:
-      - "${POSTGRES_HOST_PORT:-15432}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$POSTGRES_PASSWORD\" psql -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -w -v ON_ERROR_STOP=1 -tAc 'SELECT 1' | grep -qx 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,7 +25,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-123456}
     command: ["redis-server", "--appendonly", "yes", "--user", "default", "off", "--user", "${REDIS_USERNAME:-sanye}", "on", ">${REDIS_PASSWORD:-123456}", "~*", "+@all"]
     ports:
-      - "${REDIS_HOST_PORT:-16379}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-16379}:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -42,8 +42,8 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-123456}
     ports:
       # 同时暴露管理端口和宿主机业务 AMQP 端口，供本机 Spring 服务连接。
-      - "5672:5672"
-      - "${RABBITMQ_HOST_PORT:-15672}:15672"
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:${RABBITMQ_HOST_PORT:-15672}:15672"
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
     healthcheck:
@@ -60,7 +60,7 @@ services:
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms512m -Xmx512m"
     ports:
-      - "9200:9200"
+      - "127.0.0.1:9200:9200"
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
@@ -78,7 +78,7 @@ services:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       XPACK_SECURITY_ENABLED: "false"
     ports:
-      - "${KIBANA_HOST_PORT:-5601}:5601"
+      - "127.0.0.1:${KIBANA_HOST_PORT:-5601}:5601"
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -100,7 +100,7 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-12345678}
     ports:
       # 宿主机只保留 MinIO 控制台端口；对象 API 在容器网络内使用 minio:9000。
-      - "${MINIO_HOST_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_HOST_PORT:-9001}:9001"
     volumes:
       - miniodata:/data
     healthcheck:
@@ -124,7 +124,7 @@ services:
     ports:
       # 按 Nacos Console 默认入口只暴露一个宿主机端口：8080，路径为 /。
       # Nacos API 8848 仅供 Compose 内部服务通过 nacos:8848 使用。
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       # Console 根路径返回 200 作为 Nacos 控制台就绪信号。
       test: ["CMD-SHELL", "curl -fs http://localhost:8080/ >/dev/null"]
@@ -138,7 +138,7 @@ services:
     container_name: sanye-sentinel
     profiles: ["full"]
     ports:
-      - "8858:8858"
+      - "127.0.0.1:8858:8858"
     healthcheck:
       # Sentinel 没有独立的 readiness API，首页 HTTP 200 作为进程就绪信号。
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8858/ || exit 1"]
@@ -173,7 +173,7 @@ services:
       # 将 XXL-JOB 管理台上下文调整为根路径，避免访问 18080/ 时返回 404。
       PARAMS: "--server.servlet.context-path=/ --spring.datasource.url=jdbc:mysql://xxl-job-mysql:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true --spring.datasource.username=${XXL_JOB_MYSQL_USER:-sanye} --spring.datasource.password=${XXL_JOB_MYSQL_PASSWORD:-123456}"
     ports:
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"
     depends_on:
       xxl-job-mysql:
         condition: service_healthy
