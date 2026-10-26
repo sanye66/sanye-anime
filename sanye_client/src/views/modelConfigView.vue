@@ -61,7 +61,7 @@ onMounted(() => {
 
     <div v-if="loading" class="settings-status-hint" aria-live="polite">模型配置加载中…</div>
     <div v-else-if="loadError" class="settings-status-hint settings-status-error" role="status">
-      模型配置接口暂不可用，请稍后重试
+      模型配置加载失败，请重试
       <button class="settings-retry" type="button" @click="loadConfig">重试</button>
     </div>
 
@@ -72,12 +72,12 @@ onMounted(() => {
           <div class="model-status-grid">
             <div class="model-status-item"><span>模型提供方</span><strong>{{ modelInfo.providerLabel }}</strong></div>
             <div class="model-status-item"><span>当前模型</span><strong>{{ modelInfo.model }}</strong></div>
-            <div class="model-status-item"><span>服务端温度</span><strong>{{ modelInfo.temperature.toFixed(1) }}</strong></div>
+            <div class="model-status-item"><span>回答灵活度</span><strong>{{ modelInfo.temperature.toFixed(1) }}</strong></div>
             <div class="model-status-item"><span>会话记忆</span><strong>{{ modelInfo.memoryLabel }}</strong></div>
-            <div class="model-status-item"><span>检索增强（RAG）</span><strong>{{ modelInfo.ragEnabled ? '已启用' : '未启用' }}</strong></div>
+            <div class="model-status-item"><span>资料查找</span><strong>{{ modelInfo.ragEnabled ? '已启用' : '未启用' }}</strong></div>
             <div class="model-status-item"><span>剧透安全规则</span><strong>{{ modelInfo.safetyEnabled ? '已启用' : '未启用' }}</strong></div>
           </div>
-          <small class="field-note">模型服务与密钥由服务端运维配置，客户端不保存任何模型凭证。</small>
+          <small class="field-note">模型由管理员设置，无需填写密钥。</small>
         </div>
         <div class="settings-form-section">
           <div class="form-section-heading"><div><span class="eyebrow">回答风格</span><h3>回答偏好</h3></div></div>

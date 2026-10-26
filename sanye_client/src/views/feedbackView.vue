@@ -22,7 +22,7 @@ async function submitFeedback() {
     })
     submitted.value = true
   } catch (err) {
-    error.value = err instanceof Error ? err.message : '提交失败，请稍后重试'
+    error.value = '反馈发送失败，请重试。'
   } finally {
     submitting.value = false
   }

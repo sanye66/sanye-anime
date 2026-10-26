@@ -3043,3 +3043,163 @@ html[data-sanye-theme="light"] .official-legal-menu button { color: #5c6f77; }
 html[data-sanye-theme="dark"] .official-primary { background: var(--sanye-primary, #a8423a); color: #fff7ea; }
 html[data-sanye-theme="dark"] .official-brand-mark, html[data-sanye-theme="dark"] .brand-mark { color: #fff7ea; }
 .official-nav-link { min-width: 44px; justify-content: center; }
+
+/* 客户端视觉基线：海报为主，页面与操作使用同一组稳定实色。 */
+html[data-sanye-theme="dark"] {
+  --client-canvas: #081428;
+  --client-surface: #101f34;
+  --client-field: #15263c;
+  --client-accent: #eaf2c4;
+  --client-accent-ink: #081428;
+  --sanye-ink: #f7f3e9;
+  --sanye-muted: #b3bdc9;
+  --sanye-line: #314057;
+  --sanye-coral: #eaf2c4;
+  --sanye-sun: #eaf2c4;
+}
+html[data-sanye-theme="light"] {
+  --client-canvas: #f7f3e9;
+  --client-surface: #fcfaf4;
+  --client-field: #fffdf8;
+  --client-accent: #eaf2c4;
+  --client-accent-ink: #081428;
+  --sanye-ink: #081428;
+  --sanye-muted: #53606e;
+  --sanye-line: #d8d7cd;
+  --sanye-coral: #3b553d;
+  --sanye-sun: #3b553d;
+}
+html[data-sanye-theme] body,
+html[data-sanye-theme] .app-shell { background: var(--client-canvas); color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell .client-sky,
+.app-shell .sidebar::before,
+.app-shell .sidebar::after,
+.app-shell .main-panel::before { display: none; }
+html[data-sanye-theme] .app-shell .sidebar,
+html[data-sanye-theme] .app-shell .main-panel { background: var(--client-canvas); backdrop-filter: none; }
+.app-shell .topbar { padding-bottom: 20px; border-bottom: 1px solid var(--sanye-line); }
+.app-shell .topbar h1 { font-size: 24px; }
+.app-shell .page-heading .eyebrow { display: none; }
+html[data-sanye-theme] .app-shell .brand strong,
+html[data-sanye-theme] .app-shell .topbar h1,
+html[data-sanye-theme] .app-shell .section-heading h2 { color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell .eyebrow { color: var(--sanye-muted); letter-spacing: .04em; }
+html[data-sanye-theme] .app-shell .nav-item { color: var(--sanye-muted); }
+html[data-sanye-theme] .app-shell .nav-item:hover { background: var(--client-surface); color: var(--sanye-ink); box-shadow: none; }
+html[data-sanye-theme] .app-shell .nav-item.is-active { background: var(--client-accent); color: var(--client-accent-ink); box-shadow: none; }
+.app-shell .theme-toggle { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; }
+.app-shell .theme-toggle svg { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+html[data-sanye-theme] .app-shell :is(.theme-toggle, .page-back, .secondary-button, .mine-rail-nav button, .filter-chip, .episode-button) {
+  border-color: var(--sanye-line); background: var(--client-surface); color: var(--sanye-ink); box-shadow: none;
+}
+.app-shell .theme-toggle:hover { transform: none; }
+html[data-sanye-theme] .app-shell :is(.primary-button, .search-submit, .profile-button, .send-button) {
+  border: 1px solid transparent; background: var(--client-accent); color: var(--client-accent-ink); box-shadow: none; font-weight: 600;
+}
+html[data-sanye-theme] .app-shell :is(.primary-button, .search-submit, .profile-button, .send-button):hover { background: #dce7aa; }
+html[data-sanye-theme] .app-shell :is(.primary-button, .secondary-button) { border-radius: 8px; min-height: 38px; }
+html[data-sanye-theme] .app-shell :is(.topbar-search, .large-search, .repository-select select, .form-field input, .form-field select, .form-field textarea, .chat-input input) {
+  border-color: var(--sanye-line); background: var(--client-field); color: var(--sanye-ink); box-shadow: none;
+}
+html[data-sanye-theme] .app-shell :is(.topbar-search input, .topbar-search-icon) { color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell :is(.home-hero, .ai-feature-strip, .schedule-section, .schedule-list-panel, .search-panel, .ai-layout, .settings-form-panel, .feedback-success, .empty-state, .route-loading) {
+  background: var(--client-surface); border-color: var(--sanye-line); box-shadow: none; border-radius: 12px;
+}
+html[data-sanye-theme] .app-shell .home-hero > .hero-copy { background: var(--client-surface); }
+.app-shell .home-hero { min-height: 390px; }
+.app-shell .home-hero .hero-art { min-height: 390px; }
+.app-shell .hero-copy-slide { padding: 30px; }
+.app-shell .hero-copy-slide h2 { font-size: clamp(30px, 3vw, 42px); }
+html[data-sanye-theme] .app-shell .hero-copy-slide h2 em { color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell .hero-status { color: var(--sanye-muted); }
+html[data-sanye-theme] .app-shell :is(.anime-cover-card, .repository-card, .mine-rail-card, .detail-similar-card) {
+  background: transparent; border: 0; box-shadow: none; border-radius: 0;
+}
+.app-shell :is(.anime-cover-link, .repository-cover-link, .mine-rail-card img, .detail-similar-card img) { border-radius: 8px; box-shadow: none; }
+.app-shell :is(.anime-cover-info, .repository-card-body) { padding: 12px 0 4px; }
+.app-shell .repository-card-title strong { font-family: inherit; font-size: 15px; font-weight: 600; line-height: 1.5; }
+.app-shell .mine-rail-card { padding: 0; flex-basis: 132px; gap: 10px; }
+.app-shell .mine-rail { gap: 16px; }
+html[data-sanye-theme] .app-shell .mine-rail-copy strong { color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell :is(.cover-collect, .repository-collect) {
+  border-color: var(--sanye-line); background: var(--client-surface); color: var(--sanye-muted); border-radius: 6px; min-height: 32px;
+}
+html[data-sanye-theme] .app-shell :is(.cover-collect, .repository-collect)[aria-pressed="true"],
+html[data-sanye-theme] .app-shell :is(.episode-button.active, .filter-chip.active, .schedule-day-tab.active) {
+  border-color: #899565; background: var(--client-accent); color: var(--client-accent-ink);
+}
+html[data-sanye-theme] .app-shell .schedule-day-tab.active strong { color: var(--client-accent-ink); }
+html[data-sanye-theme] .app-shell :is(.repository-toolbar, .anime-detail-hero, .anime-detail-section, .profile-panel, .mine-library-panel, .settings-list, .settings-list div) {
+  background: transparent; border-color: var(--sanye-line); box-shadow: none; border-radius: 0;
+}
+.app-shell .repository-toolbar { padding: 16px 0; border-inline: 0; }
+.app-shell .repository-heading p { max-width: 50ch; }
+.app-shell .anime-detail-hero { border: 0; padding: 20px 0; grid-template-columns: 120px minmax(0, 1fr); min-height: 0; align-items: start; }
+.app-shell .anime-detail-cover { min-height: 0; height: 170px; }
+.app-shell .anime-detail-copy { padding: 0 0 0 24px; gap: 10px; }
+.app-shell .anime-detail-copy h2 { font-family: inherit; font-size: 24px; font-weight: 600; }
+.app-shell .anime-detail-description { max-width: 65ch; font-size: 14px; line-height: 1.8; }
+.app-shell .anime-detail-tags span { border-radius: 4px; font-size: 12px; border-color: var(--sanye-line); }
+.app-shell .anime-detail-section { border: 0; border-top: 1px solid var(--sanye-line); padding-inline: 0; }
+.app-shell .anime-detail-cover { border-radius: 10px; box-shadow: none; }
+.app-shell .profile-panel { border: 0; border-bottom: 1px solid var(--sanye-line); padding: 0 0 22px; }
+.app-shell .mine-library-panel { padding: 20px 0; border: 0; border-top: 1px solid var(--sanye-line); }
+.app-shell .mine-library-heading h3 { margin-top: 4px; font-size: 22px; }
+.app-shell .mine-library-empty { border: 0; padding-left: 0; }
+.app-shell .continue-watching-panel { margin-top: 0; }
+.app-shell .mine-continue-card progress { accent-color: #899565; }
+.app-shell .settings-entry { border-bottom: 1px solid var(--sanye-line); }
+html[data-sanye-theme] .app-shell .anime-playback-sources { border-color: var(--sanye-line); background: var(--client-surface); border-radius: 8px; }
+html[data-sanye-theme] .app-shell .anime-playback-sources summary { color: var(--sanye-ink); }
+.app-shell .anime-player-frame { border-radius: 10px; box-shadow: none; }
+.app-shell .anime-detail-cover img { border-radius: 10px; }
+html[data-sanye-theme] .app-shell .anime-player-section { background: transparent; border: 0; padding: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; }
+.app-shell .anime-player-heading .eyebrow, .app-shell .anime-detail-copy > .eyebrow { display: none; }
+.app-shell .anime-player-heading h3 { font-family: inherit; font-size: 18px; font-weight: 600; }
+html[data-sanye-theme] .app-shell .player-empty { background: var(--client-surface); color: var(--sanye-muted); border: 1px solid var(--sanye-line); border-radius: 8px; min-height: 96px; }
+html[data-sanye-theme] .app-shell .anime-detail-tags span { background: transparent; color: var(--sanye-muted); border-color: var(--sanye-line); }
+.app-shell .anime-player-frame .art-state { color: #eaf2c4; }
+.app-shell .anime-player-frame .art-state svg { fill: currentColor; width: 44px; height: 44px; }
+.app-shell .anime-player-frame .art-controls :is(.art-icon, .art-control) { display: flex; align-items: center; justify-content: center; }
+.app-shell .anime-player-frame .art-controls .art-icon svg { width: 20px; height: 20px; }
+html[data-sanye-theme] .app-shell .anime-player-heading .text-button { background: transparent; border-color: var(--sanye-line); color: var(--sanye-muted); }
+html[data-sanye-theme] .app-shell .detail-back-button { background: transparent; border-color: var(--sanye-line); color: var(--sanye-muted); box-shadow: none; }
+html[data-sanye-theme] .app-shell .detail-back-button span { background: transparent; border-color: var(--sanye-line); color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell .schedule-line.current { background: var(--client-surface); }
+html[data-sanye-theme] .app-shell .hero-copy-slide h2 { color: var(--sanye-ink); }
+.app-shell .anime-cover-info strong { font-family: inherit; font-weight: 600; }
+.app-shell .anime-cover-info > div { min-width: 0; }
+.app-shell .anime-cover-info strong { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.app-shell :is(h1, h2, h3, strong) { text-shadow: none; }
+html[data-sanye-theme] .app-shell .repository-summary { background: transparent; border-color: var(--sanye-line); }
+.app-shell .detail-similar-card { padding: 0; }
+html[data-sanye-theme] .app-shell :is(.detail-character, .result-row, .schedule-detail-row) { background: var(--client-surface); border-color: var(--sanye-line); box-shadow: none; }
+.skip-link { position: fixed; z-index: 1000; top: 8px; left: 8px; transform: translateY(-180%); padding: 10px 14px; border-radius: 6px; background: var(--sanye-ink, #1b252b); color: var(--sanye-paper, #fff); font-weight: 700; transition: transform 120ms ease; }
+.skip-link:focus { transform: translateY(0); }
+.app-shell :is(button, a, input, select, textarea, summary):focus-visible { outline: 2px solid #899565; outline-offset: 3px; }
+.app-shell :is(.primary-button, .secondary-button, .cover-collect, .repository-collect, .text-button, .schedule-reminder, .new-chat-button, .icon-button, .stop-button, .spoiler-toggle, .send-button, .settings-retry, .schedule-retry) { min-height: 44px; }
+.app-shell .text-button { display: inline-flex; align-items: center; justify-content: center; }
+.app-shell .conversation-delete { width: 44px; height: 44px; }
+.app-shell .conversation-item { min-height: 52px; padding-right: 54px; }
+.app-shell :is(.conversation-item, .conversation-delete, .new-chat-button, .icon-button):disabled { cursor: not-allowed; opacity: .5; }
+.app-shell .repository-result-line { align-items: center; }
+html[data-sanye-theme] .app-shell .schedule-reminder { border-color: var(--sanye-line); background: var(--client-surface); color: var(--sanye-ink); }
+html[data-sanye-theme] .app-shell .schedule-reminder[aria-pressed="true"] { border-color: #899565; background: var(--client-accent); color: var(--client-accent-ink); }
+@media (max-width: 900px) {
+  .app-shell .hero-copy-slide { padding: 26px; }
+  .app-shell .mine-library-heading { flex-wrap: wrap; }
+  .app-shell .mine-rail-actions { flex-wrap: wrap; }
+}
+@media (max-width: 700px) {
+  .app-shell .anime-detail-hero { grid-template-columns: 80px minmax(0, 1fr); }
+  .app-shell .anime-detail-cover { height: 114px; }
+  .app-shell .anime-detail-copy { padding-left: 16px; }
+  .app-shell .anime-detail-copy h2 { font-size: 20px; }
+  .app-shell .topbar { padding-bottom: 16px; }
+  .app-shell .home-hero { min-height: 0; }
+  .app-shell .home-hero .hero-art { min-height: 250px; }
+  .app-shell .hero-copy-slide { padding: 24px 22px; }
+  .app-shell .mine-library-grid { gap: 20px; }
+  .app-shell .profile-panel { flex-wrap: wrap; }
+  .app-shell .profile-panel > div:not(.avatar) { flex: 1; min-width: 160px; }
+}

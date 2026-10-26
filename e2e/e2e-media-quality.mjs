@@ -43,6 +43,9 @@ try {
     contentType: 'application/json',
     body: JSON.stringify({ code: 0, message: 'ok', data: null, requestId: 'e2e-media-quality' }),
   }))
+  await page.route('**/api/v1/users/me/continue-watching', (route) => route.fulfill({
+    json: { code: 0, data: [], requestId: 'e2e-media-quality' },
+  }))
   await page.route('**/api/v1/users/me/favorites/127/status', (route) => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify({ code: 0, message: 'ok', data: { favorite: false }, requestId: 'e2e-media-quality' }),
@@ -146,17 +149,19 @@ try {
       preload: player?.video?.preload ?? '',
       maxBufferLength: config?.maxBufferLength ?? 0,
       maxMaxBufferLength: config?.maxMaxBufferLength ?? 0,
-      fragLoadingMaxRetry: config?.fragLoadingMaxRetry ?? 0,
-      fragLoadingTimeOut: config?.fragLoadingTimeOut ?? 0,
+      maxBufferSize: config?.maxBufferSize ?? 0,
+      fragmentPolicy: config?.fragLoadPolicy?.default ?? null,
     }
   })
   record('清晰度切换更新 HLS level', runtimeState?.currentLevel === 0,
     `manualLevel=${runtimeState?.currentLevel ?? 'null'}`)
   record('HLS 缓冲与重试优化生效', runtimeState?.preload === 'auto'
-    && runtimeState.maxBufferLength === 90
-    && runtimeState.maxMaxBufferLength === 180
-    && runtimeState.fragLoadingMaxRetry === 4
-    && runtimeState.fragLoadingTimeOut === 20_000,
+    && runtimeState.maxBufferLength > 0 && runtimeState.maxBufferLength <= 60
+    && runtimeState.maxMaxBufferLength >= runtimeState.maxBufferLength && runtimeState.maxMaxBufferLength <= 120
+    && runtimeState.maxBufferSize > 0 && runtimeState.maxBufferSize <= 60 * 1024 * 1024
+    && runtimeState.fragmentPolicy?.maxLoadTimeMs === 20_000
+    && runtimeState.fragmentPolicy?.timeoutRetry.maxNumRetry === 1
+    && runtimeState.fragmentPolicy?.errorRetry.maxNumRetry === 3,
   JSON.stringify(runtimeState))
 } catch (error) {
   let debug = { player: false, video: '', controls: '', body: '' }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { animeApi } from '@/api/anime'
 import { favoriteApi } from '@/api/favorite'
 import { isAbortError, resolveAssetUrl } from '@/api/http'
@@ -22,6 +22,7 @@ interface RepoCard {
 }
 
 const route = useRoute()
+const router = useRouter()
 const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
 const selectedType = ref('全部类型')
 const selectedStatus = ref('全部状态')
@@ -43,6 +44,19 @@ let requestController: AbortController | null = null
 const typeOptions = ['全部类型', '原创动画', '电视动画', '剧场版', '网络动画']
 const statusOptions = ['全部状态', '连载中', '已完结']
 const yearOptions: YearFilter[] = ['全部年份', '2026', '2025', '2024', '2023', '2022及更早']
+const hasFilters = computed(() => Boolean(keyword.value.trim()) || selectedType.value !== '全部类型' || selectedStatus.value !== '全部状态' || selectedYear.value !== '全部年份')
+
+/** 同时清除关键词和筛选，回到完整片库。 */
+function resetFilters() {
+  selectedType.value = '全部类型'
+  selectedStatus.value = '全部状态'
+  selectedYear.value = '全部年份'
+  if (route.query.keyword !== undefined) {
+    const query = { ...route.query }
+    delete query.keyword
+    void router.replace({ query })
+  }
+}
 
 watch(
   () => route.query.keyword,
@@ -221,11 +235,11 @@ void load()
 
     <div class="repository-result-line">
       <span>当前显示 {{ total }} 部作品</span>
-      <span v-if="keyword || selectedType !== '全部类型' || selectedStatus !== '全部状态' || selectedYear !== '全部年份'">筛选条件已生效</span>
+      <button v-if="hasFilters" class="text-button" type="button" @click="resetFilters">清除筛选</button>
       <span v-else>完整片库</span>
     </div>
 
-    <div v-if="error" class="feed-error"><span>{{ fallback ? '接口暂不可用，已展示本地演示数据。' : '片库加载失败，请稍后重试。' }}</span><button type="button" class="text-button" @click="void load()">重试</button></div>
+    <div v-if="error" class="feed-error"><span>{{ fallback ? '加载失败，当前为演示内容。' : '片库加载失败，请稍后重试。' }}</span><button type="button" class="text-button" @click="void load()">重试</button></div>
     <div v-if="collectionError" class="feed-error" role="status">收藏操作失败，请重试。</div>
 
     <section v-if="loading" class="feed-skeleton" aria-label="正在加载番剧列表"><span></span><span></span><span></span><span></span></section>
@@ -249,7 +263,7 @@ void load()
       </article>
     </section>
 
-    <section v-else-if="!error || fallback" class="repository-empty" aria-live="polite"><span class="mine-library-icon" aria-hidden="true">⌁</span><h3>没有找到匹配作品</h3><p>试试更换关键词、类型、状态或年份。</p></section>
+    <section v-else-if="!error || fallback" class="repository-empty" aria-live="polite"><span class="mine-library-icon" aria-hidden="true">⌁</span><h3>没有找到匹配作品</h3><p>试试更换关键词、类型、状态或年份。</p><button v-if="hasFilters" class="secondary-button" type="button" @click="resetFilters">查看全部作品</button></section>
 
     <nav v-if="totalPages > 1 && !fallback" class="repository-pagination" aria-label="分页">
       <button type="button" class="secondary-button" :disabled="page <= 1" @click="prevPage">← 上一页</button>

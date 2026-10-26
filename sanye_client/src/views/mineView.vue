@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SubscriptionManager from '../components/subscriptionManager.vue'
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { favoriteApi, type ContinueWatchingItem, type FavoriteItem, type HistoryItem } from '@/api/favorite'
@@ -26,6 +27,7 @@ const history = ref<ShelfEntry[]>([])
 const continueWatching = ref<ContinueWatchingItem[]>([])
 const loadingFavorites = ref(false)
 const loadingHistory = ref(false)
+const loadingContinueWatching = ref(true)
 const favoritesFailed = ref(false)
 const historyFailed = ref(false)
 const continueWatchingFailed = ref(false)
@@ -100,6 +102,7 @@ async function loadHistory() {
 }
 
 async function loadContinueWatching() {
+  loadingContinueWatching.value = true
   continueWatchingFailed.value = false
   try {
     // 接口结构异常（例如成功响应里没有数组）时不能把页面渲染带崩，按“没有进度”处理。
@@ -107,7 +110,13 @@ async function loadContinueWatching() {
     continueWatching.value = Array.isArray(items) ? items : []
   }
   catch { continueWatchingFailed.value = true; continueWatching.value = [] }
+  finally { loadingContinueWatching.value = false }
 }
+
+/** 全部读取成功且没有内容时，只保留一个发现入口；读取失败仍在各自区域提供重试。 */
+const libraryEmpty = computed(() => !loadingFavorites.value && !loadingHistory.value && !loadingContinueWatching.value
+  && !favoritesFailed.value && !historyFailed.value && !continueWatchingFailed.value
+  && !favorites.value.length && !history.value.length && !continueWatching.value.length)
 
 /** 历史记录在横向货架与完整列表之间切换，展开时补足更多分页数据。 */
 function toggleHistoryAll() {
@@ -130,7 +139,7 @@ const showFavoritesAllAction = computed(() => favorites.value.length > 0)
 function progressLabel(item: ContinueWatchingItem) {
   if (item.completed) return '已看完，可重新观看'
   const percent = item.durationSeconds > 0 ? Math.min(100, Math.round(item.positionSeconds / item.durationSeconds * 100)) : 0
-  const episode = item.episodeTitle ? item.episodeTitle : `第 ${item.episodeId} 集`
+  const episode = item.episodeTitle?.trim() || '上次观看'
   return `${episode} · 已观看 ${percent}%`
 }
 
@@ -156,7 +165,7 @@ onMounted(() => {
 
 <template>
   <div class="page-stack narrow-page">
-    <section class="section-heading"><div><span class="eyebrow">宫水三叶的个人空间</span><h2>个人中心</h2></div></section>
+    <section class="section-heading"><div><span class="eyebrow">收藏与观看记录</span><h2>我的空间</h2></div></section>
     <section class="profile-panel">
       <div class="avatar profile-avatar">S</div>
       <div>
@@ -165,7 +174,11 @@ onMounted(() => {
       </div>
       <button v-if="!desktopMode && !auth.loggedIn" class="primary-button" type="button" @click="auth.loginRedirect()">登录</button>
     </section>
-    <div class="mine-library-grid">
+    <section v-if="libraryEmpty" class="mine-library-panel">
+      <div class="mine-library-heading"><h3>收藏与观看记录</h3></div>
+      <div class="mine-library-empty"><p>还没有收藏或观看记录。发现喜欢的作品后，可以收藏，也可以从这里接着上次的进度观看。</p><RouterLink class="text-button" to="/">去发现动漫</RouterLink></div>
+    </section>
+    <div v-else class="mine-library-grid">
       <section class="mine-library-panel">
         <div class="mine-library-heading">
           <div><span class="eyebrow">已保存的作品</span><h3>收藏</h3></div>
@@ -179,7 +192,7 @@ onMounted(() => {
           </div>
         </div>
         <div v-if="loadingFavorites" class="feed-skeleton"><span></span><span></span></div>
-        <div v-else-if="favoritesFailed" class="mine-library-empty"><p>收藏接口暂不可用，请稍后重试。</p><button class="text-button" type="button" @click="void loadFavorites()">重试</button></div>
+        <div v-else-if="favoritesFailed" class="mine-library-empty"><p>收藏加载失败，请重试。</p><button class="text-button" type="button" @click="void loadFavorites()">重试</button></div>
         <div v-else-if="favorites.length" ref="favoritesRail" class="mine-rail" :class="{ 'is-expanded': favoritesExpanded }">
           <RouterLink v-for="item in favorites" :key="item.id" class="mine-rail-card" :to="`/anime/${item.id}`">
             <img :src="item.cover" :data-bundled-cover="bundledCover(item.title)" :alt="`${item.title} 封面`" loading="lazy" decoding="async" @error="handleCoverFallback" />
@@ -205,7 +218,7 @@ onMounted(() => {
           </div>
         </div>
         <div v-if="loadingHistory" class="feed-skeleton"><span></span><span></span></div>
-        <div v-else-if="historyFailed" class="mine-library-empty"><p>历史接口暂不可用，请稍后重试。</p><button class="text-button" type="button" @click="void loadHistory()">重试</button></div>
+        <div v-else-if="historyFailed" class="mine-library-empty"><p>观看记录加载失败，请重试。</p><button class="text-button" type="button" @click="void loadHistory()">重试</button></div>
         <div v-else-if="history.length" ref="historyRail" class="mine-rail" :class="{ 'is-expanded': historyExpanded }">
           <RouterLink v-for="item in history" :key="item.id" class="mine-rail-card" :to="`/anime/${item.id}`">
             <img :src="item.cover" :data-bundled-cover="bundledCover(item.title)" :alt="`${item.title} 封面`" loading="lazy" decoding="async" @error="handleCoverFallback" />
@@ -219,7 +232,7 @@ onMounted(() => {
         <div v-else class="mine-library-empty"><span class="mine-library-icon" aria-hidden="true">◷</span><p>看过的动漫和作品详情会记录在这里。</p><RouterLink class="text-button" to="/">开始浏览 →</RouterLink></div>
       </section>
     </div>
-    <section class="mine-library-panel continue-watching-panel">
+    <section v-if="!libraryEmpty" class="mine-library-panel continue-watching-panel">
       <div class="mine-library-heading">
         <div><span class="eyebrow">接着上次的进度</span><h3>继续观看</h3></div>
         <div class="mine-rail-actions">
@@ -230,7 +243,8 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      <div v-if="continueWatchingFailed" class="mine-library-empty"><p>继续观看暂时无法读取。</p><button class="text-button" type="button" @click="void loadContinueWatching()">重试</button></div>
+      <div v-if="loadingContinueWatching" class="feed-skeleton"><span></span><span></span></div>
+      <div v-else-if="continueWatchingFailed" class="mine-library-empty"><p>观看进度加载失败，请重试。</p><button class="text-button" type="button" @click="void loadContinueWatching()">重试</button></div>
       <div v-else-if="continueWatching.length" ref="continueRail" class="mine-rail mine-rail-continue">
         <RouterLink v-for="item in continueWatching" :key="`${item.animeId}:${item.episodeId}`" class="mine-rail-card mine-continue-card" :to="continueWatchingPath(item)">
           <img :src="continueCover(item.animeId)" :data-bundled-cover="bundledCover(continueTitle(item))" :alt="`${continueTitle(item)} 封面`" loading="lazy" decoding="async" @error="handleCoverFallback" />
@@ -243,10 +257,14 @@ onMounted(() => {
       </div>
       <div v-else class="mine-library-empty"><span class="mine-library-icon" aria-hidden="true">▶</span><p>开始播放后，会在这里保留你的观看进度。</p></div>
     </section>
-    <div v-if="!desktopMode" class="settings-list personal-settings-list">
-      <RouterLink class="settings-entry" to="/mine/model-config"><span class="settings-entry-icon" aria-hidden="true">✦</span><span class="settings-entry-copy"><strong>模型配置</strong><small>选择 AI 模型，调整回答参数和上下文长度。</small></span><span class="settings-entry-arrow" aria-hidden="true">→</span></RouterLink>
-      <RouterLink class="settings-entry" to="/mine/import-request"><span class="settings-entry-icon" aria-hidden="true">入</span><span class="settings-entry-copy"><strong>申请导入作品</strong><small>提交作品详情页 URL，等待管理端审核后导入。</small></span><span class="settings-entry-arrow" aria-hidden="true">→</span></RouterLink>
+    <section aria-label="个人设置">
+      <div class="section-heading"><h3>设置</h3></div>
+      <div v-if="!desktopMode" class="settings-list personal-settings-list">
+      <RouterLink class="settings-entry" to="/mine/model-config"><span class="settings-entry-icon" aria-hidden="true">✦</span><span class="settings-entry-copy"><strong>模型配置</strong><small>选择 AI 模型，调整回答方式。</small></span><span class="settings-entry-arrow" aria-hidden="true">→</span></RouterLink>
+      <RouterLink class="settings-entry" to="/mine/import-request"><span class="settings-entry-icon" aria-hidden="true">入</span><span class="settings-entry-copy"><strong>申请导入作品</strong><small>提交作品网址，审核后加入片库。</small></span><span class="settings-entry-arrow" aria-hidden="true">→</span></RouterLink>
       <RouterLink class="settings-entry" to="/mine/feedback"><span class="settings-entry-icon" aria-hidden="true">⌁</span><span class="settings-entry-copy"><strong>问题反馈</strong><small>告诉我们遇到的问题，帮助完善你的使用体验。</small></span><span class="settings-entry-arrow" aria-hidden="true">→</span></RouterLink>
-    </div>
+      </div>
+      <SubscriptionManager />
+    </section>
   </div>
 </template>

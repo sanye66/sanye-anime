@@ -14,11 +14,13 @@ test('light pages retain readable playback and optional detail source controls',
   try {
     for (const width of [1280, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } })
+      const savedProgress = []
       await page.addInitScript(() => localStorage.setItem('sanye:playback:preferences:v1', JSON.stringify({ frameRate: 'off', quality: 'off' })))
       const card = { id: 987, title: '你的名字', type: '剧场版', status: '已完结', tags: ['青春', '奇幻'], coverUrl: '/client-covers/your-name.jpg', summary: '跨越时空的相遇与约定。', characters: [], similar: [] }
       await page.route('**/api/v1/**', route => {
         const url = new URL(route.request().url())
-        const data = url.pathname.endsWith('/episodes') ? [{ id: 1, episodeNo: 1, title: '正片', playbackUrl: '/ui-line-a.mp4', mimeType: 'video/mp4', playbackOptions: [
+        if (url.pathname.endsWith('/continue-watching') && route.request().method() === 'PUT') savedProgress.push(route.request().postDataJSON())
+        const data = url.pathname.endsWith('/episodes') ? [{ id: 9876, episodeNo: 3, title: '', playbackUrl: '/ui-line-a.mp4', mimeType: 'video/mp4', playbackOptions: [
           { url: '/ui-line-a.mp4', mimeType: 'video/mp4', label: '原声 A' },
           { url: '/ui-line-b.mp4', mimeType: 'video/mp4', label: '原声 B' },
         ] }] : url.pathname.endsWith('/home') ? { banners: [], sections: [{ key: 'recent', anime: [card] }, { key: 'popular', anime: [card] }], quickLinks: [] }
@@ -47,6 +49,9 @@ test('light pages retain readable playback and optional detail source controls',
       await page.getByRole('button', { name: '切换到亮色模式', exact: true }).click()
       await page.goto(origin + '/anime/987')
       await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2)
+      await page.locator('video').evaluate(video => { video.currentTime = 1; video.dispatchEvent(new Event('pause')) })
+      await page.waitForResponse(response => response.url().endsWith('/continue-watching') && response.request().method() === 'PUT')
+      assert.ok(savedProgress.some(item => item.episodeId === 9876 && item.episodeTitle === '第 3 集'), '空标题应按真实集序号保存，不得把数据库编号显示为集数')
       const sources = page.locator('details.anime-playback-sources')
       assert.equal(await sources.getAttribute('open'), null)
       // 同类线路统一显示为规范标签，重复时补序号。

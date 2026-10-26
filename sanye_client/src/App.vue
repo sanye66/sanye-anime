@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
@@ -30,6 +30,7 @@ const themeStorageKey = 'sanyeThemeModeV2'
 const theme = ref<'dark' | 'light'>(window.localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light')
 const collapsed = ref(window.matchMedia('(min-width: 701px) and (max-width: 1100px)').matches)
 const searchKeyword = ref('')
+const mainPanel = ref<HTMLElement | null>(null)
 
 /** 将主题值同步到根节点，供全局样式切换。 */
 function applyTheme(value: 'dark' | 'light') {
@@ -64,6 +65,11 @@ function goBack() {
 
 watch(() => route.query.keyword, value => { searchKeyword.value = typeof value === 'string' ? value : '' }, { immediate: true })
 
+watch(() => route.fullPath, async () => {
+  await nextTick()
+  mainPanel.value?.focus({ preventScroll: true })
+})
+
 /** 提交全局搜索并将关键词带入搜索结果页。 */
 function submitSearch() {
   const keyword = searchKeyword.value.trim()
@@ -93,6 +99,7 @@ function focusSearch() {
 
 /** 处理 Cmd/Ctrl+K 搜索快捷键。 */
 function onKeydown(event: KeyboardEvent) {
+  if (document.querySelector('dialog[open]')) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     focusSearch()
@@ -113,6 +120,7 @@ onUnmounted(() => {
 
 <template>
   <div class="app-shell" :class="{ 'is-collapsed': collapsed }">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
     <div class="client-sky" aria-hidden="true">
       <span class="sky-cloud cloud-one"></span>
       <span class="sky-cloud cloud-two"></span>
@@ -164,13 +172,13 @@ onUnmounted(() => {
       </div>
     </aside>
 
-    <main class="main-panel">
+    <main id="main-content" ref="mainPanel" class="main-panel" tabindex="-1" aria-labelledby="page-title">
       <header class="topbar">
         <div class="page-heading">
           <button v-if="route.path !== '/'" type="button" class="page-back" aria-label="返回上一级" title="返回上一级" @click="goBack"><span aria-hidden="true">←</span></button>
           <div>
           <span class="eyebrow">动漫发现工作区</span>
-          <h1>{{ pageTitle }}</h1>
+          <h1 id="page-title">{{ pageTitle }}</h1>
           </div>
         </div>
         <div class="topbar-actions">
@@ -187,7 +195,8 @@ onUnmounted(() => {
             :aria-pressed="theme === 'light'"
             @click="toggleTheme"
           >
-            <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>
+            <svg v-if="theme === 'dark'" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
+            <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" /></svg>
           </button>
           <template v-if="auth.loggedIn">
             <span class="user-name">{{ auth.user?.nickname ?? '用户' }}</span>

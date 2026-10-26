@@ -7,6 +7,7 @@ interface Entry { response: LoaderResponse; bytes: ArrayBuffer; elapsed: number;
 export function createFragmentCache(HlsConstructor: typeof Hls, isVod: () => boolean, maxBytes = 192 * 1024 * 1024) {
   const entries = new Map<string, Entry>()
   let bytes = 0
+  let cacheEpoch = 0
   const remove = (key: string) => { const item = entries.get(key); if (item) bytes -= item.bytes.byteLength; entries.delete(key) }
   const Base = HlsConstructor.DefaultConfig.loader as new (config: HlsConfig) => Loader<FragmentLoaderContext>
   class FragmentLoader extends Base {
@@ -14,6 +15,7 @@ export function createFragmentCache(HlsConstructor: typeof Hls, isVod: () => boo
     private cachedCallbacks: LoaderCallbacks<FragmentLoaderContext> | null = null
     override load(context: FragmentLoaderContext, config: LoaderConfiguration, callbacks: LoaderCallbacks<FragmentLoaderContext>) {
       const generation = ++this.generation
+      const loadEpoch = cacheEpoch
       const key = JSON.stringify([context.url, context.rangeStart, context.rangeEnd,
         Object.entries(context.headers || {}).sort(([a], [b]) => a.localeCompare(b))])
       const eligible = isVod() && context.responseType === 'arraybuffer' && !context.progressData
@@ -42,7 +44,7 @@ export function createFragmentCache(HlsConstructor: typeof Hls, isVod: () => boo
           const data = response.data
           const cacheControl: string = networkDetails?.getResponseHeader?.('Cache-Control')
             || networkDetails?.headers?.get?.('Cache-Control') || ''
-          if (eligible && data instanceof ArrayBuffer && data.byteLength > 0 && data.byteLength <= maxBytes
+          if (loadEpoch === cacheEpoch && eligible && data instanceof ArrayBuffer && data.byteLength > 0 && data.byteLength <= maxBytes
             && !/no-store|no-cache/i.test(cacheControl)) {
             remove(key)
             while (bytes + data.byteLength > maxBytes && entries.size) remove(entries.keys().next().value!)
@@ -67,5 +69,5 @@ export function createFragmentCache(HlsConstructor: typeof Hls, isVod: () => boo
     }
     override destroy() { this.generation++; this.cachedCallbacks = null; super.destroy() }
   }
-  return { Loader: FragmentLoader, clear: () => { entries.clear(); bytes = 0 } }
+  return { Loader: FragmentLoader, clear: () => { cacheEpoch++; entries.clear(); bytes = 0 } }
 }

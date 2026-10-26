@@ -86,7 +86,7 @@ onMounted(() => {
         <h1>使用前，<br /><em>先了解边界。</em></h1>
         <p>这里展示产品使用、隐私和内容来源相关的公开说明。正式上线前，文案需要经过审查并替换为最终版本。</p>
         <p v-if="loading" class="official-legal-status" aria-live="polite">正文加载中…</p>
-        <p v-else-if="apiError" class="official-legal-status official-legal-status-error" role="status">正文接口暂不可用，当前展示内置公开说明</p>
+        <p v-else-if="apiError" class="official-legal-status official-legal-status-error" role="status">加载失败，先显示已有说明</p>
       </div>
       <aside class="official-legal-menu">
         <button

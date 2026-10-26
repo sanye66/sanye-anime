@@ -9,6 +9,7 @@ import { bundledCover, placeholderCover } from '@/data/coverFallback'
 import { titleKey } from '@/data/titleKey'
 import { desktopMode } from '@/desktop'
 import { parsePlaybackLine } from '@/video/playbackLines'
+import { activeSubscription, subscriptionCacheKey } from '@/subscriptions'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,14 +43,14 @@ function normalizeSearchInput(value: string): string {
 }
 
 const query = computed(() => normalizeSearchInput(String(route.query.keyword ?? '')))
-const filteredExternalResults = computed(() => chip.value === '全部'
+const filteredExternalResults = computed(() => activeSubscription() || chip.value === '全部'
   ? externalResults.value
   : externalResults.value.filter((anime) => anime.type === chip.value))
 
 /** 直接观看入口携带同一部作品的其他来源页，供站内播放器补齐备用线路。 */
 function watchLocation(hit: ExternalSearchHit) {
   const sources = [...new Set([hit.sourceUrl, ...(hit.alternativeSourceUrls ?? [])])]
-  return { name: 'externalWatch', query: { sourceUrl: hit.sourceUrl, alternatives: sources.filter(source => source !== hit.sourceUrl).slice(0, 3), keyword: keyword.value } }
+  return { name: 'externalWatch', query: { sourceUrl: hit.sourceUrl, alternatives: sources.filter(source => source !== hit.sourceUrl).slice(0, 3), keyword: keyword.value, title: hit.title, sourceIndex: hit.sourceIndex, subscription: hit.sourceIndex !== undefined ? activeSubscription()?.url : undefined } }
 }
 
 /**
@@ -91,6 +92,7 @@ watch(() => route.fullPath, () => {
   chip.value = chips.includes(route.query.type as typeof chips[number]) ? String(route.query.type) : '全部'
   void load()
 })
+watch(() => subscriptionCacheKey(), () => { void load() })
 
 function selectChip(type: string): void {
   if (chip.value === type) return
@@ -115,34 +117,35 @@ async function loadExternal(queryText: string): Promise<void> {
   externalLoading.value = true
   externalSupplementLoading.value = true
   externalError.value = false
-  const options = { signal: controller.signal, timeout: 18_000, retries: 0 }
+  const options = { signal: controller.signal, timeout: activeSubscription() ? 40_000 : 18_000, retries: 0 }
   const type = chip.value === '全部' ? undefined : chip.value
   const completeRequest = searchApi.external(queryText, 20, type, options)
     .then((value) => ({ value, error: null as unknown }))
     .catch((error: unknown) => ({ value: null, error }))
-  const preferredRequest = searchApi.externalPreferred(queryText, 20, type, options)
+  const preferredRequest = (activeSubscription() ? completeRequest.then(result => result.value ?? []) : searchApi.externalPreferred(queryText, 20, type, options))
     .then((value) => ({ value, error: null as unknown }))
     .catch((error: unknown) => ({ value: null, error }))
   let completeDisplayed = false
   const [preferred, complete] = await Promise.all([
     preferredRequest.then((result) => {
-      if (externalController === controller && result.value?.length && !completeDisplayed) {
+      if (externalController === controller && !controller.signal.aborted && result.value?.length && !completeDisplayed) {
         externalResults.value = result.value
         externalLoading.value = false
       }
       return result
     }),
     completeRequest.then((result) => {
-      if (externalController === controller && result.value) {
-        completeDisplayed = true
-        externalResults.value = result.value
+      if (externalController === controller && !controller.signal.aborted && result.value) {
+        // 较慢的完整搜索没有结果时，不清掉已找到的优先来源。
+        completeDisplayed = result.value.length > 0
+        if (completeDisplayed) externalResults.value = result.value
         externalLoading.value = false
         externalSupplementLoading.value = false
       }
       return result
     }),
   ])
-  if (externalController === controller) {
+  if (externalController === controller && !controller.signal.aborted) {
     externalLoading.value = false
     externalSupplementLoading.value = false
     externalController = null
@@ -225,8 +228,7 @@ async function importAndOpen(hit: ExternalSearchHit): Promise<void> {
     const result = await animeApi.importUrlFallback(hit.sourceUrl)
     await router.push(`/anime/${result.anime.id}`)
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : '请稍后重试'
-    importError.value = `《${hit.title}》导入失败：${reason}`
+    importError.value = `《${hit.title}》添加失败，请重试。`
   } finally {
     importingUrl.value = ''
   }
@@ -249,13 +251,14 @@ void load()
         <input v-model="keyword" aria-label="搜索作品" placeholder="输入作品名称" autofocus />
         <button type="submit" class="search-submit" :disabled="!keyword.trim()">搜索</button>
       </form>
-      <div class="filter-row">
+      <div v-if="!activeSubscription()" class="filter-row">
         <button
           v-for="item in chips"
           :key="item"
           type="button"
           class="filter-chip"
           :class="{ 'is-active': chip === item }"
+          :aria-pressed="chip === item"
           @click="selectChip(item)"
         >
           {{ item }}
@@ -263,7 +266,7 @@ void load()
       </div>
     </section>
 
-    <section class="search-results">
+    <section class="search-results" :aria-busy="externalLoading">
       <div v-if="externalLoading" class="feed-skeleton" aria-label="正在搜索"><span></span><span></span><span></span></div>
 
       <div v-if="filteredExternalResults.length" class="result-list">
@@ -282,8 +285,10 @@ void load()
             </span>
           </span>
           <span class="external-result-actions">
-            <RouterLink class="secondary-button" :to="watchLocation(anime)">直接观看</RouterLink>
+            <a v-if="anime.kind === 'resource'" class="secondary-button" :href="anime.resourceUrl || anime.sourceUrl" target="_blank" rel="noreferrer noopener">打开资源</a>
+            <RouterLink v-else class="secondary-button" :to="watchLocation(anime)">直接观看</RouterLink>
             <button
+              v-if="anime.sourceIndex === undefined"
               class="primary-button"
               type="button"
               :disabled="Boolean(importingUrl)"
@@ -294,6 +299,7 @@ void load()
       </div>
 
       <p v-if="importError" class="search-import-error" role="alert">{{ importError }}</p>
+      <p v-if="externalSupplementLoading && !externalLoading && filteredExternalResults.length" class="muted" role="status">正在查找更多来源…</p>
 
       <div v-if="externalError" class="empty-state">
         <h3>搜索失败</h3>

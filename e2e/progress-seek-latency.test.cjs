@@ -173,7 +173,11 @@ async function scrub(page, fromFraction, toFraction) {
       const video = document.querySelector('video')
       return !video.seeking && video.readyState >= 2
     }, null, { timeout: 12000 })
-    await page.waitForFunction(() => document.querySelector('.art-video-player')?.classList.contains('sanye-realtime-interpolation-active'),
+    const needsEnhancement = await page.evaluate(() => {
+      const preferences = JSON.parse(localStorage.getItem('sanye:playback:preferences:v1') || '{}')
+      return preferences.frameRate !== 'off' || preferences.quality !== 'off'
+    })
+    if (needsEnhancement) await page.waitForFunction(() => document.querySelector('.art-video-player')?.classList.contains('sanye-realtime-interpolation-active'),
       null, { timeout: 12000 })
     await page.waitForFunction(() => !document.querySelector('.art-video-player')?.classList.contains('sanye-media-pending'),
       null, { timeout: 12000 })
@@ -314,7 +318,15 @@ test('progress bar, scrub latency and playback smoothness stay within budget', {
         report[name] = { preferences, sample, seeks, pageErrors, fragmentRequests: requests.length }
         await page.screenshot({ path: path.join(output, `progress-${name}.png`) })
       } catch (error) {
-        report[name] = { preferences, harnessError: String(error), pageErrors }
+        const runtime = await page.evaluate(() => {
+          const video = document.querySelector('video')
+          return { playerClass: document.querySelector('.art-video-player')?.className,
+            currentTime: video?.currentTime, paused: video?.paused, ended: video?.ended,
+            readyState: video?.readyState, canvases: [...document.querySelectorAll('canvas')].map(canvas => ({
+              className: canvas.className, width: canvas.width, height: canvas.height,
+            })), notice: document.querySelector('.art-notice')?.textContent }
+        })
+        report[name] = { preferences, harnessError: String(error), pageErrors, runtime }
         failures.push(`${name}：${error}`)
       } finally { await page.close() }
     }

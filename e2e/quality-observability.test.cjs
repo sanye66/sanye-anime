@@ -54,8 +54,8 @@ test('per-window aggregation keeps clarity level and worker cost evidence togeth
   assert.equal(window.requestedProfile, 'sharp')
   assert.equal(window.qualityFallbacks.length, 1, '窗口必须带上回退历史')
   assert.equal(window.reason, '带宽自适应：估算 6Mb/s')
-  assert.equal(window.summary, '当前 720P（最高 1080P）：带宽自适应：估算 6Mb/s')
-  assert.equal(observability.explain(), `当前 720P（最高 1080P）：带宽自适应：估算 6Mb/s；画质当前为性能档（请求锐化档）：增强耗时持续超出处理预算；本窗口落后 2 帧；本窗口运动分析宽度 320`)
+  assert.equal(window.summary, '当前画质 720P，正在根据网络自动调整')
+  assert.equal(observability.explain(), '当前画质 720P，正在根据网络自动调整；为减少卡顿，增强效果已调整为性能')
 
   // 清单解析前档位未知：不写入窗口，也不带着空档位进入汇总历史。
   const blank = new QualityObservability()
@@ -87,16 +87,16 @@ test('the change notice fires once per automatic downgrade and clears at the top
   const observability = new QualityObservability()
   assert.equal(observability.observeClarity(TOP, 0), '', '首个窗口不提示')
   const dropped = observability.observeClarity(LOW, 1000)
-  assert.match(dropped, /^清晰度已调整：当前 360P（最高 1080P）：/)
-  assert.match(dropped, /带宽不足/)
+  assert.match(dropped, /^清晰度已调整：当前画质 360P，/)
+  assert.match(dropped, /网络较慢/)
   assert.equal(observability.observeClarity(LOW, 2000), '', '同一档位不重复提示')
   // 最小间隔内的新降档先登记，档位不再变化时在间隔结束后补齐说明，不被静默吞掉。
   assert.equal(observability.observeClarity(clarity({ ...LADDER['720'] }), 3000), '')
   assert.equal(observability.observeClarity(clarity({ ...LADDER['720'] }), 4000), '', '最小间隔内仍不播报')
-  assert.match(observability.observeClarity(clarity({ ...LADDER['720'] }), 6000), /^清晰度已调整：当前 720P（最高 1080P）：/)
+  assert.match(observability.observeClarity(clarity({ ...LADDER['720'] }), 6000), /^清晰度已调整：当前画质 720P，/)
   // 回到最高档后，同类降档可以再次提示，说明提示不会永久静默。
   assert.equal(observability.observeClarity(TOP, 30_000), '')
-  assert.match(observability.observeClarity(LOW, 31_000), /^清晰度已调整：当前 360P（最高 1080P）：/)
+  assert.match(observability.observeClarity(LOW, 31_000), /^清晰度已调整：当前画质 360P，/)
   // 手动选择由清晰度菜单自身的切换提示说明，档位说明不重复播报。
   assert.equal(observability.observeClarity(clarity({ mode: 'manual', ...LADDER['720'] }), 47_000), '')
 })
@@ -220,7 +220,7 @@ test('a real automatic clarity drop is explained by the same window data and sta
     assert.ok(Number.isFinite(downgrade.bandwidthBps) && downgrade.bandwidthBps > 0, '窗口必须记录带宽估计')
     const notice = dropped.notices.find(entry => entry.text.startsWith('清晰度已调整'))
     assert.ok(notice, `降档必须给出界面说明，实际提示 ${JSON.stringify(dropped.notices.map(entry => entry.text))}`)
-    assert.match(notice.text, /当前 360P（最高 720P）/)
+    assert.match(notice.text, /当前画质 360P/)
     // 界面说明必须来自真实汇总的窗口记录，且原因能被同一窗口的数据证实。
     const noticeWindow = dropped.windows.findLast(entry => `清晰度已调整：${entry.summary}` === notice.text)
     assert.ok(noticeWindow, `界面说明必须来自已汇总的窗口数据：${notice.text}`)
@@ -235,7 +235,7 @@ test('a real automatic clarity drop is explained by the same window data and sta
     }
     assert.deepEqual(queried.options.slice(0, 3), ['自动', '720P', '360P'], '既有清晰度选项必须保留')
     assert.equal(queried.label, '自动', '说明项不得把控件标签替换成说明文字')
-    const queriedNotice = queried.notices.findLast(entry => entry.text.startsWith('当前 '))
+    const queriedNotice = queried.notices.findLast(entry => entry.text.startsWith('当前画质 '))
     assert.ok(queriedNotice, '可查询说明必须给出当前档位说明')
     assert.ok(queriedNotice.text.startsWith(queried.latestWindow.summary),
       `可查询说明必须与最新窗口汇总一致：${queriedNotice.text} / ${queried.latestWindow.summary}`)

@@ -31,6 +31,8 @@ export class FrameEnhancer {
   private destinations = new WeakMap<WebGLTexture, { width: number; height: number }>()
   private stopped = false
   private scaleFactor = 1
+  private scaleX = 1
+  private scaleY = 1
   constructor(private gl: WebGLRenderingContext, chain: Anime4KShaderConstructor[]) {
     if (!gl.getExtension('WEBGL_color_buffer_float')) throw new Error('当前 GPU 不支持修复纹理，已回退性能档')
     this.framebuffer = gl.createFramebuffer()!
@@ -42,12 +44,15 @@ export class FrameEnhancer {
   /** 链路放大倍率（超分 2×，其余为 1），由链路自身声明，不按档位名硬编码。 */
   get scale() { return this.scaleFactor }
   private measureScale() {
-    let scale = 1
+    let width = 1, height = 1
     for (const program of this.programs) {
       const [x, y] = program.magnification()
-      scale *= Math.max(1, x) * Math.max(1, y)
+      width *= x
+      height *= y
     }
-    this.scaleFactor = scale
+    // Anime4K 的倍率是逐轴长度，不是像素面积：2×2 不能当成宽高各放大 4 倍。
+    this.scaleX = width; this.scaleY = height
+    this.scaleFactor = Math.max(width, height)
   }
   /** 释放链路最后一个阶段（超分→修复），复用同一增强程序完成有界降档。 */
   downgradeToRestore() {
@@ -57,12 +62,12 @@ export class FrameEnhancer {
   }
   process(source: WebGLTexture, width: number, height: number, destination: WebGLTexture) {
     if (this.stopped) throw new Error('增强资源已释放')
-    const gl = this.gl, scale = this.scaleFactor
+    const gl = this.gl
     // Anime4K enables its two attributes only at construction; the interpolation pass uses one.
     gl.enableVertexAttribArray(0); gl.enableVertexAttribArray(1)
     const textures = new Map<string, Texture>([
       ['MAIN', { texture: source, width, height }], ['NATIVE', { texture: source, width, height }],
-      ['OUTPUT', { texture: destination, width: width * scale, height: height * scale }],
+      ['OUTPUT', { texture: destination, width: width * this.scaleX, height: height * this.scaleY }],
     ])
     for (const program of this.programs) program.hook_MAIN(textures, this.framebuffer)
     textures.set('PREKERNEL', textures.get('MAIN')!)

@@ -100,9 +100,15 @@ export function describeClarityReason(window: QualityWindow): string {
 
 /** 窗口说明：当前档位、阶梯最高档与非最高档原因。 */
 export function describeQualityWindow(window: QualityWindow): string {
-  if (window.height <= 0) return '当前清晰度待确认'
-  if (!window.belowHighest) return `当前已是最高清晰度 ${window.height}P`
-  return `当前 ${window.height}P（最高 ${window.highestHeight}P）：${window.reason}`
+  if (window.height <= 0) return '画质读取中'
+  if (!window.belowHighest) return `当前最高画质 ${window.height}P`
+  const reason = window.mode === 'manual' ? '已按你的选择播放'
+    : window.startupFallback ? '为尽快播放，已降低清晰度'
+      : window.capHeight > 0 && window.capHeight < window.highestHeight ? '已按画面大小调整'
+        : window.bandwidthBps > 0 && window.nextRequiredBps > window.bandwidthBps ? '网络较慢，已降低清晰度'
+          : window.awaited !== null && window.awaited > 0 ? '为减少卡顿，已调整清晰度'
+            : '正在根据网络自动调整'
+  return `当前画质 ${window.height}P，${reason}`
 }
 
 /** 同窗口成本证据：只有确实出现回退、停顿或分析降规模时才追加，不做常驻罗列。 */
@@ -110,10 +116,8 @@ export function describeQualityEvidence(window: QualityWindow): string {
   const parts: string[] = []
   const last = window.qualityFallbacks.at(-1)
   if (last && window.requestedProfile !== window.effectiveProfile) {
-    parts.push(`画质当前为${PROFILE_LABELS[window.effectiveProfile]}档（请求${PROFILE_LABELS[window.requestedProfile]}档）：${last.reason}`)
+    parts.push(`为减少卡顿，增强效果已调整为${PROFILE_LABELS[window.effectiveProfile]}`)
   }
-  if (window.stallFrames !== null && window.stallFrames > 0) parts.push(`本窗口落后 ${window.stallFrames} 帧`)
-  if (window.analysisWidth !== null && window.analysisWidth > 0) parts.push(`本窗口运动分析宽度 ${window.analysisWidth}`)
   return parts.length ? `；${parts.join('；')}` : ''
 }
 

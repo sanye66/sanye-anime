@@ -178,7 +178,13 @@ async function request<T>(path: string, init: RequestInit = {}, options: Request
           window.location.assign(buildCasLoginUrl(current))
         }
       }
-      throw new ApiError(code, body?.message ?? `请求失败（HTTP ${res.status}）`, body?.requestId)
+      const message = code === ErrorCode.FORBIDDEN || res.status === 403 ? '没有操作权限。'
+        : code === ErrorCode.NOT_FOUND || res.status === 404 ? '内容不存在或已删除。'
+          : code === ErrorCode.RATE_LIMITED || res.status === 429 ? '操作太频繁，请稍后再试。'
+            : code === ErrorCode.QUOTA_EXHAUSTED ? '使用次数已用完，请稍后再试。'
+              : code === ErrorCode.PARAM_INVALID ? '填写的内容有误，请检查后重试。'
+                : '操作失败，请稍后重试。'
+      throw new ApiError(code, message, body?.requestId)
     }
     return body?.data as T
   } catch (err) {

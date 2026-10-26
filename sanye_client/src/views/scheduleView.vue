@@ -178,7 +178,7 @@ onMounted(() => {
 
     <div v-if="loading" class="schedule-status-hint" aria-live="polite">排期加载中…</div>
     <div v-else-if="apiError" class="schedule-status-hint schedule-status-error" role="status">
-      {{ desktopMode ? '排期加载失败，请稍后重试。' : '接口暂不可用，当前展示本地演示数据' }}
+      {{ desktopMode ? '排期加载失败，请稍后重试。' : '加载失败，当前为演示排期' }}
       <button class="schedule-retry" type="button" @click="loadSchedule">重试</button>
     </div>
 
@@ -192,7 +192,7 @@ onMounted(() => {
         <div class="schedule-detail-time"><strong>{{ item.time }}</strong><span>{{ item.state }}</span></div>
         <div class="schedule-detail-pin" aria-hidden="true"></div>
         <div class="schedule-detail-copy"><strong>{{ item.title }} <em>· {{ item.episode }}</em></strong><p>{{ item.description }}</p></div>
-        <div class="schedule-detail-actions"><RouterLink class="text-button" :to="desktopMode ? `/anime/${item.animeId}` : '/ai'">{{ desktopMode ? '查看作品' : '问 AI' }}</RouterLink><button class="schedule-reminder" type="button" :aria-pressed="hasMarker(item)" @click="toggleMarker(item)">{{ hasMarker(item) ? '已标记' : '标记想看' }}</button></div>
+        <div class="schedule-detail-actions"><RouterLink class="text-button" :to="`/anime/${item.animeId}`">查看作品</RouterLink><button class="schedule-reminder" type="button" :aria-pressed="hasMarker(item)" @click="toggleMarker(item)">{{ hasMarker(item) ? '已标记' : '标记想看' }}</button></div>
       </article>
       <div v-if="!loading && !scheduleItems.length && !apiError" class="repository-empty" role="status">当天暂无排期</div>
     </section>

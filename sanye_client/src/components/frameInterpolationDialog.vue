@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { InterpolationJob } from '@/video/interpolation'
 
 const props = defineProps<{ source: string; hls: boolean; title: string }>()
@@ -15,6 +15,33 @@ const error = ref('')
 const output = ref('')
 let job: InterpolationJob | null = null
 let generation = 0
+let opener: HTMLElement | null = null
+
+const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), video[controls], [tabindex]:not([tabindex="-1"])'
+
+function focusFirst() {
+  const target = dialog.value?.querySelector<HTMLElement>(focusableSelector)
+  target?.focus()
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Tab' || !dialog.value) return
+  const focusable = [...dialog.value.querySelectorAll<HTMLElement>(focusableSelector)].filter(element => element.getClientRects().length > 0 && !element.matches(':disabled'))
+  if (!focusable.length) {
+    event.preventDefault()
+    dialog.value.focus()
+    return
+  }
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.value)) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
 
 function cancel() {
   generation++
@@ -22,7 +49,11 @@ function cancel() {
   busy.value = false
   stage.value = '已取消处理'
 }
-function close() { cancel(); emit('close') }
+function close() {
+  cancel()
+  emit('close')
+  void nextTick(() => opener?.isConnected && opener.focus())
+}
 function choose(event: Event) { file.value = (event.target as HTMLInputElement).files?.[0] || null }
 async function start() {
   if (busy.value) return
@@ -39,18 +70,22 @@ async function start() {
     const blob = await job.convert(source, inputMode.value === 'current' && props.hls, height.value)
     if (version === generation) output.value = URL.createObjectURL(blob)
   } catch (cause) {
-    if (version === generation) error.value = cause instanceof Error ? cause.message : '插帧失败，请选择其他视频重试'
+    if (version === generation) error.value = '视频处理失败，请换个视频重试。'
   } finally { if (version === generation) { busy.value = false; job = null } }
 }
-onMounted(() => dialog.value?.showModal())
+onMounted(() => {
+  opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  dialog.value?.showModal()
+  void nextTick(focusFirst)
+})
 onBeforeUnmount(() => { cancel(); if (output.value) URL.revokeObjectURL(output.value) })
 </script>
 
 <template>
   <Teleport to="body">
-    <dialog ref="dialog" class="interpolation-dialog" aria-labelledby="interpolation-title" @cancel.prevent="close">
+    <dialog ref="dialog" class="interpolation-dialog" tabindex="-1" aria-labelledby="interpolation-title" aria-describedby="interpolation-description" @cancel.prevent="close" @keydown="onKeydown">
           <header><h2 id="interpolation-title">120fps 插帧</h2><button type="button" aria-label="关闭插帧窗口" title="关闭" @click="close">×</button></header>
-      <p class="interpolation-note">预处理模式：生成完成后播放。处理可能较慢，原视频保持暂停。</p>
+      <p id="interpolation-description" class="interpolation-note">预处理模式：生成完成后播放。处理可能较慢，原视频保持暂停。</p>
       <fieldset :disabled="busy"><legend>视频来源</legend>
         <label><input v-model="inputMode" type="radio" value="current" /> 当前线路</label>
         <label><input v-model="inputMode" type="radio" value="file" /> 本地视频</label>
@@ -74,8 +109,9 @@ onBeforeUnmount(() => { cancel(); if (output.value) URL.revokeObjectURL(output.v
 <style scoped>
 .interpolation-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid #59616b; border-radius: 8px; background: #171c21; color: #f1f3f5; overflow: auto; }
 .interpolation-dialog::backdrop { background: rgba(0, 0, 0, .7); }
+:is(button, a, input, select):focus-visible { outline: 2px solid #61b7a5; outline-offset: 3px; }
 header, footer { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
-h2 { margin: 0; font-size: 20px; }
+.interpolation-dialog h2 { margin: 0; font-size: 20px; color: inherit; }
 header button { width: 40px; height: 40px; flex: 0 0 40px; background: transparent; color: inherit; border: 0; cursor: pointer; font-size: 24px; }
 fieldset { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; padding: 12px; border: 1px solid #58616b; }
 label { display: flex; align-items: center; gap: 6px; }

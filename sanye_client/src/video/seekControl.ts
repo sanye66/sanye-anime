@@ -52,10 +52,24 @@ export function installSeekControl(player: Artplayer) {
   let lastPreviewSeekAt = 0
   let seekStartedAt = 0
   let lastSeekCostMs = 0
+  let pendingFinal: number | null = null
+  let resumeAfterSeek = false
   const markSeeking = () => { seekStartedAt = performance.now() }
   const measureSeek = () => {
     if (seekStartedAt) lastSeekCostMs = performance.now() - seekStartedAt
     seekStartedAt = 0
+    if (pendingFinal !== null) {
+      const final = pendingFinal
+      pendingFinal = null
+      if (Math.abs(player.video.currentTime - final) > SEEK_ALIGN_TOLERANCE_SECONDS) {
+        player.video.currentTime = final
+        return
+      }
+    }
+    if (pointer === null && resumeAfterSeek) {
+      resumeAfterSeek = false
+      void player.video.play().catch(() => {})
+    }
   }
   const isBuffered = (time: number) => {
     const ranges = player.video.buffered
@@ -84,18 +98,20 @@ export function installSeekControl(player: Artplayer) {
     lastPreviewSeekAt = now
     video.currentTime = target
   }
-  const position = (event: PointerEvent) => {
+  const position = (event: PointerEvent, seekPreview = true) => {
     const rect = bar.getBoundingClientRect()
     const fraction = player.isRotate ? (event.clientY - rect.top) / rect.height : (event.clientX - rect.left) / rect.width
     target = Math.max(0, Math.min(1, fraction)) * player.duration
     preview()
-    previewSeek(performance.now())
+    if (seekPreview) previewSeek(performance.now())
   }
   const down = (event: PointerEvent) => {
     if (pointer !== null || !event.isPrimary || event.button !== 0 || !player.duration) return
     event.preventDefault(); event.stopImmediatePropagation()
     pointer = event.pointerId
-    wasPlaying = !player.video.paused
+    wasPlaying = !player.video.paused || resumeAfterSeek
+    pendingFinal = null
+    resumeAfterSeek = false
     origin = player.video.currentTime
     player.video.pause()
     lastPreviewSeekAt = 0
@@ -113,17 +129,22 @@ export function installSeekControl(player: Artplayer) {
     if (pointer === null) return
     pointer = null
     suppressClickUntil = performance.now() + 400
-    if (commit) {
-      if (Math.abs(player.video.currentTime - target) > SEEK_ALIGN_TOLERANCE_SECONDS) player.seek = target
-    } else if (Math.abs(player.video.currentTime - origin) > SEEK_ALIGN_TOLERANCE_SECONDS) {
-      player.video.currentTime = origin
+    const final = commit ? target : origin
+    resumeAfterSeek = wasPlaying
+    if (player.video.seeking) {
+      pendingFinal = final
+    } else if (Math.abs(player.video.currentTime - final) > SEEK_ALIGN_TOLERANCE_SECONDS) {
+      player.video.currentTime = final
     }
     if (player.duration > 0) player.emit('setBar', 'played', (commit ? target : player.video.currentTime) / player.duration)
-    if (wasPlaying) void player.video.play().catch(() => {})
+    if (!player.video.seeking && pendingFinal === null && resumeAfterSeek) {
+      resumeAfterSeek = false
+      void player.video.play().catch(() => {})
+    }
   }
   const up = (event: PointerEvent) => {
     if (event.pointerId !== pointer) return
-    event.preventDefault(); event.stopImmediatePropagation(); position(event); finish(true)
+    event.preventDefault(); event.stopImmediatePropagation(); position(event, false); finish(true)
   }
   const cancel = () => finish(false)
   const cancelPointer = (event: PointerEvent) => { if (event.pointerId === pointer) cancel() }
@@ -143,6 +164,8 @@ export function installSeekControl(player: Artplayer) {
   player.on('video:timeupdate', preview)
   player.on('destroy', () => {
     pointer = null
+    pendingFinal = null
+    resumeAfterSeek = false
     bar.style.touchAction = previousTouchAction
     bar.removeEventListener('pointerdown', down, true)
     document.removeEventListener('pointermove', move, true)

@@ -91,7 +91,7 @@ void load()
           <small>{{ item.tags.join(' · ') }} · ★ {{ item.score }}</small>
         </RouterLink>
       </div>
-      <p v-if="failed" class="official-fallback">公开内容接口暂不可用，当前展示本地演示数据。</p>
+      <p v-if="failed" class="official-fallback">加载失败，当前为演示内容。</p>
     </section>
   </OfficialShell>
 </template>

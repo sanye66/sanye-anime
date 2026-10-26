@@ -40,6 +40,8 @@ const controller = ref<AbortController | null>(null)
 const spoilerMode = ref<'SAFE' | 'ALLOW'>('SAFE')
 const lastClientMessageId = ref('')
 const lastAssistantMessageId = ref(0)
+let demoReplyTimer: number | undefined
+const creatingChat = ref(false)
 
 const activeMessages = computed(() => (activeId.value ? messagesByChat.value[activeId.value] ?? [] : []))
 const contextAnimeId = computed(() => {
@@ -148,6 +150,8 @@ async function loadConversations(): Promise<void> {
 
 /** 打开会话并按需加载消息，避免重复请求已经缓存的会话。 */
 async function openChat(id: string): Promise<void> {
+  // 首次读取列表由 loadConversations 调用；此时没有活动会话。
+  if (pending.value || creatingChat.value || loadingMessages.value || (loadingList.value && activeId.value !== null)) return
   activeId.value = id
   if (id === LOCAL_SESSION_ID || !backendReady.value) return
   if (messagesByChat.value[id]) return
@@ -174,37 +178,44 @@ async function openChat(id: string): Promise<void> {
 
 /** 创建服务端会话，服务不可用时创建本地演示会话。 */
 async function newChat(): Promise<void> {
-  if (backendReady.value) {
-    try {
-      const conversation = await aiApi.createConversation({
-        title: '新会话',
-        spoilerMode: spoilerMode.value,
-        contextAnimeId: contextAnimeId.value,
-      })
-      conversations.value.unshift({
-        id: String(conversation.id),
-        title: conversation.title,
-        time: '刚刚',
-      })
-      activeId.value = String(conversation.id)
-      messagesByChat.value[String(conversation.id)] = [
-        { role: 'assistant', text: '新会话已准备好。你可以告诉我一部作品、一个角色，或者你现在想看的感觉。' },
-      ]
-      return
-    } catch {
-      // 后端不可用时降级为本地会话
+  if (pending.value || creatingChat.value || loadingMessages.value || loadingList.value) return
+  creatingChat.value = true
+  try {
+    if (backendReady.value) {
+      try {
+        const conversation = await aiApi.createConversation({
+          title: '新会话',
+          spoilerMode: spoilerMode.value,
+          contextAnimeId: contextAnimeId.value,
+        })
+        conversations.value.unshift({
+          id: String(conversation.id),
+          title: conversation.title,
+          time: '刚刚',
+        })
+        activeId.value = String(conversation.id)
+        messagesByChat.value[String(conversation.id)] = [
+          { role: 'assistant', text: '新会话已准备好。你可以告诉我一部作品、一个角色，或者你现在想看的感觉。' },
+        ]
+        return
+      } catch {
+        // 后端不可用时降级为本地会话
+      }
     }
+    const id = `chat-${Date.now().toString(36)}`
+    conversations.value.unshift({ id, title: '新会话', time: '现在' })
+    activeId.value = id
+    messagesByChat.value[id] = [
+      { role: 'assistant', text: '新会话已准备好。你可以告诉我一部作品、一个角色，或者你现在想看的感觉。' },
+    ]
+  } finally {
+    creatingChat.value = false
   }
-  const id = `chat-${Date.now().toString(36)}`
-  conversations.value.unshift({ id, title: '新会话', time: '现在' })
-  activeId.value = id
-  messagesByChat.value[id] = [
-    { role: 'assistant', text: '新会话已准备好。你可以告诉我一部作品、一个角色，或者你现在想看的感觉。' },
-  ]
 }
 
 /** 删除服务端会话或本地演示会话，并选择新的活动会话。 */
 async function deleteChat(id: string): Promise<void> {
+  if (pending.value || creatingChat.value || loadingMessages.value || loadingList.value) return
   if (!backendReady.value || id === LOCAL_SESSION_ID) return
   try {
     await aiApi.deleteConversation(Number(id))
@@ -232,7 +243,7 @@ function finish(): void {
 /** 校验额度和输入后发送消息，并处理完整 SSE 生命周期。 */
 async function send(): Promise<void> {
   const text = input.value.trim()
-  if (!text || pending.value || quotaExhausted.value) return
+  if (!text || pending.value || creatingChat.value || loadingMessages.value || loadingList.value || quotaExhausted.value) return
   if (!activeId.value) {
     await newChat()
     if (!activeId.value) return
@@ -245,9 +256,11 @@ async function send(): Promise<void> {
   quota.consume()
   pending.value = true
   controller.value = new AbortController()
+  const signal = controller.value.signal
 
   if (!backendReady.value || activeId.value === LOCAL_SESSION_ID) {
-    window.setTimeout(() => {
+    demoReplyTimer = window.setTimeout(() => {
+      demoReplyTimer = undefined
       addMessage(cannedReply(text))
       finish()
     }, 600)
@@ -281,6 +294,7 @@ async function send(): Promise<void> {
       { content: text, clientMessageId, spoilerMode: spoilerMode.value },
       {
         onEvent: (event: SseEvent) => {
+          if (signal.aborted) return
           emittedAny = true
           if (event.event === 'message.accepted') {
             lastAssistantMessageId.value = Number(event.data.messageId ?? 0)
@@ -307,7 +321,7 @@ async function send(): Promise<void> {
             finish()
             void quota.refresh()
           } else if (event.event === 'message.failed') {
-            const reason = String(event.data.reason ?? 'AI 服务暂不可用，请稍后重试')
+            const reason = '回答生成失败，请重试。'
             const messages = activeMessages.value
             const last = messages[messages.length - 1]
             if (last && last.role === 'assistant' && last.text === '' && !assistantAdded) {
@@ -326,8 +340,9 @@ async function send(): Promise<void> {
             finish()
           }
         },
-        onDone: finish,
+        onDone: () => { if (!signal.aborted) finish() },
         onError: () => {
+          if (signal.aborted) return
           finish()
           if (!emittedAny) {
             addMessage(cannedReply(text))
@@ -341,18 +356,23 @@ async function send(): Promise<void> {
           void quota.refresh()
         },
       },
-      controller.value.signal,
+      signal,
     )
   } catch {
+    if (signal.aborted) return
     finish()
     addMessage(cannedReply(text))
     void quota.refresh()
   }
-  if (pending.value) finish()
+  if (!signal.aborted && pending.value) finish()
 }
 
 /** 主动中止当前 SSE 请求，并将助手消息标记为已停止。 */
 function stop(): void {
+  if (demoReplyTimer !== undefined) {
+    window.clearTimeout(demoReplyTimer)
+    demoReplyTimer = undefined
+  }
   controller.value?.abort()
   if (lastAssistantMessageId.value > 0) {
     void aiApi.stop(lastAssistantMessageId.value).catch(() => undefined)
@@ -374,7 +394,10 @@ onMounted(() => {
 })
 
 // 离开 AI 页面时中止仍在生成的流，避免后台持续占用连接和主线程。
-onBeforeUnmount(() => controller.value?.abort())
+onBeforeUnmount(() => {
+  controller.value?.abort()
+  if (demoReplyTimer !== undefined) window.clearTimeout(demoReplyTimer)
+})
 </script>
 
 <template>
@@ -382,9 +405,9 @@ onBeforeUnmount(() => controller.value?.abort())
     <aside class="conversation-list">
       <div class="section-heading compact">
         <div><span class="eyebrow">你的空间</span><h2>会话</h2></div>
-        <button class="icon-button" type="button" aria-label="新建会话" @click="void newChat()">＋</button>
+        <button class="icon-button" type="button" aria-label="新建会话" :disabled="pending || creatingChat || loadingMessages || loadingList" @click="void newChat()">＋</button>
       </div>
-      <button class="new-chat-button" type="button" @click="void newChat()">＋ 新建会话</button>
+      <button class="new-chat-button" type="button" :disabled="pending || creatingChat || loadingMessages || loadingList" @click="void newChat()">＋ 新建会话</button>
       <div v-if="loadingList" class="conversation-empty">正在加载会话…</div>
       <div v-else-if="conversations.length === 0" class="conversation-empty">还没有会话，点击上方按钮开始。</div>
       <div v-else class="conversation-group">
@@ -393,6 +416,7 @@ onBeforeUnmount(() => controller.value?.abort())
             class="conversation-item"
             :class="{ active: activeId === item.id }"
             type="button"
+            :disabled="pending || creatingChat || loadingMessages || loadingList"
             @click="void openChat(item.id)"
           >
             <span>{{ item.title }}</span>
@@ -404,6 +428,7 @@ onBeforeUnmount(() => controller.value?.abort())
             type="button"
             aria-label="删除会话"
             title="删除会话"
+            :disabled="pending || creatingChat || loadingMessages || loadingList"
             @click.stop="void deleteChat(item.id)"
           >
             ×
@@ -471,8 +496,8 @@ onBeforeUnmount(() => controller.value?.abort())
       </div>
 
       <form class="chat-input" @submit.prevent="void send()">
-        <input v-model="input" aria-label="询问 AI 助手" placeholder="问问关于动漫的任何事……" :disabled="pending || quotaExhausted" />
-        <button class="send-button" type="submit" :disabled="pending || quotaExhausted || !input.trim()">发送</button>
+        <input v-model="input" aria-label="询问 AI 助手" placeholder="问问关于动漫的任何事……" :disabled="pending || creatingChat || loadingMessages || loadingList || quotaExhausted" />
+        <button class="send-button" type="submit" :disabled="pending || creatingChat || loadingMessages || loadingList || quotaExhausted || !input.trim()">发送</button>
       </form>
     </section>
 

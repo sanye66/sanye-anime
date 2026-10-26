@@ -47,6 +47,11 @@ export class FlowAnalysisPolicy {
     const next = normalizeMaxWidth(maxWidth)
     if (next === this.maxWidth) return
     this.maxWidth = next
+    // 上限收紧必须同步内部档位。否则上限重新放宽时会直接露出旧高档，绕过余量门控；
+    // 同时 observe 的投影倍率还会按不可见的旧档计算，误判当前分析宽度的成本。
+    while (this.level > 0 && FLOW_ANALYSIS_WIDTHS[this.level] > next) this.level--
+    this.averageComputeMs = 0
+    this.warmup = 4
     this.slow = this.fast = 0
   }
 

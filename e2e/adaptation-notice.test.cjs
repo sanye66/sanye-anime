@@ -26,11 +26,11 @@ test('transient flow and delivery pressure stays silent without actual mode chan
 test('actual fallback is notified once per mode with a cooldown, without changing preferences', () => {
   const notice = new AdaptationNotice()
   const lower = { ...baseline, nextTargetFps: 90, cadenceReason: '渲染帧预算不足' }
-  assert.match(notice.next(baseline, lower, 0), /90 FPS/)
+  assert.match(notice.next(baseline, lower, 0), /90 帧\/秒/)
   assert.equal(notice.next(lower, { ...lower, nextTargetFps: 60 }, 1000), '')
   assert.equal(notice.next(baseline, lower, 30000), '')
   const quality = { ...lower, effectiveProfile: 'fast', fallbackReason: '增强预算不足' }
-  assert.equal(notice.next(lower, quality, 31000), '增强预算不足')
+  assert.equal(notice.next(lower, quality, 31000), '为减少卡顿，已调低增强效果')
   assert.equal(quality.requestedProfile, 'sharp')
-  assert.equal(new AdaptationNotice().next(null, quality, 0), '增强预算不足')
+  assert.equal(new AdaptationNotice().next(null, quality, 0), '为减少卡顿，已调低增强效果')
 })

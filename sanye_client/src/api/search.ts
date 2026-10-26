@@ -1,5 +1,6 @@
 import { http, type RequestOptions } from './http'
 import type { PageResult } from './types'
+import { activeSubscription, searchSubscription, subscriptionCacheKey } from '../subscriptions'
 
 export interface SearchHit {
   id: number
@@ -23,6 +24,9 @@ export interface ExternalSearchHit {
   coverUrl?: string
   summary?: string
   type?: string
+  sourceIndex?: number
+  kind?: 'web' | 'resource'
+  resourceUrl?: string
 }
 
 export interface SearchParams {
@@ -39,11 +43,13 @@ const externalCache = new Map<string, { expiresAt: number; hits: ExternalSearchH
 
 async function externalSearch(query: URLSearchParams, options?: RequestOptions): Promise<ExternalSearchHit[]> {
   options?.signal?.throwIfAborted()
-  const key = query.toString()
+  const key = `${subscriptionCacheKey()}:${query}`
   const cached = externalCache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.hits
   externalCache.delete(key)
-  const hits = await http.get<ExternalSearchHit[]>(`/search/external?${query}`, options)
+  const hits = activeSubscription()
+    ? await searchSubscription(query.get('keyword') || '', options)
+    : await http.get<ExternalSearchHit[]>(`/search/external?${query}`, options)
   // Only successful, nonempty public results are reusable; failures remain retryable.
   if (hits.length && !options?.signal?.aborted) {
     externalCache.set(key, { expiresAt: Date.now() + 30_000, hits })

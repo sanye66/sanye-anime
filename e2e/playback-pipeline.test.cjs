@@ -51,7 +51,7 @@ test('search to playback, single-source retry and back navigation preserve user 
     })
     assert.deepEqual(await page.locator('video').evaluate(video => ({ paused: video.paused, volume: video.volume, rate: video.playbackRate })),
       { paused: true, volume: 0.35, rate: 1.5 })
-    await page.locator('.detail-back-button').click()
+    await page.getByRole('button', { name: '返回上一级' }).click()
     await page.waitForURL('**/anime-repository')
     await page.locator('.repository-card').first().waitFor()
   } finally { await browser.close() }
