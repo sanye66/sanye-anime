@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | v0.15 |
+| 文档版本 | v0.16 |
 | 文档状态 | 基线（按当前本机工具链执行兼容性验证） |
 | 适用范围 | Spring 服务端、Vue 客户端、RuoYi 管理平台和基础设施 |
 | 关联文档 | [产品总体架构](../product/overall-architecture.md)、[技术架构](./technical-architecture.md)、[开发计划](./development-plan.md)、[决策记录](./decision-log.md)、[差距登记表](./gap-register.md) |
-| 更新时间 | 2026-10-13 |
+| 更新时间 | 2026-10-26 |
+
+更新记录：2026-10-26，v0.16，将三个前端工程的 Vite 固定版本升至 6.4.4、桌面与桌宠 Electron 升至 44.9.1，并将间接依赖 undici 统一到 7.30.1，消除本轮 pnpm 审计中有修复版本的高危阻断。类型检查、前端构建与桌面源码回归已通过；新 Electron 发行二进制的本机包级验收及远端 CI 结果另行登记，不以依赖版本更新推断发行物可用。
 
 ## 本轮版本补充（2026-10-13）
 
@@ -183,9 +185,9 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 | pnpm | 10.15.0 | pinned | 前端依赖安装和锁文件统一 |
 | Vue | 3.5.13 | pinned/baseline | 三个前端工程统一版本 |
 | TypeScript | 5.7.3 | pinned/baseline | 三个前端工程统一类型系统 |
-| Vite | 6.4.3 | pinned/baseline | 三个前端工程统一构建工具 |
+| Vite | 6.4.4 | pinned/baseline | 三个前端工程统一构建工具 |
 | Element Plus | 2.14.5 | pinned/baseline | `sanye_admin` 管理前端组件库 |
-| Electron | 44.0.0 | pinned/review | `sanye_pet` 桌宠壳层；构建已验证，Windows 系统兼容与安装发布待环境 |
+| Electron | 44.9.1 | pinned/review | `sanye_pet` 桌宠壳层和 `sanye_desktop`；源码回归通过，Windows 包级验收待环境 |
 | Playwright | 1.62.1 | pinned/baseline | E2E 测试工具，Node.js 26.5.0 环境 |
 
 ### 5.1 PC 客户端形态
@@ -193,10 +195,10 @@ Spring Cloud Alibaba `2025.0.0.0` 的官方发布说明以 Spring Boot 3.5.0 和
 `sanye_client` 保持 PC Web 形态：
 
 ```text
-Vue 3.5.13 + TypeScript 5.7.3 + Vite 6.4.3 + Node.js 26.5.0（非 LTS）
+Vue 3.5.13 + TypeScript 5.7.3 + Vite 6.4.4 + Node.js 26.5.0（非 LTS）
 ```
 
-`sanye_pet` 是独立 Electron 桌宠，不改变 `sanye_client` 的 PC Web 产品形态。Electron 44.0.0 已通过类型检查和生产构建；多屏、缩放、锁屏唤醒、安装签名、升级和回滚仍按待环境处理。
+`sanye_pet` 是独立 Electron 桌宠，不改变 `sanye_client` 的 PC Web 产品形态。Electron 44.9.1 已通过类型检查和前端生产构建；新版本二进制的多屏、缩放、锁屏唤醒、安装签名、升级和回滚仍按待环境处理。
 
 ### 5.2 RuoYi 兼容边界
 
@@ -264,8 +266,8 @@ RuoYi 版本不能直接假定与 Spring Cloud Alibaba 版本共用同一个父�
 - [ ] PostgreSQL 16、Redis 7.4、RabbitMQ 4.1、Elasticsearch 8.17、MinIO 固定镜像可以通过 Docker 启动。
 - [ ] XXL-JOB 3.1.0 Admin 和执行器可以完成一次任务执行。
 - [ ] RuoYi-Vue 3.9.x 可以独立启动并完成权限登录。
-- [x] 三个前端工程可以使用 pnpm 10.15.0、Vue 3.5.13、TypeScript 5.7.3 和 Vite 6.4.3 完成类型检查与生产构建。
-- [x] `sanye_pet` 使用 Electron 44.0.0 完成类型检查与生产构建；系统兼容和安装发布仍待环境。
+- [x] 三个前端工程可以使用 pnpm 10.15.0、Vue 3.5.13、TypeScript 5.7.3 和 Vite 6.4.4 完成类型检查与生产构建。
+- [x] `sanye_pet` 使用 Electron 44.9.1 完成类型检查与前端生产构建；新二进制系统兼容和安装发布仍待环境。
 - [x] 前端直接依赖均固定版本，`pnpm audit --audit-level high` 无已知漏洞。
 - [ ] 版本升级和回滚记录模板已经建立。
 

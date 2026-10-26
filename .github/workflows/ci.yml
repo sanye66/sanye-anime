@@ -109,7 +109,21 @@ jobs:
       - name: 安装 Chromium
         run: pnpm --filter @sanye/sanye_e2e exec playwright install --with-deps chromium
       - name: 执行自包含 Playwright 安全回归
-        run: pnpm e2e:ci
+        run: |
+          log=e2e-browser.log
+          if ! pnpm e2e:ci > "$log" 2>&1; then
+            grep -nE '✖|^not ok|Error:|ERR_|AssertionError|CI Playwright' "$log" | head -25 | sed 's/^/::error::/' || true
+            tail -35 "$log"
+            exit 1
+          fi
+          tail -8 "$log"
+      - name: 上传网页回归日志
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sanye_browser-e2e-${{ github.sha }}
+          path: e2e-browser.log
+          if-no-files-found: ignore
 
   dependency-scan:
     name: 依赖漏洞扫描
